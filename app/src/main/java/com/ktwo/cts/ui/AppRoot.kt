@@ -42,13 +42,15 @@ fun AppRoot() {
             WallpaperBackground(hazeState)
 
             // 2) 内容层(透明,叠在壁纸上)
+            val selectedIndex = TABS.indexOfFirst { d ->
+                curRoute?.any { it.route == d.route } == true
+            }.coerceAtLeast(0)
             Scaffold(
                 containerColor = Color.Transparent,
                 bottomBar = {
                     FloatingGlassNav(
-                        items = TABS.map { d ->
-                            Triple(d.label, d.icon, curRoute?.any { it.route == d.route } == true)
-                        }
+                        items = TABS.map { it.label to it.icon },
+                        selectedIndex = selectedIndex,
                     ) { idx ->
                         val d = TABS[idx]
                         nav.navigate(d.route) {

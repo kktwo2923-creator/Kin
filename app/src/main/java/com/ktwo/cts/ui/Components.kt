@@ -1,8 +1,14 @@
 package com.ktwo.cts.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,9 +16,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -117,33 +126,64 @@ fun GlassSurface(
 }
 
 /**
- * SukiSU 风格悬浮胶囊导航栏 — 不贴底、左右留边、大圆角浮起,Haze 真实模糊。
+ * iOS 26 风格悬浮液态玻璃导航 —
+ *  - 紧凑胶囊,左右留边浮起,Haze 真实模糊背景
+ *  - 选中高亮块用弹簧动画在 tab 间「滑动」(animateDpAsState + spring)
+ *  - 选中图标弹性放大,文字淡入
  */
 @Composable
 fun FloatingGlassNav(
-    items: List<Triple<String, ImageVector, Boolean>>, // route/label, icon, selected
+    items: List<Pair<String, ImageVector>>,
+    selectedIndex: Int,
     onSelect: (Int) -> Unit,
 ) {
+    val count = items.size
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 8.dp),
+            .padding(horizontal = 40.dp)
+            .padding(bottom = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         GlassSurface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
+            shape = CircleShape,
             tint = MaterialTheme.colorScheme.surfaceContainer,
             blurRadius = 30.dp,
         ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
+            BoxWithConstraints(
+                Modifier.fillMaxWidth().height(58.dp).padding(6.dp),
             ) {
-                items.forEachIndexed { i, (label, icon, selected) ->
-                    NavPill(label, icon, selected) { onSelect(i) }
+                val itemWidth = maxWidth / count
+                // 滑动高亮块: 弹簧动画驱动水平偏移
+                val indicatorOffset by animateDpAsState(
+                    targetValue = itemWidth * selectedIndex,
+                    animationSpec = spring(
+                        dampingRatio = 0.65f,         // 略带回弹
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    label = "navIndicator",
+                )
+                Box(
+                    Modifier
+                        .offset(x = indicatorOffset)
+                        .width(itemWidth)
+                        .fillMaxHeight()
+                        .padding(horizontal = 4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f))
+                )
+                // tab 项
+                Row(Modifier.fillMaxSize()) {
+                    items.forEachIndexed { i, (label, icon) ->
+                        NavTab(
+                            label = label,
+                            icon = icon,
+                            selected = i == selectedIndex,
+                            modifier = Modifier.width(itemWidth).fillMaxHeight(),
+                            onClick = { onSelect(i) },
+                        )
+                    }
                 }
             }
         }
@@ -151,21 +191,54 @@ fun FloatingGlassNav(
 }
 
 @Composable
-private fun NavPill(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else Color.Transparent
-    val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+private fun NavTab(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val fg by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        label = "navFg",
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.18f else 1f,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+        label = "navScale",
+    )
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick)
-            .background(bg)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier
+            .clip(CircleShape)
+            .clickable(interaction, indication = null, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = fg, modifier = Modifier.size(22.dp))
-        if (selected) {
-            Text(label, color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = fg,
+            modifier = Modifier.size(22.dp).scale(iconScale),
+        )
+        // 选中时文字淡入(用宽度动画自然展开)
+        val labelWidth by animateFloatAsState(
+            targetValue = if (selected) 1f else 0f,
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            label = "navLabel",
+        )
+        if (labelWidth > 0.01f) {
+            Spacer(Modifier.width(6.dp * labelWidth))
+            Text(
+                label,
+                color = fg.copy(alpha = labelWidth),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.scale(labelWidth.coerceIn(0.6f, 1f)),
+            )
         }
     }
 }
