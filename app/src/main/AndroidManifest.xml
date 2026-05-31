@@ -2,10 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 调度切换完全由 CTS 模块负责; App 仅做画像编辑/状态展示/日志,
-         只需要列出已安装应用的权限。 -->
+    <!-- 调度切换由 CTS 模块负责; App 做画像编辑/状态展示/日志。 -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <!-- 状态栏常驻通知(显示模式+电量,点击快切) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:name=".CtsApp"
@@ -27,5 +30,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 通知点击弹出的快切悬浮窗(透明对话框) -->
+        <activity
+            android:name=".ui.QuickSwitchActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.OnePlusVPro.Dialog" />
+
+        <!-- 状态栏常驻通知服务 -->
+        <service
+            android:name=".service.NotifyService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Persistent status notification showing current power mode and battery, with a quick mode switcher" />
+        </service>
     </application>
 </manifest>

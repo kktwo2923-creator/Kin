@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
+import com.ktwo.cts.service.NotifyService
 import com.ktwo.cts.ui.theme.ThemeMode
 import kotlinx.coroutines.*
 
@@ -32,6 +33,7 @@ fun SettingsScreen() {
 
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
+    val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
     var isRoot by remember { mutableStateOf(true) }
 
     // 壁纸选择器: 打开系统相册(照片选择器),把选中图片复制到 App 私有目录,
@@ -50,6 +52,28 @@ fun SettingsScreen() {
                 }.getOrNull()
             }
             if (saved != null) Prefs.setWallpaperUri(ctx, saved)
+        }
+    }
+
+    // 开启常驻通知: 先请求通知权限,再开服务
+    fun enableNotify() = scope.launch {
+        Prefs.setNotifyEnabled(ctx, true)
+        NotifyService.start(ctx)
+    }
+    val notifyPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> enableNotify() }
+    fun toggleNotify(on: Boolean) {
+        if (on) {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                notifyPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            } else enableNotify()
+        } else scope.launch {
+            Prefs.setNotifyEnabled(ctx, false)
+            NotifyService.stop(ctx)
         }
     }
 
@@ -123,6 +147,15 @@ fun SettingsScreen() {
                 }
             }
 
+            Section("通知") {
+                ToggleRow(
+                    title = "状态栏常驻通知",
+                    desc = "显示当前模式 + 电量;点击通知弹出快切窗口",
+                    checked = notifyEnabled,
+                    onCheckedChange = { toggleNotify(it) },
+                )
+            }
+
             Section("权限") {
                 PermRow(
                     name = "Root 权限",
@@ -155,6 +188,24 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     SectionTitle(title)
     TonalCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) { content() }
+    }
+}
+
+@Composable
+private fun ToggleRow(
+    title: String, desc: String,
+    checked: Boolean, onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

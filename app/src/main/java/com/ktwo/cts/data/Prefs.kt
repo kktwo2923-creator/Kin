@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "cts_prefs")
@@ -13,6 +14,16 @@ private val Context.dataStore by preferencesDataStore(name = "cts_prefs")
 object Prefs {
     private val THEME_KEY     = stringPreferencesKey("theme_mode")     // system/light/dark/mono
     private val WALLPAPER_KEY = stringPreferencesKey("wallpaper_uri")  // 文件路径/URI;空=默认渐变
+    private val NOTIFY_KEY    = booleanPreferencesKey("notify_enabled")// 状态栏常驻通知
+
+    /** 状态栏常驻通知(显示当前模式+电量,点击快切),默认关 */
+    fun notifyEnabledFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[NOTIFY_KEY] ?: false }
+    suspend fun notifyEnabled(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[NOTIFY_KEY] ?: false
+    suspend fun setNotifyEnabled(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[NOTIFY_KEY] = b }
+    }
 
     /** 主题模式(system/light/dark/mono),默认跟随系统 */
     fun themeModeFlow(ctx: Context): Flow<String> =
