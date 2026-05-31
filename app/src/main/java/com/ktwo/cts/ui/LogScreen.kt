@@ -14,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +41,12 @@ fun LogScreen() {
     var loading by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
+    // 全局模式(上半区切换)
+    var globalMode by remember { mutableStateOf("balance") }
+    LaunchedEffect(Unit) {
+        globalMode = withContext(Dispatchers.IO) { RootShell.readGlobalMode() }
+    }
+
     suspend fun loadFiles() {
         val fs = withContext(Dispatchers.IO) { RootShell.listLogFiles() }
         files = fs
@@ -62,31 +67,15 @@ fun LogScreen() {
         if (lines.isNotEmpty()) listState.scrollToItem(lines.size - 1)
     }
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
         topBar = {
-            LargeTopAppBar(
-                title = { Text("日志") },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+            TopAppBar(
+                title = { Text("调度") },
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent,
                 ),
-                actions = {
-                    IconButton(onClick = {
-                        scope.launch { loadFiles(); loadLines() }
-                    }) { Icon(Icons.Outlined.Refresh, "刷新") }
-                    IconButton(onClick = {
-                        val path = selected ?: return@IconButton
-                        scope.launch {
-                            withContext(Dispatchers.IO) { RootShell.clearLog(path) }
-                            loadLines()
-                        }
-                    }) { Icon(Icons.Outlined.DeleteOutline, "清空") }
-                },
             )
         },
         contentWindowInsets = WindowInsets.safeDrawing
@@ -94,56 +83,92 @@ fun LogScreen() {
     ) { inner ->
         Column(
             Modifier.fillMaxSize().padding(inner).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // 文件选择芯片
-            if (files.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    files.forEach { f ->
-                        val name = f.substringAfterLast('/')
-                        FilterChip(
-                            selected = f == selected,
-                            onClick = { selected = f },
-                            label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            shape = RoundedCornerShape(10.dp),
-                        )
+            // ===== 上半区: 模式切换 =====
+            Column(
+                Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SectionTitle("全局模式")
+                ModeGrid(selectedKey = globalMode) { sel ->
+                    globalMode = sel.key
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            RootShell.writePerApp(RootShell.readPerApp(), sel.key)
+                            RootShell.applyMode(sel.key)
+                        }
                     }
                 }
             }
 
-            when {
-                loading -> Box(Modifier.fillMaxWidth().padding(top = 40.dp), Alignment.TopCenter) {
-                    CircularProgressIndicator()
+            // ===== 下半区: 日志 =====
+            Column(
+                Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("日志", modifier = Modifier.weight(1f))
+                    IconButton(onClick = { scope.launch { loadFiles(); loadLines() } }) {
+                        Icon(Icons.Outlined.Refresh, "刷新")
+                    }
+                    IconButton(onClick = {
+                        val path = selected ?: return@IconButton
+                        scope.launch {
+                            withContext(Dispatchers.IO) { RootShell.clearLog(path) }
+                            loadLines()
+                        }
+                    }) { Icon(Icons.Outlined.DeleteOutline, "清空") }
                 }
-                files.isEmpty() -> EmptyHint(
-                    "未找到日志文件\n目录: ${RootShell.CTS_DIR}\n(需 Root 读取;模块运行后会生成 *.log)"
-                )
-                lines.isEmpty() -> EmptyHint("该文件为空")
-                else -> TonalCard(modifier = Modifier.fillMaxSize()) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        items(lines) { line ->
-                            Text(
-                                text = line.ifEmpty { " " },
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                color = colorForLine(line),
-                                softWrap = false,
-                                maxLines = 1,
-                                overflow = TextOverflow.Clip,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
+                // 文件选择芯片
+                if (files.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        files.forEach { f ->
+                            val name = f.substringAfterLast('/')
+                            FilterChip(
+                                selected = f == selected,
+                                onClick = { selected = f },
+                                label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                shape = RoundedCornerShape(10.dp),
                             )
                         }
-                        item { Spacer(Modifier.height(96.dp)) }
+                    }
+                }
+                when {
+                    loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                    files.isEmpty() -> EmptyHint(
+                        "未找到日志文件\n目录: ${RootShell.CTS_DIR}\n(需 Root 读取,模块运行后会生成日志)"
+                    )
+                    lines.isEmpty() -> EmptyHint("该文件为空")
+                    else -> TonalCard(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            items(lines) { line ->
+                                Text(
+                                    text = line.ifEmpty { " " },
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    color = colorForLine(line),
+                                    softWrap = false,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                )
+                            }
+                        }
                     }
                 }
             }
+
+            Spacer(Modifier.height(88.dp)) // 给浮动底栏留位
         }
     }
 }

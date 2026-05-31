@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,7 +26,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -44,33 +48,57 @@ import dev.chrisbanes.haze.hazeSource
 /** 当前页面的 Haze 模糊源状态; 为 null 时玻璃退化为半透明拟态。 */
 val LocalHazeState = compositionLocalOf<HazeState?> { null }
 
-/** 整屏壁纸渐变背景 — 玻璃的模糊采样源。标 hazeSource 让上层玻璃可采样。 */
+/**
+ * 整屏壁纸背景 — 玻璃的模糊采样源。标 hazeSource 让上层玻璃可采样。
+ * wallpaperUri 非空时显示用户自定义图片,否则用默认渐变 + 柔光球。
+ */
 @Composable
-fun WallpaperBackground(hazeState: HazeState, modifier: Modifier = Modifier) {
+fun WallpaperBackground(
+    hazeState: HazeState,
+    wallpaperUri: String = "",
+    modifier: Modifier = Modifier,
+) {
     val cs = MaterialTheme.colorScheme
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        cs.primary.copy(alpha = 0.55f),
-                        cs.tertiary.copy(alpha = 0.40f),
-                        cs.secondary.copy(alpha = 0.50f),
+    val ctx = LocalContext.current
+    val bitmap = remember(wallpaperUri) {
+        if (wallpaperUri.isBlank()) null
+        else runCatching {
+            ctx.contentResolver.openInputStream(android.net.Uri.parse(wallpaperUri)).use { ins ->
+                android.graphics.BitmapFactory.decodeStream(ins)?.asImageBitmap()
+            }
+        }.getOrNull()
+    }
+
+    Box(modifier.fillMaxSize().hazeSource(hazeState)) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.linearGradient(
+                        listOf(
+                            cs.primary.copy(alpha = 0.55f),
+                            cs.tertiary.copy(alpha = 0.40f),
+                            cs.secondary.copy(alpha = 0.50f),
+                        )
                     )
                 )
-            )
-            .hazeSource(hazeState)
-    ) {
-        // 几团柔光,模糊后形成丰富的玻璃质感
-        Box(
-            Modifier.size(260.dp).align(Alignment.TopEnd)
-                .background(Color.White.copy(alpha = 0.18f), CircleShape)
-        )
-        Box(
-            Modifier.size(220.dp).align(Alignment.BottomStart)
-                .background(cs.tertiary.copy(alpha = 0.30f), CircleShape)
-        )
+            ) {
+                Box(
+                    Modifier.size(260.dp).align(Alignment.TopEnd)
+                        .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                )
+                Box(
+                    Modifier.size(220.dp).align(Alignment.BottomStart)
+                        .background(cs.tertiary.copy(alpha = 0.30f), CircleShape)
+                )
+            }
+        }
     }
 }
 
@@ -152,14 +180,14 @@ fun FloatingGlassNav(
             blurRadius = 30.dp,
         ) {
             BoxWithConstraints(
-                Modifier.fillMaxWidth().height(58.dp).padding(6.dp),
+                Modifier.fillMaxWidth().height(64.dp).padding(8.dp),
             ) {
                 val itemWidth = maxWidth / count
-                // 滑动高亮块: 弹簧动画驱动水平偏移
+                // 滑动高亮块(圆角小方块,居中在图标下),弹簧动画驱动水平偏移
                 val indicatorOffset by animateDpAsState(
                     targetValue = itemWidth * selectedIndex,
                     animationSpec = spring(
-                        dampingRatio = 0.65f,         // 略带回弹
+                        dampingRatio = 0.6f,          // 略带回弹
                         stiffness = Spring.StiffnessMediumLow,
                     ),
                     label = "navIndicator",
@@ -169,9 +197,9 @@ fun FloatingGlassNav(
                         .offset(x = indicatorOffset)
                         .width(itemWidth)
                         .fillMaxHeight()
-                        .padding(horizontal = 4.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f))
+                        .padding(horizontal = 6.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
                 )
                 // tab 项
                 Row(Modifier.fillMaxSize()) {
@@ -203,41 +231,47 @@ private fun NavTab(
         else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "navFg",
     )
+    // 选中: 图标轻微上移 + 放大,文字从下方淡入弹出(不挤压图标)
+    val labelProgress by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
+        label = "navLabel",
+    )
     val iconScale by animateFloatAsState(
-        targetValue = if (selected) 1.18f else 1f,
+        targetValue = if (selected) 1.12f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
         label = "navScale",
     )
     val interaction = remember { MutableInteractionSource() }
-    Row(
+    Box(
         modifier
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(18.dp))
             .clickable(interaction, indication = null, onClick = onClick),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+        contentAlignment = Alignment.Center,
     ) {
+        // 图标: 选中时整体上移 5dp 给下方文字腾位
         Icon(
             icon,
             contentDescription = label,
             tint = fg,
-            modifier = Modifier.size(22.dp).scale(iconScale),
+            modifier = Modifier
+                .size(22.dp)
+                .offset(y = (-5).dp * labelProgress)
+                .scale(iconScale),
         )
-        // 选中时文字淡入(用宽度动画自然展开)
-        val labelWidth by animateFloatAsState(
-            targetValue = if (selected) 1f else 0f,
-            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-            label = "navLabel",
-        )
-        if (labelWidth > 0.01f) {
-            Spacer(Modifier.width(6.dp * labelWidth))
+        // 文字: 固定在偏下位置,随选中从下淡入上浮
+        if (labelProgress > 0.01f) {
             Text(
                 label,
-                color = fg.copy(alpha = labelWidth),
-                style = MaterialTheme.typography.labelLarge,
+                color = fg.copy(alpha = labelProgress),
+                style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 softWrap = false,
-                modifier = Modifier.scale(labelWidth.coerceIn(0.6f, 1f)),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = (6.dp) * (1f - labelProgress))
+                    .padding(bottom = 2.dp),
             )
         }
     }

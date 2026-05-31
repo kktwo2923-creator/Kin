@@ -137,8 +137,8 @@ class ScheduleService : Service() {
     }
 
     private suspend fun dispatchScreenOff() {
-        val key = Prefs.screenOffMode(this@ScheduleService)
-        applyAndUpdate(key, "(灭屏)")
+        // 灭屏统一切省电(原可配置的"灭屏模式"已移除)
+        applyAndUpdate("powersave", "(灭屏)")
     }
 
     private suspend fun applyAndUpdate(mode: String, reason: String) {

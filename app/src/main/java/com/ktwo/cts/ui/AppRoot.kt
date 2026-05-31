@@ -7,9 +7,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
+import com.ktwo.cts.data.Prefs
 import dev.chrisbanes.haze.HazeState
 
 private data class TopDest(
@@ -18,10 +20,11 @@ private data class TopDest(
     val icon: ImageVector,
 )
 
+// 日志作为第 2 个 tab
 private val TABS = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
-    TopDest("apps",     "应用", CtsIcons.Apps),
     TopDest("logs",     "日志", CtsIcons.Logs),
+    TopDest("apps",     "应用", CtsIcons.Apps),
     TopDest("settings", "设置", CtsIcons.Settings),
 )
 
@@ -36,11 +39,13 @@ fun AppRoot() {
     val entry by nav.currentBackStackEntryAsState()
     val curRoute = entry?.destination?.hierarchy
     val hazeState = remember { HazeState() }
+    val ctx = LocalContext.current
+    val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
         Box(Modifier.fillMaxSize()) {
             // 1) 壁纸模糊源(最底层)
-            WallpaperBackground(hazeState)
+            WallpaperBackground(hazeState, wallpaperUri = wallpaperUri)
 
             // 2) 内容层(透明,叠在壁纸上)
             val selectedIndex = TABS.indexOfFirst { d ->

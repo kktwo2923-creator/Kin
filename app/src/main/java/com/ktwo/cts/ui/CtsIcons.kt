@@ -41,17 +41,30 @@ object CtsIcons {
     /** 设置 - 齿轮 */
     val Settings: ImageVector by lazy {
         icon("CtsSettings") {
-            stroke {
-                moveTo(12f, 2.8f); lineTo(13.6f, 5.4f); lineTo(16.6f, 4.8f); lineTo(16.6f, 7.8f)
-                lineTo(19.2f, 9.4f); lineTo(17.5f, 12f); lineTo(19.2f, 14.6f); lineTo(16.6f, 16.2f)
-                lineTo(16.6f, 19.2f); lineTo(13.6f, 18.6f); lineTo(12f, 21.2f); lineTo(10.4f, 18.6f)
-                lineTo(7.4f, 19.2f); lineTo(7.4f, 16.2f); lineTo(4.8f, 14.6f); lineTo(6.5f, 12f)
-                lineTo(4.8f, 9.4f); lineTo(7.4f, 7.8f); lineTo(7.4f, 4.8f); lineTo(10.4f, 5.4f); close()
+            // 8 根均匀短齿(每隔 45°),从内半径 7.2 到外半径 10
+            stroke(width = 2.4f) {
+                val cx = 12f; val cy = 12f
+                val inner = 7.4f; val outer = 9.8f
+                for (k in 0 until 8) {
+                    val a = Math.toRadians((k * 45).toDouble())
+                    val sx = (cx + inner * Math.cos(a)).toFloat()
+                    val sy = (cy + inner * Math.sin(a)).toFloat()
+                    val ex = (cx + outer * Math.cos(a)).toFloat()
+                    val ey = (cy + outer * Math.sin(a)).toFloat()
+                    moveTo(sx, sy); lineTo(ex, ey)
+                }
             }
+            // 齿轮主体圆环
             stroke {
-                moveTo(15.2f, 12f)
-                arcTo(3.2f, 3.2f, 0f, true, true, 8.8f, 12f)
-                arcTo(3.2f, 3.2f, 0f, true, true, 15.2f, 12f); close()
+                moveTo(19.2f, 12f)
+                arcTo(7.2f, 7.2f, 0f, true, true, 4.8f, 12f)
+                arcTo(7.2f, 7.2f, 0f, true, true, 19.2f, 12f); close()
+            }
+            // 中心孔
+            stroke {
+                moveTo(15f, 12f)
+                arcTo(3f, 3f, 0f, true, true, 9f, 12f)
+                arcTo(3f, 3f, 0f, true, true, 15f, 12f); close()
             }
         }
     }

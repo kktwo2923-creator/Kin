@@ -2,6 +2,8 @@ package com.ktwo.cts.ui
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,24 +20,39 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.ForegroundDetector
+import com.ktwo.cts.ui.theme.ThemeMode
 import kotlinx.coroutines.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val screenOffMode by Prefs.screenOffModeFlow(ctx).collectAsState(initial = "powersave")
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
+    val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
+    val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
     var pollMs by remember { mutableStateOf(2000) }
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
+
+    // 壁纸选择器: 持久化读取权限后存 URI
+    val pickWallpaper = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            scope.launch { Prefs.setWallpaperUri(ctx, uri.toString()) }
+        }
+    }
 
     LaunchedEffect(Unit) {
         pollMs = Prefs.pollMs(ctx)
@@ -69,36 +86,49 @@ fun SettingsScreen() {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Section("接管行为") {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("灭屏模式", fontWeight = FontWeight.Medium)
-                    Mode.DOWNSTREAM.forEach { m ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = m.key == screenOffMode,
-                                onClick = { scope.launch { Prefs.setScreenOffMode(ctx, m.key) } }
+            Section("外观") {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("主题", fontWeight = FontWeight.Medium)
+                    val cur = ThemeMode.fromKey(themeKey)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ThemeMode.entries.forEach { tm ->
+                            FilterChip(
+                                selected = tm == cur,
+                                onClick = { scope.launch { Prefs.setThemeMode(ctx, tm.key) } },
+                                label = { Text(tm.label) },
+                                shape = RoundedCornerShape(12.dp),
                             )
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                CtsIcons.forMode(m.key), null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(m.label)
                         }
                     }
                     HorizontalDivider()
-                    ToggleRow(
-                        title = "STRICT 同模式重发",
-                        desc = "切换应用时,即使目标模式与当前相同也重发一次(部分游戏需要)",
-                        checked = strict,
-                        onCheckedChange = { scope.launch { PrefsExt.setStrict(ctx, it) } }
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("自定义壁纸", fontWeight = FontWeight.Medium)
+                            Text(
+                                if (wallpaperUri.isBlank()) "当前: 默认渐变" else "当前: 自定义图片",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (wallpaperUri.isNotBlank()) {
+                            TextButton(onClick = { scope.launch { Prefs.setWallpaperUri(ctx, "") } }) {
+                                Text("重置")
+                            }
+                        }
+                        FilledTonalButton(onClick = {
+                            pickWallpaper.launch(arrayOf("image/*"))
+                        }) { Text("选择") }
+                    }
                 }
+            }
+
+            Section("接管行为") {
+                ToggleRow(
+                    title = "STRICT 同模式重发",
+                    desc = "切换应用时,即使目标模式与当前相同也重发一次(部分游戏需要)",
+                    checked = strict,
+                    onCheckedChange = { scope.launch { PrefsExt.setStrict(ctx, it) } }
+                )
             }
 
             Section("权限") {

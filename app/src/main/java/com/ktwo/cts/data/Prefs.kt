@@ -10,19 +10,25 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore by preferencesDataStore(name = "cts_prefs")
 
 // 注: App 画像与全局模式已迁移到 perapp_powermode.txt(见 RootShell),
-// 故 DataStore 仅保留服务开关 / 灭屏模式 / 轮询间隔等本地设置。
+// 故 DataStore 仅保留服务开关 / 轮询间隔 / 外观(主题、壁纸)等本地设置。
 object Prefs {
-    private val SCREEN_OFF_KEY   = stringPreferencesKey("screen_off_mode")
     private val ENABLED_KEY      = booleanPreferencesKey("service_enabled")
     private val POLL_MS_KEY      = intPreferencesKey("poll_ms")
+    private val THEME_KEY        = stringPreferencesKey("theme_mode")     // system/light/dark/mono
+    private val WALLPAPER_KEY    = stringPreferencesKey("wallpaper_uri")  // content:// 或空=默认渐变
 
-    /** 灭屏模式(默认 powersave) */
-    fun screenOffModeFlow(ctx: Context): Flow<String> =
-        ctx.dataStore.data.map { it[SCREEN_OFF_KEY] ?: "powersave" }
-    suspend fun screenOffMode(ctx: Context): String =
-        ctx.dataStore.data.first()[SCREEN_OFF_KEY] ?: "powersave"
-    suspend fun setScreenOffMode(ctx: Context, key: String) {
-        ctx.dataStore.edit { it[SCREEN_OFF_KEY] = key }
+    /** 主题模式(system/light/dark/mono),默认跟随系统 */
+    fun themeModeFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[THEME_KEY] ?: "system" }
+    suspend fun setThemeMode(ctx: Context, mode: String) {
+        ctx.dataStore.edit { it[THEME_KEY] = mode }
+    }
+
+    /** 自定义壁纸 URI(空 = 用默认渐变) */
+    fun wallpaperUriFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[WALLPAPER_KEY] ?: "" }
+    suspend fun setWallpaperUri(ctx: Context, uri: String) {
+        ctx.dataStore.edit { it[WALLPAPER_KEY] = uri }
     }
 
     /** 服务总开关 */

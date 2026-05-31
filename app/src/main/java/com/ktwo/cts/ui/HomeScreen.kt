@@ -145,17 +145,7 @@ fun HomeScreen() {
                 )
             )
 
-            // 4) 全局模式
-            SectionTitle("全局模式")
-            ModeGrid(selectedKey = globalMode) { sel ->
-                scope.launch {
-                    globalMode = sel.key
-                    withContext(Dispatchers.IO) {
-                        RootShell.writePerApp(RootShell.readPerApp(), sel.key)
-                        RootShell.applyMode(sel.key)
-                    }
-                }
-            }
+            // (模式切换已移至「调度」页)
 
             // 给浮动玻璃底栏留出空间
             Spacer(Modifier.height(96.dp))
