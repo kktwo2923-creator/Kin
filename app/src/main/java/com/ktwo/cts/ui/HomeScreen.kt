@@ -85,15 +85,20 @@ fun HomeScreen() {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 1) 大状态主卡
-            val m = Mode.fromKey(currentMode)
+            // 读不到模块上报的当前模式时,回退显示全局模式,避免一直"等待首次切换"
+            val shownMode = Mode.fromKey(currentMode.ifEmpty { globalMode })
             StatusHeroCard(
                 working = working,
                 icon = if (working) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
                 title = if (working) "接管中" else "未接管",
-                subtitle = if (currentMode.isNotEmpty())
-                    "当前 ${m.label} · 按画像 + 灭屏自动切换"
+                subtitle = if (working)
+                    "当前 ${shownMode.label} · 按画像 + 灭屏自动切换"
+                else if (!isRoot)
+                    "未授予 Root · 无法接管"
+                else if (!moduleInstalled)
+                    "未检测到调度模块"
                 else
-                    "等待首次切换",
+                    "服务已停止 · 打开开关启用接管",
                 badges = buildList {
                     if (enabled) add("运行中" to true) else add("已停止" to false)
                 },
