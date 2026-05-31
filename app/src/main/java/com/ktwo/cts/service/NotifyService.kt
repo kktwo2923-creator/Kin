@@ -94,9 +94,9 @@ class NotifyService : Service() {
         val dp = resources.displayMetrics.density
         fun px(v: Int) = (v * dp).toInt()
 
-        // 全屏半透明遮罩,点击空白关闭
+        // 全屏透明层(不变暗背景),点击空白关闭
         val root = FrameLayout(this).apply {
-            setBackgroundColor(0x73000000)
+            setBackgroundColor(Color.TRANSPARENT)
             isClickable = true
             isFocusableInTouchMode = true
             setOnClickListener { removeOverlay() }
