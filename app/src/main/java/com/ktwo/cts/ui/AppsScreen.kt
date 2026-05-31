@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.ktwo.cts.data.Mode
-import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,10 +48,9 @@ fun AppsScreen() {
     var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
     var query by remember { mutableStateOf(TextFieldValue("")) }
     var showSystem by remember { mutableStateOf(false) }
-    // 画像从 perapp.txt 读(app = txt 的 GUI 编辑器),不再用 DataStore
+    // 画像从 perapp.txt 读(app = txt 的 GUI 编辑器);实际接管由 CTS 模块完成
     val profiles = remember { mutableStateMapOf<String, String>() }
     var globalMode by remember { mutableStateOf("balance") }
-    val blacklist by PrefsExt.blacklistFlow(ctx).collectAsState(initial = emptySet())
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -140,7 +138,6 @@ fun AppsScreen() {
                     AppCard(
                         app = app,
                         selectedKey = profiles[app.pkg] ?: "follow",
-                        blacklisted = app.pkg in blacklist,
                         onChangeMode = { newKey ->
                             scope.launch {
                                 withContext(Dispatchers.IO) {
@@ -150,9 +147,6 @@ fun AppsScreen() {
                                 else profiles[app.pkg] = newKey
                             }
                         },
-                        onToggleBlacklist = {
-                            scope.launch { PrefsExt.toggleBlacklist(ctx, app.pkg) }
-                        }
                     )
                 }
                 item { Spacer(Modifier.height(96.dp)) }
@@ -165,18 +159,13 @@ fun AppsScreen() {
 private fun AppCard(
     app: AppEntry,
     selectedKey: String,
-    blacklisted: Boolean,
     onChangeMode: (String) -> Unit,
-    onToggleBlacklist: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     TonalCard(
         modifier = Modifier.fillMaxWidth(),
-        color = if (blacklisted)
-            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-        else
-            MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column {
             Row(
@@ -210,10 +199,9 @@ private fun AppCard(
                 Column(Modifier.weight(1f)) {
                     Text(app.label, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     Text(
-                        if (blacklisted) "已加入黑名单(不接管)" else app.pkg,
+                        app.pkg,
                         fontSize = 11.sp,
-                        color = if (blacklisted) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 val mode = Mode.fromKey(selectedKey)
@@ -247,26 +235,6 @@ private fun AppCard(
                             // 奇数个时补空位占满整行
                             if (rowModes.size == 1) Box(Modifier.weight(1f)) {}
                         }
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onToggleBlacklist() }
-                            .padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            if (blacklisted) Icons.Outlined.RestartAlt
-                            else Icons.Outlined.Block,
-                            null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            if (blacklisted) "移出黑名单" else "加入黑名单(不接管)",
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 13.sp
-                        )
                     }
                 }
             }

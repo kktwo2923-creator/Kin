@@ -4,17 +4,15 @@ import android.content.Context
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "cts_prefs")
 
-// 注: App 画像与全局模式已迁移到 perapp_powermode.txt(见 RootShell),
-// 故 DataStore 仅保留服务开关 / 轮询间隔 / 外观(主题、壁纸)等本地设置。
+// 调度切换完全由 CTS 模块负责(读 perapp_powermode.txt),App 不再持有
+// 服务开关/黑名单/STRICT 等运行时状态。DataStore 仅保留外观(主题、壁纸)。
 object Prefs {
-    private val ENABLED_KEY      = booleanPreferencesKey("service_enabled")
-    private val THEME_KEY        = stringPreferencesKey("theme_mode")     // system/light/dark/mono
-    private val WALLPAPER_KEY    = stringPreferencesKey("wallpaper_uri")  // content:// 或空=默认渐变
+    private val THEME_KEY     = stringPreferencesKey("theme_mode")     // system/light/dark/mono
+    private val WALLPAPER_KEY = stringPreferencesKey("wallpaper_uri")  // 文件路径/URI;空=默认渐变
 
     /** 主题模式(system/light/dark/mono),默认跟随系统 */
     fun themeModeFlow(ctx: Context): Flow<String> =
@@ -23,58 +21,10 @@ object Prefs {
         ctx.dataStore.edit { it[THEME_KEY] = mode }
     }
 
-    /** 自定义壁纸 URI(空 = 用默认渐变) */
+    /** 自定义壁纸(空 = 用默认渐变) */
     fun wallpaperUriFlow(ctx: Context): Flow<String> =
         ctx.dataStore.data.map { it[WALLPAPER_KEY] ?: "" }
     suspend fun setWallpaperUri(ctx: Context, uri: String) {
         ctx.dataStore.edit { it[WALLPAPER_KEY] = uri }
-    }
-
-    /** 服务总开关 */
-    fun enabledFlow(ctx: Context): Flow<Boolean> =
-        ctx.dataStore.data.map { it[ENABLED_KEY] ?: true }
-    suspend fun enabled(ctx: Context): Boolean =
-        ctx.dataStore.data.first()[ENABLED_KEY] ?: true
-    suspend fun setEnabled(ctx: Context, b: Boolean) {
-        ctx.dataStore.edit { it[ENABLED_KEY] = b }
-    }
-}
-
-// ============ Scene 风格新增配置 ============
-private val STRICT_KEY      = booleanPreferencesKey("strict_mode")
-private val BLACKLIST_KEY   = stringPreferencesKey("blacklist_json")  // 不接管包名列表
-
-object PrefsExt {
-    /** STRICT: 同模式也强制重发(对应 Scene 的 GLOBAL_SPF_DYNAMIC_CONTROL_STRICT) */
-    fun strictFlow(ctx: Context): Flow<Boolean> =
-        ctx.dataStore.data.map { it[STRICT_KEY] ?: false }
-    suspend fun strict(ctx: Context): Boolean =
-        ctx.dataStore.data.first()[STRICT_KEY] ?: false
-    suspend fun setStrict(ctx: Context, b: Boolean) {
-        ctx.dataStore.edit { it[STRICT_KEY] = b }
-    }
-
-    /** 黑名单: 不接管的包(对应 Scene 的 sceneBlackList) */
-    fun blacklistFlow(ctx: Context): Flow<Set<String>> =
-        ctx.dataStore.data.map { p ->
-            val raw = p[BLACKLIST_KEY] ?: return@map emptySet()
-            runCatching {
-                val arr = org.json.JSONArray(raw)
-                (0 until arr.length()).map { arr.getString(it) }.toSet()
-            }.getOrDefault(emptySet())
-        }
-    suspend fun blacklist(ctx: Context): Set<String> =
-        blacklistFlow(ctx).first()
-    suspend fun toggleBlacklist(ctx: Context, pkg: String) {
-        ctx.dataStore.edit { p ->
-            val cur = (p[BLACKLIST_KEY]?.let {
-                runCatching { org.json.JSONArray(it) }.getOrNull()
-            }) ?: org.json.JSONArray()
-            val list = (0 until cur.length()).map { cur.getString(it) }.toMutableSet()
-            if (!list.add(pkg)) list.remove(pkg)
-            val out = org.json.JSONArray()
-            list.sorted().forEach { out.put(it) }
-            p[BLACKLIST_KEY] = out.toString()
-        }
     }
 }

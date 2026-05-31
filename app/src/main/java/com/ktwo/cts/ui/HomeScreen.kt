@@ -17,9 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.data.Mode
-import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
-import com.ktwo.cts.service.ScheduleService
 import kotlinx.coroutines.*
 
 /**
@@ -34,9 +32,7 @@ import kotlinx.coroutines.*
 @Composable
 fun HomeScreen() {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
 
-    val enabled by Prefs.enabledFlow(ctx).collectAsState(initial = true)
     var globalMode by remember { mutableStateOf("balance") }
     var moduleInstalled by remember { mutableStateOf(true) }
     var isRoot by remember { mutableStateOf(true) }
@@ -51,12 +47,15 @@ fun HomeScreen() {
         }
         while (isActive) {
             delay(2500)
+            val gm = withContext(Dispatchers.IO) { RootShell.readGlobalMode() }
             val m = withContext(Dispatchers.IO) { RootShell.currentMode() }
+            if (gm != globalMode) globalMode = gm
             if (m != currentMode) currentMode = m
         }
     }
 
-    val working = isRoot && moduleInstalled && enabled
+    // 接管与否完全取决于 CTS 模块是否就位(root + 模块)
+    val working = isRoot && moduleInstalled
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -83,34 +82,21 @@ fun HomeScreen() {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 1) 大状态主卡
-            // 读不到模块上报的当前模式时,回退显示全局模式,避免一直"等待首次切换"
+            // 读不到模块上报的当前模式时,回退显示全局模式
             val shownMode = Mode.fromKey(currentMode.ifEmpty { globalMode })
             StatusHeroCard(
                 working = working,
                 icon = if (working) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
                 title = if (working) "接管中" else "未接管",
                 subtitle = if (working)
-                    "当前 ${shownMode.label} · 按画像 + 灭屏自动切换"
+                    "当前 ${shownMode.label} · 由 CTS 模块按画像自动切换"
                 else if (!isRoot)
                     "未授予 Root · 无法接管"
-                else if (!moduleInstalled)
-                    "未检测到调度模块"
                 else
-                    "服务已停止 · 打开开关启用接管",
+                    "未检测到 CTS 调度模块",
                 badges = buildList {
-                    if (enabled) add("运行中" to true) else add("已停止" to false)
+                    if (working) add("CTS 接管" to true) else add("未就绪" to false)
                 },
-                trailing = {
-                    Switch(
-                        checked = enabled,
-                        onCheckedChange = { on ->
-                            scope.launch {
-                                Prefs.setEnabled(ctx, on)
-                                if (on) ScheduleService.start(ctx) else ScheduleService.stop(ctx)
-                            }
-                        }
-                    )
-                }
             )
 
             // 2) 并排统计卡
@@ -138,12 +124,12 @@ fun HomeScreen() {
                 title = "调度状态",
                 rows = listOf(
                     "全局模式" to Mode.fromKey(globalMode).label,
-                    "后台服务" to if (enabled) "运行中" else "已停止",
+                    "当前模式" to (if (currentMode.isNotEmpty()) Mode.fromKey(currentMode).label else "—"),
                     "接管入口" to "/data/powercfg.sh <mode>",
                 )
             )
 
-            // (模式切换已移至「调度」页)
+            // (模式切换在「调度」页;实际接管由 CTS 模块完成)
 
             // 给浮动玻璃底栏留出空间
             Spacer(Modifier.height(96.dp))

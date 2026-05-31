@@ -1,7 +1,5 @@
 package com.ktwo.cts.ui
 
-import android.content.Intent
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,9 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.data.Prefs
-import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
-import com.ktwo.cts.service.ForegroundDetector
 import com.ktwo.cts.ui.theme.ThemeMode
 import kotlinx.coroutines.*
 
@@ -34,10 +30,8 @@ fun SettingsScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
-    var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
 
     // 壁纸选择器: 打开系统相册(照片选择器),把选中图片复制到 App 私有目录,
@@ -60,7 +54,6 @@ fun SettingsScreen() {
     }
 
     LaunchedEffect(Unit) {
-        hasUsagePerm = ForegroundDetector(ctx).hasUsageStatsPermission()
         isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
     }
 
@@ -130,47 +123,14 @@ fun SettingsScreen() {
                 }
             }
 
-            Section("接管行为") {
-                ToggleRow(
-                    title = "STRICT 同模式重发",
-                    desc = "切换应用时,即使目标模式与当前相同也重发一次(部分游戏需要)",
-                    checked = strict,
-                    onCheckedChange = { scope.launch { PrefsExt.setStrict(ctx, it) } }
-                )
-            }
-
             Section("权限") {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    PermRow(
-                        name = "Root 权限",
-                        granted = isRoot,
-                        desc = "调用模块 powercfg.sh 必需",
-                        icon = Icons.Outlined.Security,
-                        onAction = null,
-                    )
-                    HorizontalDivider()
-                    PermRow(
-                        name = "查看使用情况",
-                        granted = hasUsagePerm,
-                        desc = "无 root 时的前台检测兜底",
-                        icon = Icons.Outlined.Visibility,
-                        onAction = {
-                            ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }
-                    )
-                    HorizontalDivider()
-                    PermRow(
-                        name = "电池优化白名单",
-                        granted = false,
-                        desc = "防止后台被杀",
-                        icon = Icons.Outlined.BatteryFull,
-                        onAction = {
-                            ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }
-                    )
-                }
+                PermRow(
+                    name = "Root 权限",
+                    granted = isRoot,
+                    desc = "读写画像表 / 调用 powercfg.sh 必需",
+                    icon = Icons.Outlined.Security,
+                    onAction = null,
+                )
             }
 
             Section("关于") {
@@ -195,27 +155,6 @@ private fun Section(title: String, content: @Composable () -> Unit) {
     SectionTitle(title)
     TonalCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) { content() }
-    }
-}
-
-@Composable
-private fun ToggleRow(
-    title: String, desc: String,
-    checked: Boolean, onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Medium)
-            Text(
-                desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
