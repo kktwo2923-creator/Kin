@@ -153,15 +153,10 @@ fun HomeScreen() {
 
 @Composable
 fun ModeGrid(selectedKey: String, onSelect: (Mode) -> Unit) {
-    val modes = Mode.DOWNSTREAM
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        modes.chunked(2).forEach { rowModes ->
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                rowModes.forEach {
-                    ModeButton(it, it.key == selectedKey, Modifier.weight(1f)) { onSelect(it) }
-                }
-                if (rowModes.size == 1) Spacer(Modifier.weight(1f))
-            }
+    // 全局模式只有 4 档,单行紧凑排布(图标小 + 文字),都完整显示
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+        Mode.DOWNSTREAM.forEach { m ->
+            ModeButton(m, m.key == selectedKey, Modifier.weight(1f)) { onSelect(m) }
         }
     }
 }
@@ -172,14 +167,14 @@ private fun ModeButton(mode: Mode, selected: Boolean, modifier: Modifier, onClic
                  else MaterialTheme.colorScheme.onSurfaceVariant
     GlassSurface(
         modifier = modifier
-            .height(96.dp)
+            .height(72.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(18.dp),
         tint = if (selected) MaterialTheme.colorScheme.primaryContainer
                else MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(
-            Modifier.fillMaxSize().padding(12.dp),
+            Modifier.fillMaxSize().padding(8.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -187,10 +182,16 @@ private fun ModeButton(mode: Mode, selected: Boolean, modifier: Modifier, onClic
                 CtsIcons.forMode(mode.key),
                 contentDescription = mode.label,
                 tint = accent,
-                modifier = Modifier.size(30.dp),
+                modifier = Modifier.size(22.dp),
             )
-            Spacer(Modifier.height(6.dp))
-            Text(mode.label, color = accent, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                mode.label,
+                color = accent,
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
         }
     }
 }

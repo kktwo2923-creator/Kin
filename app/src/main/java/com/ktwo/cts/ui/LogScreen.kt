@@ -98,9 +98,9 @@ fun LogScreen() {
             Modifier.fillMaxSize().padding(inner).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // ===== 上半区: 模式切换(占小头) =====
+            // ===== 上区: 模式切换(紧凑,自然高度) =====
             Column(
-                Modifier.weight(1f).fillMaxWidth(),
+                Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SectionTitle("全局模式")
@@ -115,9 +115,9 @@ fun LogScreen() {
                 }
             }
 
-            // ===== 下半区: 日志(占大头) =====
+            // ===== 下区: 日志(填满剩余空间) =====
             Column(
-                Modifier.weight(2f).fillMaxWidth(),
+                Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -155,15 +155,7 @@ fun LogScreen() {
                         "未找到日志文件\n目录: ${RootShell.CTS_DIR}\n(需 Root 读取,模块运行后会生成日志)"
                     )
                     lines.isEmpty() -> EmptyHint("该文件为空")
-                    else -> Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        shape = RoundedCornerShape(18.dp),
-                        // 不透明的深色终端底,避免与玻璃壁纸糊在一起
-                        color = Color(0xF20D1117),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp, Color.White.copy(alpha = 0.12f)
-                        ),
-                    ) {
+                    else -> TonalCard(modifier = Modifier.fillMaxSize()) {
                         LazyColumn(
                             state = listState,
                             modifier = Modifier
@@ -195,13 +187,14 @@ fun LogScreen() {
     }
 }
 
-/** 终端配色: 错误红 / 警告橙 / 其余浅灰(适配深色终端底,不随主题变暗) */
+/** 日志着色(玻璃底,跟随主题): 错误红 / 警告橙 / 其余正文色 */
+@Composable
 private fun colorForLine(line: String): Color {
     val l = line.lowercase()
     return when {
-        "error" in l || "fail" in l || " e " in l || "异常" in l -> Color(0xFFFF6B6B)
-        "warn" in l || " w " in l -> Color(0xFFFFB454)
-        else -> Color(0xFFD6DEE8)
+        "error" in l || "fail" in l || " e " in l || "异常" in l -> MaterialTheme.colorScheme.error
+        "warn" in l || " w " in l -> Color(0xFFE08A00)
+        else -> MaterialTheme.colorScheme.onSurface
     }
 }
 
