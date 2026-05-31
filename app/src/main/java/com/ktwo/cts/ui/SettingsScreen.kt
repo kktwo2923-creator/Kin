@@ -19,6 +19,10 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.ktwo.cts.service.CtsAccessibilityService
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.NotifyService
@@ -89,6 +93,17 @@ fun SettingsScreen() {
 
     LaunchedEffect(Unit) {
         isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
+    }
+
+    // 无障碍开关状态: 从设置页返回时刷新
+    var accEnabled by remember { mutableStateOf(CtsAccessibilityService.isEnabled(ctx)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, e ->
+            if (e == Lifecycle.Event.ON_RESUME) accEnabled = CtsAccessibilityService.isEnabled(ctx)
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -163,6 +178,21 @@ fun SettingsScreen() {
                     desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
                     checked = notifyEnabled,
                     onCheckedChange = { toggleNotify(it) },
+                )
+            }
+
+            Section("后台常驻") {
+                PermRow(
+                    name = "无障碍常驻",
+                    granted = accEnabled,
+                    desc = "开启后管理器常驻后台不被杀,并随系统开机自启(不读取屏幕内容)",
+                    icon = Icons.Outlined.Accessibility,
+                    onAction = {
+                        ctx.startActivity(
+                            android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    },
                 )
             }
 

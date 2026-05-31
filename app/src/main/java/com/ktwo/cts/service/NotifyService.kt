@@ -2,6 +2,7 @@ package com.ktwo.cts.service
 
 import android.app.*
 import android.content.*
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -13,6 +14,8 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -94,6 +97,16 @@ class NotifyService : Service() {
         val dp = resources.displayMetrics.density
         fun px(v: Int) = (v * dp).toInt()
 
+        // 跟随系统深浅色,贴合 App 玻璃风格
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val accent = Color.parseColor("#FF007AFF")
+        val cardBg = if (night) Color.parseColor("#F21D2026") else Color.parseColor("#F2FFFFFF")
+        val strokeC = if (night) Color.parseColor("#33FFFFFF") else Color.parseColor("#66FFFFFF")
+        val titleC = if (night) Color.parseColor("#FFEDEDED") else Color.parseColor("#FF0A1626")
+        val unselBg = if (night) Color.parseColor("#FF2C2F37") else Color.parseColor("#FFEAF1FB")
+        val unselTx = if (night) Color.parseColor("#FFDDE3EC") else Color.parseColor("#FF24303F")
+
         // 全屏透明层(不变暗背景),点击空白关闭
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
@@ -107,25 +120,26 @@ class NotifyService : Service() {
             }
         }
 
-        // 卡片
+        // 玻璃卡片(半透明 + 描边 + 阴影)
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(px(20), px(18), px(20), px(20))
             background = GradientDrawable().apply {
-                cornerRadius = px(26).toFloat()
-                setColor(Color.parseColor("#FFF7FAFF"))
+                cornerRadius = px(28).toFloat()
+                setColor(cardBg)
+                setStroke(px(1), strokeC)
             }
+            elevation = px(16).toFloat()
             isClickable = true   // 拦截点击,避免穿透关闭
         }
         card.addView(TextView(this).apply {
             text = "快速切换模式"
-            setTextColor(Color.parseColor("#0A1626"))
+            setTextColor(titleC)
             textSize = 16f
-            setPadding(0, 0, 0, px(14))
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setPadding(px(4), 0, 0, px(14))
         })
-        val rowLp = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
+        val rowLp = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val cur = modeKey
         Mode.DOWNSTREAM.forEach { m ->
             val selected = m.key == cur
@@ -133,11 +147,12 @@ class NotifyService : Service() {
                 text = m.label
                 gravity = Gravity.CENTER
                 textSize = 14f
-                setTextColor(Color.parseColor(if (selected) "#FFFFFF" else "#0A1626"))
-                setPadding(0, px(18), 0, px(18))
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(if (selected) Color.WHITE else unselTx)
+                setPadding(0, px(20), 0, px(20))
                 background = GradientDrawable().apply {
-                    cornerRadius = px(16).toFloat()
-                    setColor(Color.parseColor(if (selected) "#FF007AFF" else "#FFE8EFFA"))
+                    cornerRadius = px(18).toFloat()
+                    setColor(if (selected) accent else unselBg)
                 }
                 setOnClickListener {
                     scope.launch {
@@ -159,8 +174,8 @@ class NotifyService : Service() {
         card.addView(rowLp)
 
         root.addView(card, FrameLayout.LayoutParams(
-            px(330), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER
-        ))
+            px(340), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER
+        ).apply { marginStart = px(16); marginEnd = px(16) })
 
         val type = if (Build.VERSION.SDK_INT >= 26)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -177,13 +192,35 @@ class NotifyService : Service() {
             wm.addView(root, lp)
             overlay = root
             root.requestFocus()
+            // 入场动画: 弹性放大 + 上浮 + 淡入
+            card.alpha = 0f
+            card.scaleX = 0.85f
+            card.scaleY = 0.85f
+            card.translationY = px(40).toFloat()
+            card.animate()
+                .alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
+                .setDuration(300)
+                .setInterpolator(OvershootInterpolator(1.6f))
+                .start()
         }
     }
 
     private fun removeOverlay() {
         val v = overlay ?: return
         overlay = null
-        runCatching { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v) }
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val card = (v as? FrameLayout)?.getChildAt(0)
+        if (card != null) {
+            // 退场动画: 缩小 + 淡出
+            card.animate()
+                .alpha(0f).scaleX(0.9f).scaleY(0.9f).translationY(20f)
+                .setDuration(180)
+                .setInterpolator(AccelerateInterpolator())
+                .withEndAction { runCatching { wm.removeView(v) } }
+                .start()
+        } else {
+            runCatching { wm.removeView(v) }
+        }
     }
 
     // ============ 通知 ============
