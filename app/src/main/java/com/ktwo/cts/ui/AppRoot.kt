@@ -2,6 +2,7 @@ package com.ktwo.cts.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -11,29 +12,37 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 
-private data class TopDest(val route: String, val label: String, val icon: ImageVector)
-
-private val TABS = listOf(
-    TopDest("home",     "首页", Icons.Outlined.Speed),
-    TopDest("apps",     "应用", Icons.Outlined.Apps),
-    TopDest("settings", "设置", Icons.Outlined.Settings),
+private data class TopDest(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+    val iconSelected: ImageVector,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+private val TABS = listOf(
+    TopDest("home",     "首页", Icons.Outlined.Home,     Icons.Filled.Home),
+    TopDest("apps",     "应用", Icons.Outlined.Apps,     Icons.Filled.Apps),
+    TopDest("settings", "设置", Icons.Outlined.Settings, Icons.Filled.Settings),
+)
+
+/**
+ * 顶层骨架 - SukiSU-Ultra 风格:
+ *  - 仅持有底部 NavigationBar,各页面自带可折叠 LargeTopAppBar
+ *  - NavigationBarItem 选中态用实心图标
+ */
 @Composable
 fun AppRoot() {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
+    val curRoute = entry?.destination?.hierarchy
 
     Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(title = { Text("OnePlus V Pro") })
-        },
         bottomBar = {
             NavigationBar {
                 TABS.forEach { d ->
+                    val selected = curRoute?.any { it.route == d.route } == true
                     NavigationBarItem(
-                        selected = entry?.destination?.hierarchy?.any { it.route == d.route } == true,
+                        selected = selected,
                         onClick = {
                             nav.navigate(d.route) {
                                 popUpTo(nav.graph.findStartDestination().id) { saveState = true }
@@ -41,17 +50,23 @@ fun AppRoot() {
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(d.icon, contentDescription = d.label) },
+                        icon = {
+                            Icon(
+                                if (selected) d.iconSelected else d.icon,
+                                contentDescription = d.label
+                            )
+                        },
                         label = { Text(d.label) }
                     )
                 }
             }
         }
     ) { padding ->
+        // 各页面自带顶栏并消费状态栏 inset,这里只下传底部导航栏高度
         NavHost(
             navController = nav,
             startDestination = "home",
-            modifier = Modifier.padding(padding)
+            modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
         ) {
             composable("home")     { HomeScreen() }
             composable("apps")     { AppsScreen() }

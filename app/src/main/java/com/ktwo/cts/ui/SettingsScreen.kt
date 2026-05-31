@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,121 +42,127 @@ fun SettingsScreen() {
         isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Section("接管行为") {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("灭屏模式", fontWeight = FontWeight.Medium)
-                Mode.DOWNSTREAM.forEach { m ->
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = m.key == screenOffMode,
-                            onClick = { scope.launch { Prefs.setScreenOffMode(ctx, m.key) } }
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("${m.emoji}  ${m.label}")
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            LargeTopAppBar(
+                title = { Text("设置") },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing
+            .only(WindowInsetsSides.Horizontal),
+    ) { inner ->
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(inner)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Section("接管行为") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("灭屏模式", fontWeight = FontWeight.Medium)
+                    Mode.DOWNSTREAM.forEach { m ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = m.key == screenOffMode,
+                                onClick = { scope.launch { Prefs.setScreenOffMode(ctx, m.key) } }
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("${m.emoji}  ${m.label}")
+                        }
                     }
+                    HorizontalDivider()
+                    ToggleRow(
+                        title = "STRICT 同模式重发",
+                        desc = "切换应用时,即使目标模式与当前相同也重发一次(部分游戏需要)",
+                        checked = strict,
+                        onCheckedChange = { scope.launch { PrefsExt.setStrict(ctx, it) } }
+                    )
                 }
-                HorizontalDivider()
-                ToggleRow(
-                    title = "STRICT 同模式重发",
-                    desc = "切换应用时,即使目标模式与当前相同也重发一次(部分游戏需要)",
-                    checked = strict,
-                    onCheckedChange = { scope.launch { PrefsExt.setStrict(ctx, it) } }
-                )
             }
-        }
 
-        Section("权限") {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                PermRow(
-                    name = "Root 权限",
-                    granted = isRoot,
-                    desc = "调用模块 powercfg.sh 必需",
-                    icon = Icons.Outlined.Security,
-                    onAction = null,
-                )
-                HorizontalDivider()
-                PermRow(
-                    name = "查看使用情况",
-                    granted = hasUsagePerm,
-                    desc = "无 root 时的前台检测兜底",
-                    icon = Icons.Outlined.Visibility,
-                    onAction = {
-                        ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    }
-                )
-                HorizontalDivider()
-                PermRow(
-                    name = "电池优化白名单",
-                    granted = false,
-                    desc = "防止后台被杀",
-                    icon = Icons.Outlined.BatteryFull,
-                    onAction = {
-                        ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    }
-                )
+            Section("权限") {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    PermRow(
+                        name = "Root 权限",
+                        granted = isRoot,
+                        desc = "调用模块 powercfg.sh 必需",
+                        icon = Icons.Outlined.Security,
+                        onAction = null,
+                    )
+                    HorizontalDivider()
+                    PermRow(
+                        name = "查看使用情况",
+                        granted = hasUsagePerm,
+                        desc = "无 root 时的前台检测兜底",
+                        icon = Icons.Outlined.Visibility,
+                        onAction = {
+                            ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    )
+                    HorizontalDivider()
+                    PermRow(
+                        name = "电池优化白名单",
+                        granted = false,
+                        desc = "防止后台被杀",
+                        icon = Icons.Outlined.BatteryFull,
+                        onAction = {
+                            ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    )
+                }
             }
-        }
 
-        Section("性能") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("前台 App 轮询间隔: ${pollMs / 1000.0} 秒", fontWeight = FontWeight.Medium)
-                Slider(
-                    value = pollMs.toFloat(),
-                    onValueChange = { pollMs = it.toInt() },
-                    valueRange = 1000f..10000f,
-                    steps = 17,
-                    onValueChangeFinished = {
-                        scope.launch { Prefs.setPollMs(ctx, pollMs) }
-                    }
-                )
-                Text(
-                    "短=切换跟手但耗电略多; 长=省电但有延迟",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Section("性能") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("前台 App 轮询间隔: ${pollMs / 1000.0} 秒", fontWeight = FontWeight.Medium)
+                    Slider(
+                        value = pollMs.toFloat(),
+                        onValueChange = { pollMs = it.toInt() },
+                        valueRange = 1000f..10000f,
+                        steps = 17,
+                        onValueChangeFinished = {
+                            scope.launch { Prefs.setPollMs(ctx, pollMs) }
+                        }
+                    )
+                    Text(
+                        "短=切换跟手但耗电略多; 长=省电但有延迟",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-        }
 
-        Section("关于") {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("OnePlus V Pro · 接管助手", fontWeight = FontWeight.Medium)
-                Text(
-                    "替代 Scene 接管,按应用画像自动切换调度模式\n调用入口: /data/powercfg.sh <mode>",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Section("关于") {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("OnePlus V Pro · 接管助手", fontWeight = FontWeight.Medium)
+                    Text(
+                        "替代 Scene 接管,按应用画像自动切换调度模式\n调用入口: /data/powercfg.sh <mode>",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-        }
 
-        Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-    )
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
+    SectionTitle(title)
+    TonalCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) { content() }
     }
 }

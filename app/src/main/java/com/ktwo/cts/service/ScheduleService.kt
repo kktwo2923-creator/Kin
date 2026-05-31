@@ -87,7 +87,11 @@ class ScheduleService : Service() {
                 }
                 Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
                     screenOn = true
-                    lastDispatched = "" // 亮屏强制重发当前画像
+                    // 亮屏强制重发当前画像: 同时清空 lastPkg,
+                    // 否则解锁后前台仍是同一 App(pkg == lastPkg),主循环不会重新下发,
+                    // 设备会卡在灭屏的省电模式。
+                    lastPkg = ""
+                    lastDispatched = ""
                 }
             }
         }

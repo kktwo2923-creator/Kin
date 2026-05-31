@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -47,7 +48,7 @@ fun AppsScreen() {
     var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
     var query by remember { mutableStateOf(TextFieldValue("")) }
     var showSystem by remember { mutableStateOf(false) }
-    // [改] 画像从 perapp.txt 读(app = txt 的 GUI 编辑器),不再用 DataStore
+    // 画像从 perapp.txt 读(app = txt 的 GUI 编辑器),不再用 DataStore
     val profiles = remember { mutableStateMapOf<String, String>() }
     var globalMode by remember { mutableStateOf("balance") }
     val blacklist by PrefsExt.blacklistFlow(ctx).collectAsState(initial = emptySet())
@@ -87,55 +88,69 @@ fun AppsScreen() {
         )
     }
 
-    Column(Modifier.fillMaxSize()) {
-        // 搜索栏 + 过滤
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("搜索应用") },
-                leadingIcon = { Icon(Icons.Outlined.Search, null) },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.weight(1f),
-            )
-            FilterChip(
-                selected = showSystem,
-                onClick = { showSystem = !showSystem },
-                label = { Text("系统") },
-                shape = RoundedCornerShape(12.dp),
-            )
-        }
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(filtered, key = { it.pkg }) { app ->
-                AppCard(
-                    app = app,
-                    selectedKey = profiles[app.pkg] ?: "follow",
-                    blacklisted = app.pkg in blacklist,
-                    onChangeMode = { newKey ->
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                RootShell.setPerApp(app.pkg, newKey, globalMode)
-                            }
-                            if (newKey == "follow") profiles.remove(app.pkg)
-                            else profiles[app.pkg] = newKey
-                        }
-                    },
-                    onToggleBlacklist = {
-                        scope.launch { PrefsExt.toggleBlacklist(ctx, app.pkg) }
-                    }
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            TopAppBar(
+                title = { Text("应用画像") },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+        contentWindowInsets = WindowInsets.safeDrawing
+            .only(WindowInsetsSides.Horizontal),
+    ) { inner ->
+        Column(Modifier.fillMaxSize().padding(inner)) {
+            // 搜索栏 + 过滤
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("搜索应用") },
+                    leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.weight(1f),
+                )
+                FilterChip(
+                    selected = showSystem,
+                    onClick = { showSystem = !showSystem },
+                    label = { Text("系统") },
+                    shape = RoundedCornerShape(12.dp),
                 )
             }
-            item { Spacer(Modifier.height(16.dp)) }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(filtered, key = { it.pkg }) { app ->
+                    AppCard(
+                        app = app,
+                        selectedKey = profiles[app.pkg] ?: "follow",
+                        blacklisted = app.pkg in blacklist,
+                        onChangeMode = { newKey ->
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    RootShell.setPerApp(app.pkg, newKey, globalMode)
+                                }
+                                if (newKey == "follow") profiles.remove(app.pkg)
+                                else profiles[app.pkg] = newKey
+                            }
+                        },
+                        onToggleBlacklist = {
+                            scope.launch { PrefsExt.toggleBlacklist(ctx, app.pkg) }
+                        }
+                    )
+                }
+                item { Spacer(Modifier.height(16.dp)) }
+            }
         }
     }
 }
@@ -150,15 +165,12 @@ private fun AppCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Card(
+    TonalCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (blacklisted)
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-            else
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        color = if (blacklisted)
+            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+        else
+            MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column {
             Row(

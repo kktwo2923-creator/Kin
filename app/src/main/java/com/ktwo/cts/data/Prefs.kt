@@ -6,45 +6,15 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import org.json.JSONObject
 
 private val Context.dataStore by preferencesDataStore(name = "cts_prefs")
 
+// 注: App 画像与全局模式已迁移到 perapp_powermode.txt(见 RootShell),
+// 故 DataStore 仅保留服务开关 / 灭屏模式 / 轮询间隔等本地设置。
 object Prefs {
-    private val PROFILES_KEY     = stringPreferencesKey("profiles_json")  // pkg -> mode key
-    private val GLOBAL_MODE_KEY  = stringPreferencesKey("global_mode")
     private val SCREEN_OFF_KEY   = stringPreferencesKey("screen_off_mode")
     private val ENABLED_KEY      = booleanPreferencesKey("service_enabled")
     private val POLL_MS_KEY      = intPreferencesKey("poll_ms")
-
-    /** App 画像表 pkg -> mode.key */
-    fun profilesFlow(ctx: Context): Flow<Map<String, String>> =
-        ctx.dataStore.data.map { it.toProfileMap() }
-    suspend fun profiles(ctx: Context): Map<String, String> =
-        ctx.dataStore.data.first().toProfileMap()
-    private fun Preferences.toProfileMap(): Map<String, String> {
-        val raw = this[PROFILES_KEY] ?: return emptyMap()
-        return try {
-            val o = JSONObject(raw)
-            o.keys().asSequence().associateWith { k -> o.optString(k, "follow") }
-        } catch (_: Exception) { emptyMap() }
-    }
-    suspend fun setProfile(ctx: Context, pkg: String, modeKey: String) {
-        ctx.dataStore.edit { p ->
-            val cur = (p[PROFILES_KEY]?.let { runCatching { JSONObject(it) }.getOrNull() }) ?: JSONObject()
-            if (modeKey == "follow") cur.remove(pkg) else cur.put(pkg, modeKey)
-            p[PROFILES_KEY] = cur.toString()
-        }
-    }
-
-    /** 全局默认模式 */
-    fun globalModeFlow(ctx: Context): Flow<String> =
-        ctx.dataStore.data.map { it[GLOBAL_MODE_KEY] ?: "balance" }
-    suspend fun globalMode(ctx: Context): String =
-        ctx.dataStore.data.first()[GLOBAL_MODE_KEY] ?: "balance"
-    suspend fun setGlobalMode(ctx: Context, key: String) {
-        ctx.dataStore.edit { it[GLOBAL_MODE_KEY] = key }
-    }
 
     /** 灭屏模式(默认 powersave) */
     fun screenOffModeFlow(ctx: Context): Flow<String> =
