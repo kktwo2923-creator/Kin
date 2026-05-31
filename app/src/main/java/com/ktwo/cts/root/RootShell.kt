@@ -49,12 +49,18 @@ object RootShell {
     /** CTS 数据/日志目录 */
     const val CTS_DIR = "/sdcard/Android/CTS"
 
-    /** 列出 CTS 目录下的日志文件(扩展名 log 或 txt),按修改时间倒序(最新在前)。 */
+    /** 受保护、严禁删除/清空的数据文件(画像表) */
+    private val PROTECTED_FILES = setOf(PERAPP.substringAfterLast('/'))  // perapp_powermode.txt
+
+    /**
+     * 列出 CTS 目录下的日志文件(扩展名 log 或 txt),按修改时间倒序(最新在前)。
+     * 排除受保护的数据文件(如 perapp_powermode.txt),防止误清空画像。
+     */
     fun listLogFiles(): List<String> {
         val cmd = "ls -1t " + CTS_DIR + "/*.log " + CTS_DIR + "/*.txt 2>/dev/null"
         return Shell.cmd(cmd).exec().out
             .map { it.trim() }
-            .filter { it.isNotEmpty() }
+            .filter { it.isNotEmpty() && it.substringAfterLast('/') !in PROTECTED_FILES }
     }
 
     /**
@@ -64,9 +70,11 @@ object RootShell {
     fun readLogTail(path: String, lines: Int = 500): List<String> =
         Shell.cmd("tail -n $lines '$path' 2>/dev/null").exec().out
 
-    /** 清空(截断)某个日志文件 */
-    fun clearLog(path: String): Boolean =
-        Shell.cmd(": > '$path'").exec().isSuccess
+    /** 清空(截断)某个日志文件。受保护文件(perapp_powermode.txt)拒绝操作。 */
+    fun clearLog(path: String): Boolean {
+        if (path.substringAfterLast('/') in PROTECTED_FILES) return false
+        return Shell.cmd(": > '$path'").exec().isSuccess
+    }
 
     /** 读取全部画像条目 pkg -> mode(不含注释/默认行) */
     fun readPerApp(): LinkedHashMap<String, String> {
