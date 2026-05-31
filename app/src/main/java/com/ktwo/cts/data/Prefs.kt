@@ -13,7 +13,6 @@ private val Context.dataStore by preferencesDataStore(name = "cts_prefs")
 // 故 DataStore 仅保留服务开关 / 轮询间隔 / 外观(主题、壁纸)等本地设置。
 object Prefs {
     private val ENABLED_KEY      = booleanPreferencesKey("service_enabled")
-    private val POLL_MS_KEY      = intPreferencesKey("poll_ms")
     private val THEME_KEY        = stringPreferencesKey("theme_mode")     // system/light/dark/mono
     private val WALLPAPER_KEY    = stringPreferencesKey("wallpaper_uri")  // content:// 或空=默认渐变
 
@@ -38,13 +37,6 @@ object Prefs {
         ctx.dataStore.data.first()[ENABLED_KEY] ?: true
     suspend fun setEnabled(ctx: Context, b: Boolean) {
         ctx.dataStore.edit { it[ENABLED_KEY] = b }
-    }
-
-    /** 轮询间隔毫秒 (默认 2000) */
-    suspend fun pollMs(ctx: Context): Int =
-        ctx.dataStore.data.first()[POLL_MS_KEY] ?: 2000
-    suspend fun setPollMs(ctx: Context, ms: Int) {
-        ctx.dataStore.edit { it[POLL_MS_KEY] = ms }
     }
 }
 

@@ -98,6 +98,8 @@ class ScheduleService : Service() {
     }
 
     private fun startLoop() = scope.launch {
+        // 轮询间隔由 CTS 自适应决定: 刚发生切换时快(灵敏),稳定后放慢(省电)
+        var idleRounds = 0
         while (isActive) {
             try {
                 if (!Prefs.enabled(this@ScheduleService)) { delay(3000); continue }
@@ -106,10 +108,14 @@ class ScheduleService : Service() {
                 if (pkg.isNotEmpty() && pkg != lastPkg) {
                     lastPkg = pkg
                     dispatchForPackage(pkg)
+                    idleRounds = 0          // 刚切换,保持灵敏
+                } else if (idleRounds < IDLE_MAX) {
+                    idleRounds++
                 }
             } catch (e: CancellationException) { throw e }
               catch (_: Exception) { /* ignore */ }
-            delay(Prefs.pollMs(this@ScheduleService).toLong())
+            // 前台稳定越久,轮询越慢: 1000ms -> 2500ms
+            delay(if (idleRounds >= IDLE_MAX) POLL_IDLE_MS else POLL_ACTIVE_MS)
         }
     }
 
@@ -185,6 +191,10 @@ class ScheduleService : Service() {
     companion object {
         private const val CH_ID = "cts_schedule"
         private const val NOTIF_ID = 0x6BAD
+        // 自适应轮询: 活跃 1s,稳定后 2.5s; IDLE_MAX 轮无切换即视为稳定
+        private const val POLL_ACTIVE_MS = 1000L
+        private const val POLL_IDLE_MS = 2500L
+        private const val IDLE_MAX = 4
         fun start(ctx: Context) {
             ctx.startForegroundService(Intent(ctx, ScheduleService::class.java))
         }
