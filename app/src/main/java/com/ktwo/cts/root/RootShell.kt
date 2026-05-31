@@ -46,6 +46,28 @@ object RootShell {
     // 格式: 每行 "包名 模式"; 以 # 开头为注释; 以 * 开头为全局默认行(* balance)。
     private const val PERAPP = "/sdcard/Android/CTS/perapp_powermode.txt"
 
+    /** CTS 数据/日志目录 */
+    const val CTS_DIR = "/sdcard/Android/CTS"
+
+    /** 列出 CTS 目录下的日志文件(扩展名 log 或 txt),按修改时间倒序(最新在前)。 */
+    fun listLogFiles(): List<String> {
+        val cmd = "ls -1t " + CTS_DIR + "/*.log " + CTS_DIR + "/*.txt 2>/dev/null"
+        return Shell.cmd(cmd).exec().out
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+    }
+
+    /**
+     * 读取某个日志文件的末尾若干行(默认 500),避免大文件卡 UI。
+     * 返回从旧到新的行列表。
+     */
+    fun readLogTail(path: String, lines: Int = 500): List<String> =
+        Shell.cmd("tail -n $lines '$path' 2>/dev/null").exec().out
+
+    /** 清空(截断)某个日志文件 */
+    fun clearLog(path: String): Boolean =
+        Shell.cmd(": > '$path'").exec().isSuccess
+
     /** 读取全部画像条目 pkg -> mode(不含注释/默认行) */
     fun readPerApp(): LinkedHashMap<String, String> {
         val map = LinkedHashMap<String, String>()

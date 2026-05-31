@@ -21,6 +21,7 @@ private data class TopDest(
 private val TABS = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
     TopDest("apps",     "应用", CtsIcons.Apps),
+    TopDest("logs",     "日志", CtsIcons.Logs),
     TopDest("settings", "设置", CtsIcons.Settings),
 )
 
@@ -68,6 +69,7 @@ fun AppRoot() {
                 ) {
                     composable("home")     { HomeScreen() }
                     composable("apps")     { AppsScreen() }
+                    composable("logs")     { LogScreen() }
                     composable("settings") { SettingsScreen() }
                 }
             }

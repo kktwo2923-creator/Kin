@@ -56,6 +56,21 @@ object CtsIcons {
         }
     }
 
+    /** 日志 - 文档 + 文本行 */
+    val Logs: ImageVector by lazy {
+        icon("CtsLogs") {
+            // 卷角文档
+            stroke {
+                moveTo(6f, 3f); lineTo(14f, 3f); lineTo(19f, 8f); lineTo(19f, 21f); lineTo(6f, 21f); close()
+            }
+            stroke { moveTo(14f, 3f); lineTo(14f, 8f); lineTo(19f, 8f) }
+            // 文本行
+            stroke { moveTo(9f, 12f); lineTo(16f, 12f) }
+            stroke { moveTo(9f, 15.5f); lineTo(16f, 15.5f) }
+            stroke { moveTo(9f, 19f); lineTo(13f, 19f) }
+        }
+    }
+
     // ============ 调度模式(替代 emoji) ============
 
     /** follow 跟随 - 循环箭头 */
