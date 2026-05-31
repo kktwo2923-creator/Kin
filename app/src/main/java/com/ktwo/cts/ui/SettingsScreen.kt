@@ -55,10 +55,20 @@ fun SettingsScreen() {
         }
     }
 
-    // 开启常驻通知: 先请求通知权限,再开服务
+    // 开启常驻通知: 先请求通知权限,再开服务;并确保悬浮窗权限(供点击弹窗)
     fun enableNotify() = scope.launch {
         Prefs.setNotifyEnabled(ctx, true)
         NotifyService.start(ctx)
+        if (!android.provider.Settings.canDrawOverlays(ctx)) {
+            runCatching {
+                ctx.startActivity(
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:${ctx.packageName}")
+                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }
     }
     val notifyPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -150,7 +160,7 @@ fun SettingsScreen() {
             Section("通知") {
                 ToggleRow(
                     title = "状态栏常驻通知",
-                    desc = "显示当前模式 + 电量;点击通知弹出快切窗口",
+                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
                     checked = notifyEnabled,
                     onCheckedChange = { toggleNotify(it) },
                 )
