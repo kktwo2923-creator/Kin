@@ -10,7 +10,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
 /**
  * 共享 UI 组件 - SukiSU-Ultra 风格。
  * 统一的圆角(22dp)、Tonal 卡片、状态卡、信息卡。
@@ -41,6 +40,7 @@ fun TonalCard(
  * 左图标 + 右标题/副标题,可选内联徽章行与尾部内容(开关等)。
  */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun StatusHeroCard(
     working: Boolean,
     icon: ImageVector,
@@ -70,14 +70,18 @@ fun StatusHeroCard(
             Icon(icon, null, modifier = Modifier.size(40.dp))
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // 标题 + 徽章用 FlowRow: 一行放不下时整块徽章换到下一行,
+                // 而不是被挤成 0 宽导致文字竖排。
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Text(
                         title,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
                     badges.forEach { (text, primary) ->
-                        Spacer(Modifier.width(8.dp))
                         Badge(text, primary)
                     }
                 }
@@ -109,6 +113,8 @@ fun Badge(text: String, primary: Boolean = true) {
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
