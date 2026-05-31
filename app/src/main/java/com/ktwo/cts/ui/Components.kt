@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -16,10 +17,19 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+
 /**
- * 共享 UI 组件 - SukiSU-Ultra 风格 + 原生「液态玻璃」质感。
- * 玻璃效果 = 半透明填充 + 顶部高光 sheen + 渐变细描边(全部原生绘制,无第三方代码)。
+ * 共享 UI 组件 - SukiSU-Ultra 风格 + 「液态玻璃」质感。
+ * 玻璃效果 = Haze 真实背景模糊穿透 + 顶部高光 sheen + 渐变细描边。
+ * 页面用 LocalHazeState 提供模糊源(见各 Screen 的 hazeSource)。
  */
+
+/** 当前页面的 Haze 模糊源状态; 为 null 时玻璃退化为半透明拟态。 */
+val LocalHazeState = compositionLocalOf<HazeState?> { null }
 
 /** 液态玻璃容器: 在任意背景上叠出磨砂玻璃质感 */
 @Composable
@@ -54,6 +64,34 @@ fun GlassSurface(
                 ),
                 shape = shape,
             ),
+        content = content,
+    )
+}
+
+/**
+ * 液态玻璃底部导航栏 — 用 Haze 真实模糊其后方滚动内容。
+ * 页面把可滚动内容标 hazeSource(LocalHazeState),这里 hazeEffect 取样模糊。
+ */
+@Composable
+fun GlassNavBar(content: @Composable RowScope.() -> Unit) {
+    val hazeState = LocalHazeState.current
+    val tint = MaterialTheme.colorScheme.surfaceContainer
+    val glassMod = if (hazeState != null) {
+        Modifier.hazeEffect(
+            state = hazeState,
+            style = HazeStyle(
+                backgroundColor = tint,
+                tints = listOf(HazeTint(tint.copy(alpha = 0.55f))),
+                blurRadius = 28.dp,
+                noiseFactor = 0.04f,
+            ),
+        )
+    } else {
+        Modifier.background(tint.copy(alpha = 0.92f))
+    }
+    NavigationBar(
+        modifier = glassMod,
+        containerColor = Color.Transparent,
         content = content,
     )
 }

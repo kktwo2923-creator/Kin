@@ -154,7 +154,8 @@ fun SettingsScreen() {
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            // 给浮动玻璃底栏留出空间
+            Spacer(Modifier.height(96.dp))
         }
     }
 }

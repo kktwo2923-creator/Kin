@@ -63,6 +63,9 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.4")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // 真实背景模糊(液态玻璃) — Haze, Apache-2.0; 1.x 兼容 Compose 1.7 / Kotlin 2.0
+    implementation("dev.chrisbanes.haze:haze:1.2.2")
+
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
     implementation("com.github.topjohnwu.libsu:service:6.0.0")
 

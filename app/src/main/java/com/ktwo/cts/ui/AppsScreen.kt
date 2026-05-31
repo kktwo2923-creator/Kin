@@ -149,7 +149,7 @@ fun AppsScreen() {
                         }
                     )
                 }
-                item { Spacer(Modifier.height(16.dp)) }
+                item { Spacer(Modifier.height(96.dp)) }
             }
         }
     }
