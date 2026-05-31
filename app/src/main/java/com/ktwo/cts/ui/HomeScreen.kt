@@ -123,6 +123,7 @@ fun HomeScreen() {
             InfoCard(
                 title = "调度状态",
                 rows = listOf(
+                    "运行状态" to if (working) "运行中" else "未运行",
                     "全局模式" to Mode.fromKey(globalMode).label,
                     "接管入口" to "/data/powercfg.sh <mode>",
                 )
