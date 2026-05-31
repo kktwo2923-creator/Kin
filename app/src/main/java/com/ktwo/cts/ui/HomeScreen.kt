@@ -124,7 +124,6 @@ fun HomeScreen() {
                 title = "调度状态",
                 rows = listOf(
                     "全局模式" to Mode.fromKey(globalMode).label,
-                    "当前模式" to (if (currentMode.isNotEmpty()) Mode.fromKey(currentMode).label else "—"),
                     "接管入口" to "/data/powercfg.sh <mode>",
                 )
             )
