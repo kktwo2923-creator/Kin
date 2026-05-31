@@ -1,9 +1,6 @@
 package com.ktwo.cts.ui
 
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -16,13 +13,12 @@ private data class TopDest(
     val route: String,
     val label: String,
     val icon: ImageVector,
-    val iconSelected: ImageVector,
 )
 
 private val TABS = listOf(
-    TopDest("home",     "首页", Icons.Outlined.Home,     Icons.Filled.Home),
-    TopDest("apps",     "应用", Icons.Outlined.Apps,     Icons.Filled.Apps),
-    TopDest("settings", "设置", Icons.Outlined.Settings, Icons.Filled.Settings),
+    TopDest("home",     "首页", CtsIcons.Speed),
+    TopDest("apps",     "应用", CtsIcons.Apps),
+    TopDest("settings", "设置", CtsIcons.Settings),
 )
 
 /**
@@ -50,12 +46,7 @@ fun AppRoot() {
                                 restoreState = true
                             }
                         },
-                        icon = {
-                            Icon(
-                                if (selected) d.iconSelected else d.icon,
-                                contentDescription = d.label
-                            )
-                        },
+                        icon = { Icon(d.icon, contentDescription = d.label) },
                         label = { Text(d.label) }
                     )
                 }

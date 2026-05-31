@@ -1,21 +1,64 @@
 package com.ktwo.cts.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 /**
- * 共享 UI 组件 - SukiSU-Ultra 风格。
- * 统一的圆角(22dp)、Tonal 卡片、状态卡、信息卡。
+ * 共享 UI 组件 - SukiSU-Ultra 风格 + 原生「液态玻璃」质感。
+ * 玻璃效果 = 半透明填充 + 顶部高光 sheen + 渐变细描边(全部原生绘制,无第三方代码)。
  */
 
-/** SukiSU 风格大圆角 Tonal 卡片(无描边,纯填充) */
+/** 液态玻璃容器: 在任意背景上叠出磨砂玻璃质感 */
+@Composable
+fun GlassSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(22.dp),
+    tint: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier
+            .clip(shape)
+            // 半透明底色 — 玻璃的"体色"
+            .background(tint.copy(alpha = 0.62f))
+            // 自上而下的高光 -> 透明,模拟玻璃顶面反光
+            .background(
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.20f),
+                    0.45f to Color.White.copy(alpha = 0.04f),
+                    1f to Color.Transparent,
+                )
+            )
+            // 渐变描边: 左上亮、右下淡,凸显玻璃边缘
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.40f),
+                        Color.White.copy(alpha = 0.08f),
+                        Color.White.copy(alpha = 0.18f),
+                    )
+                ),
+                shape = shape,
+            ),
+        content = content,
+    )
+}
+
+/** 大圆角玻璃卡片(替代原 Tonal 卡片,接口保持兼容) */
 @Composable
 fun TonalCard(
     modifier: Modifier = Modifier,
@@ -23,13 +66,10 @@ fun TonalCard(
     contentColor: Color = contentColorFor(color),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(22.dp),
-        color = color,
-        contentColor = contentColor,
-    ) {
-        Column(content = content)
+    GlassSurface(modifier = modifier, tint = color) {
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            Column(content = content)
+        }
     }
 }
 

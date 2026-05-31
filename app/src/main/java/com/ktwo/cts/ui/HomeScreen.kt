@@ -89,7 +89,6 @@ fun HomeScreen() {
                 else
                     "等待首次切换",
                 badges = buildList {
-                    if (isRoot) add("ROOT" to true)
                     if (enabled) add("运行中" to true) else add("已停止" to false)
                 },
                 trailing = {
