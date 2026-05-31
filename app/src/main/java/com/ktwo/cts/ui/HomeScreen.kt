@@ -1,5 +1,6 @@
 package com.ktwo.cts.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,11 +12,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
@@ -28,7 +29,7 @@ import kotlinx.coroutines.*
  *  - 顶部状态主卡(接管中=secondaryContainer / 未接管=errorContainer),内联状态徽章
  *  - 2 个并排统计卡(Root / 模块)
  *  - 信息卡(当前模式 / 服务 / 调用入口)
- *  - 全局模式网格 + 快速切换
+ *  - 全局模式网格(图标按钮)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,10 +62,15 @@ fun HomeScreen() {
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
                 title = { Text("OnePlus V Pro") },
                 scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
             )
         },
         contentWindowInsets = WindowInsets.safeDrawing
@@ -85,7 +91,7 @@ fun HomeScreen() {
                 icon = if (working) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
                 title = if (working) "接管中" else "未接管",
                 subtitle = if (currentMode.isNotEmpty())
-                    "当前 ${m.emoji} ${m.label} · 按画像 + 灭屏自动切换"
+                    "当前 ${m.label} · 按画像 + 灭屏自动切换"
                 else
                     "等待首次切换",
                 badges = buildList {
@@ -128,7 +134,7 @@ fun HomeScreen() {
             InfoCard(
                 title = "调度状态",
                 rows = listOf(
-                    "全局模式" to "${Mode.fromKey(globalMode).emoji} ${Mode.fromKey(globalMode).label}",
+                    "全局模式" to Mode.fromKey(globalMode).label,
                     "后台服务" to if (enabled) "运行中" else "已停止",
                     "接管入口" to "/data/powercfg.sh <mode>",
                 )
@@ -144,12 +150,6 @@ fun HomeScreen() {
                         RootShell.applyMode(sel.key)
                     }
                 }
-            }
-
-            // 5) 快速切换
-            SectionTitle("快速切换")
-            QuickRow { sel ->
-                scope.launch(Dispatchers.IO) { RootShell.applyMode(sel.key) }
             }
 
             // 给浮动玻璃底栏留出空间
@@ -175,41 +175,29 @@ fun ModeGrid(selectedKey: String, onSelect: (Mode) -> Unit) {
 
 @Composable
 private fun ModeButton(mode: Mode, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val container = if (selected) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.surfaceContainerHigh
-    val text = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-               else MaterialTheme.colorScheme.onSurfaceVariant
-    Surface(
-        onClick = onClick,
-        modifier = modifier.height(92.dp),
+    val accent = if (selected) MaterialTheme.colorScheme.primary
+                 else MaterialTheme.colorScheme.onSurfaceVariant
+    GlassSurface(
+        modifier = modifier
+            .height(96.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(22.dp),
-        color = container,
-        tonalElevation = if (selected) 6.dp else 0.dp,
+        tint = if (selected) MaterialTheme.colorScheme.primaryContainer
+               else MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(
             Modifier.fillMaxSize().padding(12.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(mode.emoji, fontSize = 28.sp)
-            Spacer(Modifier.height(4.dp))
-            Text(mode.label, color = text, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-private fun QuickRow(onApply: (Mode) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        Mode.DOWNSTREAM.forEach { m ->
-            FilledTonalButton(
-                onClick = { onApply(m) },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(vertical = 14.dp)
-            ) {
-                Text(m.label, maxLines = 1)
-            }
+            Icon(
+                CtsIcons.forMode(mode.key),
+                contentDescription = mode.label,
+                tint = accent,
+                modifier = Modifier.size(30.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(mode.label, color = accent, fontWeight = FontWeight.SemiBold)
         }
     }
 }

@@ -2,7 +2,9 @@ package com.ktwo.cts.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -16,50 +18,96 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 
 /**
- * 共享 UI 组件 - SukiSU-Ultra 风格 + 「液态玻璃」质感。
- * 玻璃效果 = Haze 真实背景模糊穿透 + 顶部高光 sheen + 渐变细描边。
- * 页面用 LocalHazeState 提供模糊源(见各 Screen 的 hazeSource)。
+ * 共享 UI 组件 - SukiSU-Ultra 风格 + 真·液态玻璃。
+ * 整屏铺壁纸背景(WallpaperBackground)作为模糊源,卡片/导航栏用 Haze
+ * 真实采样模糊它,叠顶部高光 sheen + 渐变细描边。
  */
 
 /** 当前页面的 Haze 模糊源状态; 为 null 时玻璃退化为半透明拟态。 */
 val LocalHazeState = compositionLocalOf<HazeState?> { null }
 
-/** 液态玻璃容器: 在任意背景上叠出磨砂玻璃质感 */
+/** 整屏壁纸渐变背景 — 玻璃的模糊采样源。标 hazeSource 让上层玻璃可采样。 */
+@Composable
+fun WallpaperBackground(hazeState: HazeState, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        cs.primary.copy(alpha = 0.55f),
+                        cs.tertiary.copy(alpha = 0.40f),
+                        cs.secondary.copy(alpha = 0.50f),
+                    )
+                )
+            )
+            .hazeSource(hazeState)
+    ) {
+        // 几团柔光,模糊后形成丰富的玻璃质感
+        Box(
+            Modifier.size(260.dp).align(Alignment.TopEnd)
+                .background(Color.White.copy(alpha = 0.18f), CircleShape)
+        )
+        Box(
+            Modifier.size(220.dp).align(Alignment.BottomStart)
+                .background(cs.tertiary.copy(alpha = 0.30f), CircleShape)
+        )
+    }
+}
+
+/** 液态玻璃容器: Haze 真实模糊背景 + 高光 + 渐变描边 */
 @Composable
 fun GlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(22.dp),
     tint: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    blurRadius: Dp = 24.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val hazeState = LocalHazeState.current
+    val glassMod = if (hazeState != null) {
+        Modifier.hazeEffect(
+            state = hazeState,
+            style = HazeStyle(
+                backgroundColor = tint,
+                tints = listOf(HazeTint(tint.copy(alpha = 0.40f))),
+                blurRadius = blurRadius,
+                noiseFactor = 0.04f,
+            ),
+        )
+    } else {
+        Modifier.background(tint.copy(alpha = 0.62f))
+    }
     Box(
         modifier
             .clip(shape)
-            // 半透明底色 — 玻璃的"体色"
-            .background(tint.copy(alpha = 0.62f))
-            // 自上而下的高光 -> 透明,模拟玻璃顶面反光
+            .then(glassMod)
+            // 顶面高光
             .background(
                 Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.20f),
-                    0.45f to Color.White.copy(alpha = 0.04f),
+                    0f to Color.White.copy(alpha = 0.22f),
+                    0.45f to Color.White.copy(alpha = 0.05f),
                     1f to Color.Transparent,
                 )
             )
-            // 渐变描边: 左上亮、右下淡,凸显玻璃边缘
+            // 渐变描边
             .border(
                 width = 1.dp,
                 brush = Brush.linearGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.40f),
-                        Color.White.copy(alpha = 0.08f),
-                        Color.White.copy(alpha = 0.18f),
+                        Color.White.copy(alpha = 0.45f),
+                        Color.White.copy(alpha = 0.10f),
+                        Color.White.copy(alpha = 0.20f),
                     )
                 ),
                 shape = shape,
@@ -69,31 +117,57 @@ fun GlassSurface(
 }
 
 /**
- * 液态玻璃底部导航栏 — 用 Haze 真实模糊其后方滚动内容。
- * 页面把可滚动内容标 hazeSource(LocalHazeState),这里 hazeEffect 取样模糊。
+ * SukiSU 风格悬浮胶囊导航栏 — 不贴底、左右留边、大圆角浮起,Haze 真实模糊。
  */
 @Composable
-fun GlassNavBar(content: @Composable RowScope.() -> Unit) {
-    val hazeState = LocalHazeState.current
-    val tint = MaterialTheme.colorScheme.surfaceContainer
-    val glassMod = if (hazeState != null) {
-        Modifier.hazeEffect(
-            state = hazeState,
-            style = HazeStyle(
-                backgroundColor = tint,
-                tints = listOf(HazeTint(tint.copy(alpha = 0.55f))),
-                blurRadius = 28.dp,
-                noiseFactor = 0.04f,
-            ),
-        )
-    } else {
-        Modifier.background(tint.copy(alpha = 0.92f))
+fun FloatingGlassNav(
+    items: List<Triple<String, ImageVector, Boolean>>, // route/label, icon, selected
+    onSelect: (Int) -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        GlassSurface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            tint = MaterialTheme.colorScheme.surfaceContainer,
+            blurRadius = 30.dp,
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                items.forEachIndexed { i, (label, icon, selected) ->
+                    NavPill(label, icon, selected) { onSelect(i) }
+                }
+            }
+        }
     }
-    NavigationBar(
-        modifier = glassMod,
-        containerColor = Color.Transparent,
-        content = content,
-    )
+}
+
+@Composable
+private fun NavPill(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else Color.Transparent
+    val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick)
+            .background(bg)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(icon, contentDescription = label, tint = fg, modifier = Modifier.size(22.dp))
+        if (selected) {
+            Text(label, color = fg, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        }
+    }
 }
 
 /** 大圆角玻璃卡片(替代原 Tonal 卡片,接口保持兼容) */

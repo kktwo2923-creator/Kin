@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -92,10 +93,15 @@ fun AppsScreen() {
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text("应用画像") },
                 scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
             )
         },
         contentWindowInsets = WindowInsets.safeDrawing
@@ -213,7 +219,10 @@ private fun AppCard(
                 val mode = Mode.fromKey(selectedKey)
                 AssistChip(
                     onClick = { expanded = !expanded },
-                    label = { Text("${mode.emoji} ${mode.label}", fontSize = 12.sp) },
+                    label = { Text(mode.label, fontSize = 12.sp) },
+                    leadingIcon = {
+                        Icon(CtsIcons.forMode(mode.key), null, modifier = Modifier.size(16.dp))
+                    },
                     shape = RoundedCornerShape(10.dp),
                 )
             }
@@ -271,10 +280,10 @@ private fun ModeChip(mode: Mode, selected: Boolean, onClick: () -> Unit) {
         selected = selected,
         onClick = onClick,
         label = {
-            Text(
-                "${mode.emoji} ${mode.label}",
-                modifier = Modifier.padding(vertical = 2.dp)
-            )
+            Text(mode.label, modifier = Modifier.padding(vertical = 2.dp))
+        },
+        leadingIcon = {
+            Icon(CtsIcons.forMode(mode.key), null, modifier = Modifier.size(16.dp))
         },
         shape = RoundedCornerShape(10.dp),
         modifier = Modifier.fillMaxWidth()

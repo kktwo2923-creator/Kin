@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -46,10 +47,15 @@ fun SettingsScreen() {
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
                 title = { Text("设置") },
                 scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
             )
         },
         contentWindowInsets = WindowInsets.safeDrawing
@@ -76,7 +82,13 @@ fun SettingsScreen() {
                                 onClick = { scope.launch { Prefs.setScreenOffMode(ctx, m.key) } }
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("${m.emoji}  ${m.label}")
+                            Icon(
+                                CtsIcons.forMode(m.key), null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(m.label)
                         }
                     }
                     HorizontalDivider()
