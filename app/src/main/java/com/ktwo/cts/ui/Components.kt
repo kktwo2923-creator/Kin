@@ -63,8 +63,13 @@ fun WallpaperBackground(
     val bitmap = remember(wallpaperUri) {
         if (wallpaperUri.isBlank()) null
         else runCatching {
-            ctx.contentResolver.openInputStream(android.net.Uri.parse(wallpaperUri)).use { ins ->
-                android.graphics.BitmapFactory.decodeStream(ins)?.asImageBitmap()
+            if (wallpaperUri.startsWith("/")) {
+                // 私有目录绝对路径
+                android.graphics.BitmapFactory.decodeFile(wallpaperUri)?.asImageBitmap()
+            } else {
+                ctx.contentResolver.openInputStream(android.net.Uri.parse(wallpaperUri)).use { ins ->
+                    android.graphics.BitmapFactory.decodeStream(ins)?.asImageBitmap()
+                }
             }
         }.getOrNull()
     }

@@ -3,6 +3,7 @@ package com.ktwo.cts.ui
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -40,17 +41,22 @@ fun SettingsScreen() {
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
 
-    // 壁纸选择器: 持久化读取权限后存 URI
+    // 壁纸选择器: 打开系统相册(照片选择器),把选中图片复制到 App 私有目录,
+    // 存绝对路径,避免临时授权重启失效。
     val pickWallpaper = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null) {
-            runCatching {
-                ctx.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
+        if (uri != null) scope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    val dst = java.io.File(ctx.filesDir, "wallpaper.jpg")
+                    ctx.contentResolver.openInputStream(uri)?.use { ins ->
+                        dst.outputStream().use { ins.copyTo(it) }
+                    }
+                    dst.absolutePath
+                }.getOrNull()
             }
-            scope.launch { Prefs.setWallpaperUri(ctx, uri.toString()) }
+            if (saved != null) Prefs.setWallpaperUri(ctx, saved)
         }
     }
 
@@ -116,7 +122,11 @@ fun SettingsScreen() {
                             }
                         }
                         FilledTonalButton(onClick = {
-                            pickWallpaper.launch(arrayOf("image/*"))
+                            pickWallpaper.launch(
+                                PickVisualMediaRequest(
+                                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
                         }) { Text("选择") }
                     }
                 }
