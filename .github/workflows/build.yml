@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# 允许 CI 创建/更新 Release(上传 APK 供直接下载)
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,14 +34,38 @@ jobs:
       - name: Build Release APK
         run: gradle :app:assembleRelease --no-daemon
 
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/*.apk
+      - name: Rename APKs
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk     dist/CTS-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/CTS-release.apk
 
-      - name: Upload Release APK
+      - name: Upload Debug APK (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: app/build/outputs/apk/release/*.apk
+          name: CTS-debug
+          path: dist/CTS-debug.apk
+
+      - name: Upload Release APK (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CTS-release
+          path: dist/CTS-release.apk
+
+      # 把 APK 发布到 Releases,可在仓库 Releases 页面直接下载(无需登录)
+      - name: Publish to rolling "latest" Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "最新构建 (latest)"
+          body: |
+            自动构建的 APK，直接下载安装：
+            - **CTS-release.apk** — 发布版(debug 签名,可直接安装)
+            - **CTS-debug.apk** — 调试版
+
+            提交: ${{ github.sha }}
+          prerelease: true
+          files: |
+            dist/CTS-debug.apk
+            dist/CTS-release.apk
