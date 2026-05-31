@@ -8,15 +8,33 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
+// 浅色 — 高亮、近白表面 + iOS 蓝绿红,体现液态玻璃通透感
 private val LightScheme = lightColorScheme(
-    primary = Color(0xFF1F6FEB),
-    secondary = Color(0xFF388E3C),
-    tertiary = Color(0xFFD32F2F),
+    primary = Color(0xFF007AFF),            // iOS 蓝
+    onPrimary = Color.White,
+    secondary = Color(0xFF34C759),          // iOS 绿
+    tertiary = Color(0xFFFF3B30),           // iOS 红
+    background = Color(0xFFF4F8FF),
+    onBackground = Color(0xFF0A1626),
+    surface = Color(0xFFF7FAFF),
+    onSurface = Color(0xFF0A1626),
+    surfaceVariant = Color(0xFFE8EFFA),
+    onSurfaceVariant = Color(0xFF46586C),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFBFDFF),
+    surfaceContainer = Color(0xFFFFFFFF),
+    surfaceContainerHigh = Color(0xFFFFFFFF),
+    surfaceContainerHighest = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD8EBFF),
+    onPrimaryContainer = Color(0xFF003063),
+    secondaryContainer = Color(0xFFD7F6DF),
+    onSecondaryContainer = Color(0xFF06310F),
+    outline = Color(0xFF8A99AC),
 )
 private val DarkScheme = darkColorScheme(
-    primary = Color(0xFF63A4FF),
-    secondary = Color(0xFF66BB6A),
-    tertiary = Color(0xFFE57373),
+    primary = Color(0xFF0A84FF),            // iOS 暗色蓝
+    secondary = Color(0xFF30D158),
+    tertiary = Color(0xFFFF453A),
 )
 
 // 黑白(单色)主题 — primary/secondary/tertiary 全用灰阶

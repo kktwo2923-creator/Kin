@@ -83,24 +83,27 @@ fun WallpaperBackground(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
+            // 默认壁纸: 先铺一层明亮底,再叠柔和彩光球 -> 玻璃模糊后高亮通透
             Box(
-                Modifier.fillMaxSize().background(
-                    Brush.linearGradient(
-                        listOf(
-                            cs.primary.copy(alpha = 0.55f),
-                            cs.tertiary.copy(alpha = 0.40f),
-                            cs.secondary.copy(alpha = 0.50f),
+                Modifier.fillMaxSize()
+                    .background(cs.background)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                cs.primary.copy(alpha = 0.35f),
+                                cs.secondary.copy(alpha = 0.22f),
+                                cs.tertiary.copy(alpha = 0.28f),
+                            )
                         )
                     )
-                )
             ) {
                 Box(
-                    Modifier.size(260.dp).align(Alignment.TopEnd)
-                        .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                    Modifier.size(280.dp).align(Alignment.TopEnd)
+                        .background(Color.White.copy(alpha = 0.35f), CircleShape)
                 )
                 Box(
-                    Modifier.size(220.dp).align(Alignment.BottomStart)
-                        .background(cs.tertiary.copy(alpha = 0.30f), CircleShape)
+                    Modifier.size(240.dp).align(Alignment.BottomStart)
+                        .background(cs.primary.copy(alpha = 0.28f), CircleShape)
                 )
             }
         }
@@ -122,34 +125,35 @@ fun GlassSurface(
             state = hazeState,
             style = HazeStyle(
                 backgroundColor = tint,
-                tints = listOf(HazeTint(tint.copy(alpha = 0.40f))),
+                // 提高亮度: 玻璃体色更白更通透,呈现 iOS 磨砂质感
+                tints = listOf(HazeTint(tint.copy(alpha = 0.30f))),
                 blurRadius = blurRadius,
-                noiseFactor = 0.04f,
+                noiseFactor = 0.05f,
             ),
         )
     } else {
-        Modifier.background(tint.copy(alpha = 0.62f))
+        Modifier.background(tint.copy(alpha = 0.55f))
     }
     Box(
         modifier
             .clip(shape)
             .then(glassMod)
-            // 顶面高光
+            // 顶面高光(增强,液态玻璃高光更亮)
             .background(
                 Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.22f),
-                    0.45f to Color.White.copy(alpha = 0.05f),
-                    1f to Color.Transparent,
+                    0f to Color.White.copy(alpha = 0.38f),
+                    0.4f to Color.White.copy(alpha = 0.10f),
+                    1f to Color.White.copy(alpha = 0.02f),
                 )
             )
-            // 渐变描边
+            // 渐变描边(更亮的玻璃边缘高光)
             .border(
                 width = 1.dp,
                 brush = Brush.linearGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.45f),
-                        Color.White.copy(alpha = 0.10f),
-                        Color.White.copy(alpha = 0.20f),
+                        Color.White.copy(alpha = 0.65f),
+                        Color.White.copy(alpha = 0.15f),
+                        Color.White.copy(alpha = 0.30f),
                     )
                 ),
                 shape = shape,
