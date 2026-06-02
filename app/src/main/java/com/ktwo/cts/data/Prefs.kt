@@ -16,6 +16,16 @@ object Prefs {
     private val POLL_MS_KEY      = intPreferencesKey("poll_ms")
     private val THEME_KEY        = stringPreferencesKey("theme_mode")     // system/light/dark/mono
     private val WALLPAPER_KEY    = stringPreferencesKey("wallpaper_uri")  // content:// 或空=默认渐变
+    private val NOTIFY_KEY       = booleanPreferencesKey("notify_enabled")// 状态栏常驻通知+悬浮快切
+
+    /** 状态栏常驻通知(显示当前模式+电量,点击弹悬浮窗快切),默认关 */
+    fun notifyEnabledFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[NOTIFY_KEY] ?: false }
+    suspend fun notifyEnabled(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[NOTIFY_KEY] ?: false
+    suspend fun setNotifyEnabled(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[NOTIFY_KEY] = b }
+    }
 
     /** 主题模式(system/light/dark/mono),默认跟随系统 */
     fun themeModeFlow(ctx: Context): Flow<String> =

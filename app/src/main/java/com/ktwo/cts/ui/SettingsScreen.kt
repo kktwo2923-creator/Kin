@@ -37,8 +37,40 @@ fun SettingsScreen() {
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
+    val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
+
+    // 通知开关: 开启时申请通知权限 + 悬浮窗权限,再开服务
+    fun enableNotify() = scope.launch {
+        Prefs.setNotifyEnabled(ctx, true)
+        com.ktwo.cts.service.NotifyService.start(ctx)
+        if (!Settings.canDrawOverlays(ctx)) {
+            runCatching {
+                ctx.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:${ctx.packageName}")
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }
+    }
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> enableNotify() }
+    fun toggleNotify(on: Boolean) {
+        if (on) {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            else enableNotify()
+        } else scope.launch {
+            Prefs.setNotifyEnabled(ctx, false)
+            com.ktwo.cts.service.NotifyService.stop(ctx)
+        }
+    }
 
     // 壁纸选择器: 打开系统相册(照片选择器),把选中图片复制到 App 私有目录,
     // 存绝对路径,避免临时授权重启失效。
@@ -128,6 +160,15 @@ fun SettingsScreen() {
                         }) { Text("选择") }
                     }
                 }
+            }
+
+            Section("通知") {
+                ToggleRow(
+                    title = "状态栏常驻通知",
+                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
+                    checked = notifyEnabled,
+                    onCheckedChange = { toggleNotify(it) },
+                )
             }
 
             Section("接管行为") {
