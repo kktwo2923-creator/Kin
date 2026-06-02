@@ -37,7 +37,6 @@ fun SettingsScreen() {
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
-    var pollMs by remember { mutableStateOf(2000) }
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
 
@@ -61,7 +60,6 @@ fun SettingsScreen() {
     }
 
     LaunchedEffect(Unit) {
-        pollMs = Prefs.pollMs(ctx)
         hasUsagePerm = ForegroundDetector(ctx).hasUsageStatsPermission()
         isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
     }
@@ -171,26 +169,6 @@ fun SettingsScreen() {
                             ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
-                    )
-                }
-            }
-
-            Section("性能") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("前台 App 轮询间隔: ${pollMs / 1000.0} 秒", fontWeight = FontWeight.Medium)
-                    Slider(
-                        value = pollMs.toFloat(),
-                        onValueChange = { pollMs = it.toInt() },
-                        valueRange = 1000f..10000f,
-                        steps = 17,
-                        onValueChangeFinished = {
-                            scope.launch { Prefs.setPollMs(ctx, pollMs) }
-                        }
-                    )
-                    Text(
-                        "短=切换跟手但耗电略多; 长=省电但有延迟",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

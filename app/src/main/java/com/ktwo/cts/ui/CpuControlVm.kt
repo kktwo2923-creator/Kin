@@ -63,10 +63,14 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
 
     init { reload() }
 
+    // 设备实际 CPU policy(从 /sys 动态发现),用于让面板按真机簇展示/读频率
+    private var devicePolicies: List<Int> = emptyList()
+
     fun reload() {
         viewModelScope.launch {
             _loading.value = true
             val parsed = withContext(Dispatchers.IO) {
+                if (devicePolicies.isEmpty()) devicePolicies = SysfsReader.discoverPolicies()
                 CpuControlCfg.parse(RootShell.readConfigRaw())
             }
             _cfg.value = parsed
@@ -77,15 +81,44 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
                 else -> parsed.profileNames.firstOrNull() ?: ""
             }
             _selected.value = pick
-            _editing.value = parsed.profile(pick)
+            _editing.value = deviceAligned(parsed.profile(pick), parsed.policyMap)
             _loading.value = false
         }
     }
 
     fun selectProfile(name: String) {
         _selected.value = name
-        // 切画像时丢弃未保存的编辑,载入该画像的最新副本
-        _editing.value = _cfg.value.profile(name)
+        // 切画像时丢弃未保存的编辑,载入该画像的最新副本(按真机簇对齐)
+        _editing.value = deviceAligned(_cfg.value.profile(name), _cfg.value.policyMap)
+    }
+
+    /**
+     * 让画像的簇列表对齐设备实际 policy(从 /sys 发现):
+     *  - 每个真机 policy 出一张卡;cN 索引取 config Policy 映射里指向该 policy 的那个,
+     *    没有则按顺序兜底(保证写回 freq_*_cN 时能落到 daemon 认的字段)。
+     *  - 频率/调速器候选项在 UI 层用 availFreqs/availGovernors 直接读该 policy 的 sysfs。
+     */
+    private fun deviceAligned(p: ProfileModel?, pm: com.ktwo.cts.data.PolicyMap): ProfileModel? {
+        p ?: return null
+        if (devicePolicies.isEmpty()) return p
+        val clusters = devicePolicies.mapIndexed { i, policy ->
+            val cIndex = pm.cToPolicy.indexOf(policy).let { if (it >= 0) it else i }
+            val existing = p.clusters.firstOrNull { it.cIndex == cIndex }
+            com.ktwo.cts.data.ClusterModelCfg(
+                cIndex = cIndex,
+                policy = policy,
+                minFreqKhz = existing?.minFreqKhz ?: "",
+                maxFreqKhz = existing?.maxFreqKhz ?: "",
+                governor = existing?.governor ?: "",
+            )
+        }
+        return p.copy(clusters = clusters)
+    }
+
+    /** 簇显示名:用该 policy 的实际核数(related_cpus) */
+    fun clusterName(policy: Int): String {
+        val n = SysfsReader.relatedCpus(policy).size
+        return if (n > 0) "$n 核簇" else "簇"
     }
 
     private suspend fun loadLive(): LiveStatus {

@@ -79,7 +79,6 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
                 onSelect = vm::selectProfile,
             )
 
-            val pm = cfg.policyMap
             val prof = editing
 
             if (prof == null) {
@@ -96,7 +95,7 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
                 prof.clusters.forEach { c ->
                     ClusterCard(
                         cfg = c,
-                        displayName = pm.displayName(c.cIndex),
+                        displayName = vm.clusterName(c.policy),
                         curMhz = live.clusterFreqMhz[c.policy] ?: -1,
                         liveGov = live.clusterGov[c.policy].orEmpty(),
                         availFreqsKhz = vm.availFreqsKhz(c.policy),
@@ -341,18 +340,24 @@ private fun CoreOnlineCard(online: List<Int>, onToggle: (Int) -> Unit) {
             for (row in 0 until 2) {
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     for (col in 0 until 4) {
                         val idx = row * 4 + col
                         // -1(不指定)在 UI 上当作开
                         val on = online.getOrElse(idx) { 1 } != 0
-                        Row(
+                        // 竖排居中: 复选框在上、CPU 标签在下,文字不换行
+                        Column(
                             Modifier.weight(1f).clickable { onToggle(idx) },
-                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Checkbox(checked = on, onCheckedChange = { onToggle(idx) })
-                            Text("CPU$idx", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "CPU$idx",
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
                         }
                     }
                 }
