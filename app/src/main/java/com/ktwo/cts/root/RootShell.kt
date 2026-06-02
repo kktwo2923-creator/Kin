@@ -123,4 +123,60 @@ object RootShell {
         if (mode == "follow") cur.remove(pkg) else cur[pkg] = mode
         return writePerApp(cur, globalMode)
     }
+
+    // ============ config.json 读写(CPU 控制面板;daemon 靠 inotify 热重载) ============
+    private const val CONFIG = "$CTS_DIR/config.json"
+
+    /** 状态文件:daemon 周期写出的实时功耗/频率(App 只读) */
+    private const val STATUS = "$CTS_DIR/status.json"
+
+    /** 读取 config.json 原始文本(免 root 优先,失败再 root) */
+    fun readConfigRaw(): String {
+        runCatching {
+            val f = java.io.File(CONFIG)
+            if (f.canRead()) {
+                val s = f.readText()
+                if (s.isNotBlank()) return s
+            }
+        }
+        return Shell.cmd("cat $CONFIG 2>/dev/null").exec().out.joinToString("\n")
+    }
+
+    /**
+     * 写回 config.json。base64 落地,避免 JSON 里的引号/换行/特殊字符破坏 shell。
+     * 与 perapp 同款范式。写成功后 daemon 的 configTriggerTask(inotify)会热重载。
+     * 额外 touch 目录:/sdcard 是 FUSE,inotify 偶尔漏文件事件,touch 目录补触发。
+     */
+    fun writeConfigRaw(json: String): Boolean {
+        val b64 = android.util.Base64.encodeToString(
+            json.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
+        )
+        return Shell.cmd(
+            "mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $CONFIG; touch $CTS_DIR"
+        ).exec().isSuccess
+    }
+
+    /** 读取 daemon 写出的 status.json 原始文本(免 root 优先) */
+    fun readStatusRaw(): String {
+        runCatching {
+            val f = java.io.File(STATUS)
+            if (f.canRead()) {
+                val s = f.readText()
+                if (s.isNotBlank()) return s
+            }
+        }
+        return Shell.cmd("cat $STATUS 2>/dev/null").exec().out.joinToString("\n")
+    }
+
+    /** daemon 是否存活:读 daemon.alive(秒级时间戳),15s 内更新视为存活 */
+    fun daemonAlive(): Boolean {
+        val raw = runCatching {
+            val f = java.io.File("$CTS_DIR/daemon.alive")
+            if (f.canRead()) f.readText().trim()
+            else Shell.cmd("cat $CTS_DIR/daemon.alive 2>/dev/null").exec().out.firstOrNull()?.trim()
+        }.getOrNull().orEmpty()
+        val ts = raw.toLongOrNull() ?: return false
+        val nowSec = System.currentTimeMillis() / 1000
+        return (nowSec - ts) in 0..15
+    }
 }

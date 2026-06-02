@@ -1,5 +1,7 @@
 package com.ktwo.cts.ui
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,13 +21,10 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.ktwo.cts.service.CtsAccessibilityService
 import com.ktwo.cts.data.Prefs
+import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
-import com.ktwo.cts.service.NotifyService
+import com.ktwo.cts.service.ForegroundDetector
 import com.ktwo.cts.ui.theme.ThemeMode
 import kotlinx.coroutines.*
 
@@ -35,9 +34,11 @@ fun SettingsScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
-    val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
+    var pollMs by remember { mutableStateOf(2000) }
+    var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
 
     // 壁纸选择器: 打开系统相册(照片选择器),把选中图片复制到 App 私有目录,
@@ -59,51 +60,10 @@ fun SettingsScreen() {
         }
     }
 
-    // 开启常驻通知: 先请求通知权限,再开服务;并确保悬浮窗权限(供点击弹窗)
-    fun enableNotify() = scope.launch {
-        Prefs.setNotifyEnabled(ctx, true)
-        NotifyService.start(ctx)
-        if (!android.provider.Settings.canDrawOverlays(ctx)) {
-            runCatching {
-                ctx.startActivity(
-                    android.content.Intent(
-                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        android.net.Uri.parse("package:${ctx.packageName}")
-                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
-        }
-    }
-    val notifyPermLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { _ -> enableNotify() }
-    fun toggleNotify(on: Boolean) {
-        if (on) {
-            if (android.os.Build.VERSION.SDK_INT >= 33 &&
-                ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                notifyPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-            } else enableNotify()
-        } else scope.launch {
-            Prefs.setNotifyEnabled(ctx, false)
-            NotifyService.stop(ctx)
-        }
-    }
-
     LaunchedEffect(Unit) {
+        pollMs = Prefs.pollMs(ctx)
+        hasUsagePerm = ForegroundDetector(ctx).hasUsageStatsPermission()
         isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
-    }
-
-    // 无障碍开关状态: 从设置页返回时刷新
-    var accEnabled by remember { mutableStateOf(CtsAccessibilityService.isEnabled(ctx)) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val obs = LifecycleEventObserver { _, e ->
-            if (e == Lifecycle.Event.ON_RESUME) accEnabled = CtsAccessibilityService.isEnabled(ctx)
-        }
-        lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -172,38 +132,67 @@ fun SettingsScreen() {
                 }
             }
 
-            Section("通知") {
+            Section("接管行为") {
                 ToggleRow(
-                    title = "状态栏常驻通知",
-                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
-                    checked = notifyEnabled,
-                    onCheckedChange = { toggleNotify(it) },
-                )
-            }
-
-            Section("后台常驻") {
-                PermRow(
-                    name = "无障碍常驻",
-                    granted = accEnabled,
-                    desc = "开启后管理器常驻后台不被杀,并随系统开机自启(不读取屏幕内容)",
-                    icon = Icons.Outlined.Accessibility,
-                    onAction = {
-                        ctx.startActivity(
-                            android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    },
+                    title = "STRICT 同模式重发",
+                    desc = "切换应用时,即使目标模式与当前相同也重发一次(部分游戏需要)",
+                    checked = strict,
+                    onCheckedChange = { scope.launch { PrefsExt.setStrict(ctx, it) } }
                 )
             }
 
             Section("权限") {
-                PermRow(
-                    name = "Root 权限",
-                    granted = isRoot,
-                    desc = "读写画像表 / 调用 powercfg.sh 必需",
-                    icon = Icons.Outlined.Security,
-                    onAction = null,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    PermRow(
+                        name = "Root 权限",
+                        granted = isRoot,
+                        desc = "调用模块 powercfg.sh 必需",
+                        icon = Icons.Outlined.Security,
+                        onAction = null,
+                    )
+                    HorizontalDivider()
+                    PermRow(
+                        name = "查看使用情况",
+                        granted = hasUsagePerm,
+                        desc = "无 root 时的前台检测兜底",
+                        icon = Icons.Outlined.Visibility,
+                        onAction = {
+                            ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    )
+                    HorizontalDivider()
+                    PermRow(
+                        name = "电池优化白名单",
+                        granted = false,
+                        desc = "防止后台被杀",
+                        icon = Icons.Outlined.BatteryFull,
+                        onAction = {
+                            ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    )
+                }
+            }
+
+            Section("性能") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("前台 App 轮询间隔: ${pollMs / 1000.0} 秒", fontWeight = FontWeight.Medium)
+                    Slider(
+                        value = pollMs.toFloat(),
+                        onValueChange = { pollMs = it.toInt() },
+                        valueRange = 1000f..10000f,
+                        steps = 17,
+                        onValueChangeFinished = {
+                            scope.launch { Prefs.setPollMs(ctx, pollMs) }
+                        }
+                    )
+                    Text(
+                        "短=切换跟手但耗电略多; 长=省电但有延迟",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Section("关于") {
@@ -236,7 +225,10 @@ private fun ToggleRow(
     title: String, desc: String,
     checked: Boolean, onCheckedChange: (Boolean) -> Unit,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Medium)
             Text(

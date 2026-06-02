@@ -3,6 +3,8 @@ package com.ktwo.cts.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -20,11 +22,12 @@ private data class TopDest(
     val icon: ImageVector,
 )
 
-// 日志作为第 2 个 tab
+// CPU 控制作为第 2 个 tab
 private val TABS = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
-    TopDest("logs",     "日志", CtsIcons.Logs),
+    TopDest("cpu",      "CPU", Icons.Outlined.Memory),
     TopDest("apps",     "应用", CtsIcons.Apps),
+    TopDest("logs",     "日志", CtsIcons.Logs),
     TopDest("settings", "设置", CtsIcons.Settings),
 )
 
@@ -73,6 +76,7 @@ fun AppRoot() {
                     modifier = Modifier.fillMaxSize()
                 ) {
                     composable("home")     { HomeScreen() }
+                    composable("cpu")      { CpuControlScreen() }
                     composable("apps")     { AppsScreen() }
                     composable("logs")     { LogScreen() }
                     composable("settings") { SettingsScreen() }

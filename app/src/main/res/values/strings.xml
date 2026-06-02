@@ -1,5 +1,3 @@
 <resources>
     <string name="app_name">OnePlus V Pro</string>
-    <string name="accessibility_label">OnePlus V Pro 常驻</string>
-    <string name="accessibility_desc">用于让 OnePlus V Pro 调度管理器常驻后台、避免被系统杀死。不读取屏幕内容。</string>
 </resources>

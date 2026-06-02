@@ -2,17 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- 调度切换由 CTS 模块负责; App 做画像编辑/状态展示/日志。 -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
-    <!-- 状态栏常驻通知(显示模式+电量,点击快切) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- 在其它 App 之上弹出快切悬浮窗 -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- 开机自启 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:name=".CtsApp"
@@ -35,39 +36,15 @@
             </intent-filter>
         </activity>
 
-        <!-- 通知点击弹出的快切悬浮窗(透明对话框) -->
-        <activity
-            android:name=".ui.QuickSwitchActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask"
-            android:theme="@style/Theme.OnePlusVPro.Dialog" />
-
-        <!-- 状态栏常驻通知服务 -->
         <service
-            android:name=".service.NotifyService"
+            android:name=".service.ScheduleService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Persistent status notification showing current power mode and battery, with a quick mode switcher" />
+                android:value="System scheduler companion: monitors foreground app and switches power profile via root" />
         </service>
 
-        <!-- 无障碍常驻服务(保活 + 开机系统自动拉起) -->
-        <service
-            android:name=".service.CtsAccessibilityService"
-            android:exported="false"
-            android:label="@string/accessibility_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_config" />
-        </service>
-
-        <!-- 开机自启 -->
         <receiver
             android:name=".service.BootReceiver"
             android:exported="true"
