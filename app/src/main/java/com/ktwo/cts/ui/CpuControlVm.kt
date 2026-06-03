@@ -139,6 +139,11 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
     fun availGovernors(policy: Int): List<String> =
         govCache.getOrPut(policy) { SysfsReader.availableGovernors(policy) }
 
+    // GPU 可用频率(MHz),只读一次
+    private var gpuFreqCache: List<Int>? = null
+    fun availGpuMhz(): List<Int> =
+        gpuFreqCache ?: SysfsReader.availableGpuFreqsMhz().also { gpuFreqCache = it }
+
     // ---------- 编辑动作(只改内存中的 editing 副本) ----------
 
     fun setClusterMin(cIndex: Int, khz: Long) = updateCluster(cIndex) { it.copy(minFreqKhz = khz.toString()) }

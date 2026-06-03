@@ -106,7 +106,10 @@ fun HomeScreen() {
                         onCheckedChange = { on ->
                             scope.launch {
                                 Prefs.setEnabled(ctx, on)
-                                if (on) ScheduleService.start(ctx) else ScheduleService.stop(ctx)
+                                // daemon 存活时由它主导,不启动 App 端兜底服务(避免多余的"启动中"通知)
+                                if (on) {
+                                    if (!RootShell.daemonAlive()) ScheduleService.start(ctx)
+                                } else ScheduleService.stop(ctx)
                             }
                         }
                     )

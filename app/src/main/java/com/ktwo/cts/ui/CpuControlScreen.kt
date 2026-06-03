@@ -110,6 +110,7 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
                     minMhz = prof.gpuMinInt,
                     maxMhz = prof.gpuMaxInt,
                     curMhz = live.gpuMhz,
+                    availMhz = vm.availGpuMhz(),
                     onChange = vm::setGpu,
                 )
 
@@ -304,10 +305,11 @@ private fun GpuCard(
     minMhz: Int,
     maxMhz: Int,
     curMhz: Int,
+    availMhz: List<Int>,
     onChange: (Int, Int) -> Unit,
 ) {
     TonalCard(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("GPU", fontWeight = FontWeight.Bold)
                 if (curMhz > 0) {
@@ -318,17 +320,38 @@ private fun GpuCard(
                     )
                 }
             }
-            KeyValueRow("最小频率", if (minMhz > 0) "$minMhz MHz" else "—")
-            KeyValueRow("最大频率", if (maxMhz > 0) "$maxMhz MHz" else "—")
+            // 候选项从 sysfs 的 GPU 可用频率表读;读不到则禁用选择,仅显示当前值
+            MhzPickerRow("最小频率", minMhz, availMhz) { onChange(it, maxMhz) }
+            MhzPickerRow("最大频率", maxMhz, availMhz) { onChange(minMhz, it) }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun KeyValueRow(k: String, v: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(k, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(v, fontWeight = FontWeight.Medium)
+private fun MhzPickerRow(
+    label: String,
+    valueMhz: Int,
+    availMhz: List<Int>,
+    onPick: (Int) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            AssistChip(
+                onClick = { if (availMhz.isNotEmpty()) expanded = true },
+                label = { Text(if (valueMhz > 0) "$valueMhz MHz" else "—") },
+            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                availMhz.forEach { mhz ->
+                    DropdownMenuItem(
+                        text = { Text("$mhz MHz") },
+                        onClick = { onPick(mhz); expanded = false },
+                    )
+                }
+            }
+        }
     }
 }
 

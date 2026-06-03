@@ -50,6 +50,14 @@ class ScheduleService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // daemon 存活时由它主导切换,本前台服务多余 -> 满足 FGS 合约后立刻撤通知自停,
+        // 避免状态栏挂一条没用的"启动中…"。daemon 不在时才作为兜底运行。
+        if (RootShell.daemonAlive()) {
+            startForegroundCompat()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         pm = getSystemService(POWER_SERVICE) as PowerManager
         screenOn = pm.isInteractive
         loadImePackages()

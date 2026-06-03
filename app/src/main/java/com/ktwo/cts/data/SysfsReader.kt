@@ -174,4 +174,28 @@ object SysfsReader {
         }
         return -1
     }
+
+    // GPU 可用频率表(多路径兜底);返回 MHz 升序、去重
+    private val GPU_AVAIL_PATHS = listOf(
+        "/sys/class/kgsl/kgsl-3d0/freq_table_mhz",                 // 直接 MHz
+        "/sys/class/kgsl/kgsl-3d0/devfreq/available_frequencies",  // Hz
+        "/sys/class/kgsl/kgsl-3d0/gpu_available_frequencies",      // Hz
+        "/sys/class/devfreq/gpufreq/available_frequencies",        // 部分 Mali, Hz
+    )
+
+    fun availableGpuFreqsMhz(): List<Int> {
+        for (p in GPU_AVAIL_PATHS) {
+            val raw = readFileOrRoot(p) ?: continue
+            val nums = raw.split(Regex("\\s+")).mapNotNull { it.toLongOrNull() }.filter { it > 0 }
+            if (nums.isEmpty()) continue
+            val mhz = if (p.endsWith("freq_table_mhz")) {
+                nums.map { it.toInt() }
+            } else {
+                nums.map { if (it > 100_000) (it / 1_000_000).toInt() else (it / 1000).toInt() }
+            }
+            val list = mhz.filter { it in 1..3000 }.distinct().sorted()
+            if (list.isNotEmpty()) return list
+        }
+        return emptyList()
+    }
 }
