@@ -145,38 +145,37 @@ fun GlassSurface(
             state = hazeState,
             style = HazeStyle(
                 backgroundColor = tint,
-                tints = listOf(HazeTint(tint.copy(alpha = 0.40f))),
+                // 更透(0.40 -> 0.26),贴近 iOS 26 液态玻璃的通透感
+                tints = listOf(HazeTint(tint.copy(alpha = 0.26f))),
                 blurRadius = blurRadius,
                 noiseFactor = 0.04f,
             ),
         ) {
-            // 模糊输入降采样: GPU 只按缩小后的分辨率算模糊,大幅降开销、消除切页卡顿
             inputScale = HazeInputScale.Auto
         }
     } else {
-        Modifier.background(tint.copy(alpha = 0.62f))
+        Modifier.background(tint.copy(alpha = 0.55f))
     }
     Box(
         modifier
             .clip(shape)
             .then(glassMod)
-            // 顶面高光
+            // 顶面镜面高光: 顶部一条更亮的反光,快速衰减(液态玻璃的"亮顶")
             .background(
                 Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.22f),
-                    0.45f to Color.White.copy(alpha = 0.05f),
+                    0f to Color.White.copy(alpha = 0.38f),
+                    0.12f to Color.White.copy(alpha = 0.12f),
+                    0.5f to Color.White.copy(alpha = 0.03f),
                     1f to Color.Transparent,
                 )
             )
-            // 渐变描边
+            // 渐变描边: 上缘亮(镜面)、两侧/底淡,凸显玻璃厚度
             .border(
                 width = 1.dp,
-                brush = Brush.linearGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.45f),
-                        Color.White.copy(alpha = 0.10f),
-                        Color.White.copy(alpha = 0.20f),
-                    )
+                brush = Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.70f),
+                    0.35f to Color.White.copy(alpha = 0.16f),
+                    1f to Color.White.copy(alpha = 0.10f),
                 ),
                 shape = shape,
             ),
