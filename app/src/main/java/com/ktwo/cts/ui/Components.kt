@@ -9,6 +9,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -19,7 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,10 +33,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
@@ -40,6 +47,7 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import kotlin.math.roundToInt
 
 /**
  * 共享 UI 组件 - SukiSU-Ultra 风格 + 真·液态玻璃。
@@ -186,8 +194,8 @@ fun GlassSurface(
 /**
  * iOS 26 风格悬浮液态玻璃导航 —
  *  - 紧凑胶囊,左右留边浮起,Haze 真实模糊背景
- *  - 选中高亮块用弹簧动画在 tab 间「滑动」(animateDpAsState + spring)
- *  - 选中图标弹性放大,文字淡入
+ *  - 选中高亮块是「液态玻璃药丸」,可点也可用手指在导航条上自由拖动滑动,
+ *    松手吸附到最近的 tab(弹簧动画)
  */
 @Composable
 fun FloatingGlassNav(
@@ -212,34 +220,85 @@ fun FloatingGlassNav(
             BoxWithConstraints(
                 Modifier.fillMaxWidth().height(64.dp).padding(8.dp),
             ) {
+                val density = LocalDensity.current
                 val itemWidth = maxWidth / count
-                // 滑动高亮块(圆角小方块,居中在图标下),弹簧动画驱动水平偏移
-                val indicatorOffset by animateDpAsState(
-                    targetValue = itemWidth * selectedIndex,
+                val itemPx = with(density) { itemWidth.toPx() }
+
+                // 拖动中的手指 x(px),null = 未拖动
+                var dragX by remember { mutableStateOf<Float?>(null) }
+                val dragging = dragX != null
+                // 拖动时高亮居中跟手,否则停在选中 tab
+                val targetPx = if (dragging)
+                    (dragX!! - itemPx / 2f).coerceIn(0f, (count - 1) * itemPx)
+                else
+                    itemPx * selectedIndex
+                val animPx by animateFloatAsState(
+                    targetValue = targetPx,
                     animationSpec = spring(
-                        dampingRatio = 0.6f,          // 略带回弹
-                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = if (dragging) 1f else 0.6f,
+                        stiffness = if (dragging) Spring.StiffnessHigh else Spring.StiffnessMediumLow,
                     ),
                     label = "navIndicator",
                 )
+                // 当前高亮的 tab(拖动时为手指所在格)
+                val liveIndex = if (dragging)
+                    (dragX!! / itemPx).toInt().coerceIn(0, count - 1)
+                else selectedIndex
+
+                // 液态玻璃高亮药丸
                 Box(
                     Modifier
-                        .offset(x = indicatorOffset)
+                        .offset { IntOffset(animPx.roundToInt(), 0) }
                         .width(itemWidth)
                         .fillMaxHeight()
-                        .padding(horizontal = 6.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                        .padding(horizontal = 5.dp, vertical = 6.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                )
+                            )
+                        )
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.White.copy(alpha = 0.30f),
+                                0.5f to Color.Transparent,
+                            )
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
                 )
-                // tab 项
-                Row(Modifier.fillMaxSize()) {
+
+                // tab 行:点选 + 拖动滑选
+                Row(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(count, itemPx) {
+                            detectTapGestures { pos ->
+                                onSelect((pos.x / itemPx).toInt().coerceIn(0, count - 1))
+                            }
+                        }
+                        .pointerInput(count, itemPx) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { off -> dragX = off.x },
+                                onHorizontalDrag = { _, amt ->
+                                    dragX = ((dragX ?: 0f) + amt).coerceIn(0f, count * itemPx)
+                                },
+                                onDragEnd = {
+                                    val d = dragX; dragX = null
+                                    if (d != null) onSelect((d / itemPx).toInt().coerceIn(0, count - 1))
+                                },
+                                onDragCancel = { dragX = null },
+                            )
+                        }
+                ) {
                     items.forEachIndexed { i, (label, icon) ->
                         NavTab(
                             label = label,
                             icon = icon,
-                            selected = i == selectedIndex,
+                            selected = i == liveIndex,
                             modifier = Modifier.width(itemWidth).fillMaxHeight(),
-                            onClick = { onSelect(i) },
                         )
                     }
                 }
@@ -254,7 +313,6 @@ private fun NavTab(
     icon: ImageVector,
     selected: Boolean,
     modifier: Modifier,
-    onClick: () -> Unit,
 ) {
     val fg by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.primary
@@ -272,13 +330,7 @@ private fun NavTab(
         animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
         label = "navScale",
     )
-    val interaction = remember { MutableInteractionSource() }
-    Box(
-        modifier
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(interaction, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(modifier, contentAlignment = Alignment.Center) {
         // 图标: 选中时整体上移 5dp 给下方文字腾位
         Icon(
             icon,
