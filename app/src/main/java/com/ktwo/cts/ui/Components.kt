@@ -218,7 +218,7 @@ fun FloatingGlassNav(
             blurRadius = 30.dp,
         ) {
             BoxWithConstraints(
-                Modifier.fillMaxWidth().height(64.dp).padding(8.dp),
+                Modifier.fillMaxWidth().height(70.dp).padding(7.dp),
             ) {
                 val density = LocalDensity.current
                 val itemWidth = maxWidth / count
@@ -251,8 +251,8 @@ fun FloatingGlassNav(
                         .offset { IntOffset(animPx.roundToInt(), 0) }
                         .width(itemWidth)
                         .fillMaxHeight()
-                        .padding(horizontal = 5.dp, vertical = 6.dp)
-                        .clip(RoundedCornerShape(20.dp))
+                        .padding(horizontal = 3.dp, vertical = 2.dp)
+                        .clip(RoundedCornerShape(22.dp))
                         .background(
                             Brush.verticalGradient(
                                 listOf(
@@ -267,7 +267,7 @@ fun FloatingGlassNav(
                                 0.5f to Color.Transparent,
                             )
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(22.dp))
                 )
 
                 // tab 行:点选 + 拖动滑选
@@ -326,23 +326,24 @@ private fun NavTab(
         label = "navLabel",
     )
     val iconScale by animateFloatAsState(
-        targetValue = if (selected) 1.12f else 1f,
+        targetValue = if (selected) 1.1f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
         label = "navScale",
     )
-    Box(modifier, contentAlignment = Alignment.Center) {
-        // 图标: 选中时整体上移 5dp 给下方文字腾位
+    // 图标 + 文字居中竖列,整列被高亮药丸罩住
+    Column(
+        modifier,
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Icon(
             icon,
             contentDescription = label,
             tint = fg,
-            modifier = Modifier
-                .size(22.dp)
-                .offset(y = (-5).dp * labelProgress)
-                .scale(iconScale),
+            modifier = Modifier.size(22.dp).scale(iconScale),
         )
-        // 文字: 固定在偏下位置,随选中从下淡入上浮
         if (labelProgress > 0.01f) {
+            Spacer(Modifier.height(2.dp * labelProgress))
             Text(
                 label,
                 color = fg.copy(alpha = labelProgress),
@@ -350,10 +351,6 @@ private fun NavTab(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 softWrap = false,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = (6.dp) * (1f - labelProgress))
-                    .padding(bottom = 2.dp),
             )
         }
     }
