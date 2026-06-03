@@ -1,5 +1,10 @@
 package com.ktwo.cts.ui
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
@@ -10,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
@@ -43,6 +49,7 @@ fun AppRoot() {
     val curRoute = entry?.destination?.hierarchy
     val hazeState = remember { HazeState() }
     val ctx = LocalContext.current
+    val view = LocalView.current
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
@@ -62,6 +69,9 @@ fun AppRoot() {
                         selectedIndex = selectedIndex,
                     ) { idx ->
                         val d = TABS[idx]
+                        if (d.route != entry?.destination?.route) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                        }
                         nav.navigate(d.route) {
                             popUpTo(nav.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
@@ -70,10 +80,21 @@ fun AppRoot() {
                     }
                 }
             ) { _ ->
+                // SukiSU 风格淡入淡出 + 轻微缩放的页面过渡(fade-through)
                 NavHost(
                     navController = nav,
                     startDestination = "home",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    enterTransition = {
+                        fadeIn(tween(220, delayMillis = 80)) +
+                            scaleIn(tween(220, delayMillis = 80), initialScale = 0.94f)
+                    },
+                    exitTransition = { fadeOut(tween(90)) },
+                    popEnterTransition = {
+                        fadeIn(tween(220, delayMillis = 80)) +
+                            scaleIn(tween(220, delayMillis = 80), initialScale = 0.94f)
+                    },
+                    popExitTransition = { fadeOut(tween(90)) },
                 ) {
                     composable("home")     { HomeScreen() }
                     composable("cpu")      { CpuControlScreen() }
