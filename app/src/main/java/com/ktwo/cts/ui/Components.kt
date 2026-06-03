@@ -194,8 +194,9 @@ fun GlassSurface(
 /**
  * iOS 26 风格悬浮液态玻璃导航 —
  *  - 紧凑胶囊,左右留边浮起,Haze 真实模糊背景
- *  - 选中高亮块是「液态玻璃药丸」,可点也可用手指在导航条上自由拖动滑动,
- *    松手吸附到最近的 tab(弹簧动画)
+ *  - 选中指示是一个「液态玻璃圆」,完全对称地居中在每格图标后面;
+ *    图标固定不动(只做温和缩放,不位移),不会上下乱跳
+ *  - 可点选,也可用手指在导航条上拖动,圆跟手滑动,松手吸附到最近 tab
  */
 @Composable
 fun FloatingGlassNav(
@@ -207,7 +208,7 @@ fun FloatingGlassNav(
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 40.dp)
+            .padding(horizontal = 36.dp)
             .padding(bottom = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -218,59 +219,58 @@ fun FloatingGlassNav(
             blurRadius = 30.dp,
         ) {
             BoxWithConstraints(
-                Modifier.fillMaxWidth().height(70.dp).padding(7.dp),
+                Modifier.fillMaxWidth().height(64.dp),
             ) {
                 val density = LocalDensity.current
                 val itemWidth = maxWidth / count
                 val itemPx = with(density) { itemWidth.toPx() }
+                val barPx = with(density) { maxWidth.toPx() }
+                val indicator = 48.dp
+                val indicatorPx = with(density) { indicator.toPx() }
 
                 // 拖动中的手指 x(px),null = 未拖动
                 var dragX by remember { mutableStateOf<Float?>(null) }
                 val dragging = dragX != null
-                // 拖动时高亮居中跟手,否则停在选中 tab
-                val targetPx = if (dragging)
-                    (dragX!! - itemPx / 2f).coerceIn(0f, (count - 1) * itemPx)
+                // 高亮圆的"圆心 x":拖动时跟手(夹在第一格/末格中心之间),否则居中在选中格
+                val centerPx = if (dragging)
+                    dragX!!.coerceIn(itemPx / 2f, barPx - itemPx / 2f)
                 else
-                    itemPx * selectedIndex
-                val animPx by animateFloatAsState(
-                    targetValue = targetPx,
+                    itemPx * selectedIndex + itemPx / 2f
+                val animCenter by animateFloatAsState(
+                    targetValue = centerPx,
                     animationSpec = spring(
                         dampingRatio = if (dragging) 1f else 0.6f,
                         stiffness = if (dragging) Spring.StiffnessHigh else Spring.StiffnessMediumLow,
                     ),
                     label = "navIndicator",
                 )
-                // 当前高亮的 tab(拖动时为手指所在格)
-                val liveIndex = if (dragging)
-                    (dragX!! / itemPx).toInt().coerceIn(0, count - 1)
-                else selectedIndex
+                val liveIndex = (centerPx / itemPx).toInt().coerceIn(0, count - 1)
 
-                // 液态玻璃高亮药丸
+                // 液态玻璃高亮圆(对称居中,垂直居中)
                 Box(
                     Modifier
-                        .offset { IntOffset(animPx.roundToInt(), 0) }
-                        .width(itemWidth)
-                        .fillMaxHeight()
-                        .padding(horizontal = 3.dp, vertical = 2.dp)
-                        .clip(RoundedCornerShape(22.dp))
+                        .align(Alignment.CenterStart)
+                        .offset { IntOffset((animCenter - indicatorPx / 2f).roundToInt(), 0) }
+                        .size(indicator)
+                        .clip(CircleShape)
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
                                 )
                             )
                         )
                         .background(
                             Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = 0.30f),
+                                0f to Color.White.copy(alpha = 0.32f),
                                 0.5f to Color.Transparent,
                             )
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(22.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.40f), CircleShape)
                 )
 
-                // tab 行:点选 + 拖动滑选
+                // tab 行:点选 + 拖动滑选(图标固定不动)
                 Row(
                     Modifier
                         .fillMaxSize()
@@ -283,7 +283,7 @@ fun FloatingGlassNav(
                             detectHorizontalDragGestures(
                                 onDragStart = { off -> dragX = off.x },
                                 onHorizontalDrag = { _, amt ->
-                                    dragX = ((dragX ?: 0f) + amt).coerceIn(0f, count * itemPx)
+                                    dragX = ((dragX ?: 0f) + amt).coerceIn(0f, barPx)
                                 },
                                 onDragEnd = {
                                     val d = dragX; dragX = null
@@ -319,40 +319,19 @@ private fun NavTab(
         else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "navFg",
     )
-    // 选中: 图标轻微上移 + 放大,文字从下方淡入弹出(不挤压图标)
-    val labelProgress by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow),
-        label = "navLabel",
-    )
+    // 仅温和缩放(以图标中心缩放,不产生位移),保证完全不上下跳
     val iconScale by animateFloatAsState(
-        targetValue = if (selected) 1.1f else 1f,
+        targetValue = if (selected) 1.18f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
         label = "navScale",
     )
-    // 图标 + 文字居中竖列,整列被高亮药丸罩住
-    Column(
-        modifier,
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    Box(modifier, contentAlignment = Alignment.Center) {
         Icon(
             icon,
             contentDescription = label,
             tint = fg,
-            modifier = Modifier.size(22.dp).scale(iconScale),
+            modifier = Modifier.size(24.dp).scale(iconScale),
         )
-        if (labelProgress > 0.01f) {
-            Spacer(Modifier.height(2.dp * labelProgress))
-            Text(
-                label,
-                color = fg.copy(alpha = labelProgress),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                softWrap = false,
-            )
-        }
     }
 }
 
