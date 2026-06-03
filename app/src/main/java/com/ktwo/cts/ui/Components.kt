@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
@@ -126,7 +127,10 @@ fun GlassSurface(
                 blurRadius = blurRadius,
                 noiseFactor = 0.04f,
             ),
-        )
+        ) {
+            // 模糊输入降采样: GPU 只按缩小后的分辨率算模糊,大幅降开销、消除切页卡顿
+            inputScale = HazeInputScale.Auto
+        }
     } else {
         Modifier.background(tint.copy(alpha = 0.62f))
     }

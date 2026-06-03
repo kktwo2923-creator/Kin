@@ -4,7 +4,6 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
@@ -80,21 +79,15 @@ fun AppRoot() {
                     }
                 }
             ) { _ ->
-                // SukiSU 风格淡入淡出 + 轻微缩放的页面过渡(fade-through)
+                // 轻量快速淡入淡出过渡(去掉整页缩放,避免缩放时反复重算 Haze 模糊导致卡顿)
                 NavHost(
                     navController = nav,
                     startDestination = "home",
                     modifier = Modifier.fillMaxSize(),
-                    enterTransition = {
-                        fadeIn(tween(220, delayMillis = 80)) +
-                            scaleIn(tween(220, delayMillis = 80), initialScale = 0.94f)
-                    },
-                    exitTransition = { fadeOut(tween(90)) },
-                    popEnterTransition = {
-                        fadeIn(tween(220, delayMillis = 80)) +
-                            scaleIn(tween(220, delayMillis = 80), initialScale = 0.94f)
-                    },
-                    popExitTransition = { fadeOut(tween(90)) },
+                    enterTransition = { fadeIn(tween(140)) },
+                    exitTransition = { fadeOut(tween(140)) },
+                    popEnterTransition = { fadeIn(tween(140)) },
+                    popExitTransition = { fadeOut(tween(140)) },
                 ) {
                     composable("home")     { HomeScreen() }
                     composable("cpu")      { CpuControlScreen() }
