@@ -31,7 +31,7 @@ class QuickSwitchActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val ctx = LocalContext.current
-            val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
+            val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "dynamic")
             AppTheme(mode = ThemeMode.fromKey(themeKey)) {
                 QuickSwitchDialog(onDismiss = { finish() })
             }

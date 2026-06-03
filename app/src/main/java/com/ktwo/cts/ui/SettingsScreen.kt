@@ -35,7 +35,7 @@ fun SettingsScreen() {
     val scope = rememberCoroutineScope()
 
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
-    val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
+    val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "dynamic")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
     val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
     var hasUsagePerm by remember { mutableStateOf(false) }

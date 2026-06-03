@@ -27,9 +27,9 @@ object Prefs {
         ctx.dataStore.edit { it[NOTIFY_KEY] = b }
     }
 
-    /** 主题模式(system/light/dark/mono),默认跟随系统 */
+    /** 主题模式(dynamic/system/light/dark/mono),默认动态取色 */
     fun themeModeFlow(ctx: Context): Flow<String> =
-        ctx.dataStore.data.map { it[THEME_KEY] ?: "system" }
+        ctx.dataStore.data.map { it[THEME_KEY] ?: "dynamic" }
     suspend fun setThemeMode(ctx: Context, mode: String) {
         ctx.dataStore.edit { it[THEME_KEY] = mode }
     }

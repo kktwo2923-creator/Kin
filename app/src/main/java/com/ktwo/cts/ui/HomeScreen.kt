@@ -171,7 +171,7 @@ private fun ModeButton(mode: Mode, selected: Boolean, modifier: Modifier, onClic
     GlassSurface(
         modifier = modifier
             .height(72.dp)
-            .clickable(onClick = onClick),
+            .pressClickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         tint = if (selected) MaterialTheme.colorScheme.primaryContainer
                else MaterialTheme.colorScheme.surfaceContainerHigh,

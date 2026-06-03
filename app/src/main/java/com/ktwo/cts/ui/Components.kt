@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,6 +49,27 @@ import dev.chrisbanes.haze.hazeSource
 
 /** 当前页面的 Haze 模糊源状态; 为 null 时玻璃退化为半透明拟态。 */
 val LocalHazeState = compositionLocalOf<HazeState?> { null }
+
+/**
+ * 可点击 + 按压回弹(M3 Expressive 手感):按下时轻微缩小,松开弹回。
+ * 只在按压瞬间动画,几乎零开销。
+ */
+@Composable
+fun Modifier.pressClickable(
+    pressedScale: Float = 0.96f,
+    onClick: () -> Unit,
+): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val s by animateFloatAsState(
+        targetValue = if (pressed) pressedScale else 1f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium),
+        label = "pressScale",
+    )
+    return this
+        .scale(s)
+        .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+}
 
 /**
  * 整屏壁纸背景 — 玻璃的模糊采样源。标 hazeSource 让上层玻璃可采样。

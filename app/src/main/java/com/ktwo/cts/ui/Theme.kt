@@ -1,12 +1,16 @@
 package com.ktwo.cts.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 
 private val LightScheme = lightColorScheme(
     primary = Color(0xFF1F6FEB),
@@ -41,25 +45,34 @@ private val MonoDark = darkColorScheme(
     onSecondaryContainer = Color(0xFFEDEDED),
 )
 
-/** 主题模式: system / light / dark / mono(黑白) */
+/** 主题模式: dynamic(动态取色) / system / light / dark / mono(黑白) */
 enum class ThemeMode(val key: String, val label: String) {
+    DYNAMIC("dynamic", "动态"),
     SYSTEM("system", "跟随系统"),
     LIGHT("light", "浅色"),
     DARK("dark", "深色"),
     MONO("mono", "黑白");
 
     companion object {
-        fun fromKey(k: String?): ThemeMode = entries.firstOrNull { it.key == k } ?: SYSTEM
+        fun fromKey(k: String?): ThemeMode = entries.firstOrNull { it.key == k } ?: DYNAMIC
     }
 }
 
 @Composable
 fun AppTheme(
-    mode: ThemeMode = ThemeMode.SYSTEM,
+    mode: ThemeMode = ThemeMode.DYNAMIC,
     content: @Composable () -> Unit,
 ) {
     val sysDark = isSystemInDarkTheme()
+    val ctx = LocalContext.current
     val scheme: ColorScheme = when (mode) {
+        ThemeMode.DYNAMIC ->
+            // Material You: 颜色跟随系统壁纸自动生成(Android 12+),低版本回退到默认配色
+            if (Build.VERSION.SDK_INT >= 31) {
+                if (sysDark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+            } else {
+                if (sysDark) DarkScheme else LightScheme
+            }
         ThemeMode.LIGHT -> LightScheme
         ThemeMode.DARK -> DarkScheme
         ThemeMode.MONO -> if (sysDark) MonoDark else MonoLight
