@@ -1,6 +1,7 @@
 package com.ktwo.cts.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -192,11 +193,9 @@ fun GlassSurface(
 }
 
 /**
- * iOS 26 风格悬浮液态玻璃导航 —
- *  - 紧凑胶囊,左右留边浮起,Haze 真实模糊背景
- *  - 选中指示是一个「液态玻璃圆」,完全对称地居中在每格图标后面;
- *    图标固定不动(只做温和缩放,不位移),不会上下乱跳
- *  - 可点选,也可用手指在导航条上拖动,圆跟手滑动,松手吸附到最近 tab
+ * iOS 26 / Apple Music 风格悬浮液态玻璃导航 —
+ *  - 未选中: 只显示图标
+ *  - 选中: 横向展开成液态玻璃胶囊,图标 + 文字「左右并排」(横的),平滑展开动画
  */
 @Composable
 fun FloatingGlassNav(
@@ -204,11 +203,10 @@ fun FloatingGlassNav(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
 ) {
-    val count = items.size
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 36.dp)
+            .padding(horizontal = 24.dp)
             .padding(bottom = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -218,88 +216,18 @@ fun FloatingGlassNav(
             tint = MaterialTheme.colorScheme.surfaceContainer,
             blurRadius = 30.dp,
         ) {
-            BoxWithConstraints(
-                Modifier.fillMaxWidth().height(68.dp),
+            Row(
+                Modifier.fillMaxWidth().height(62.dp).padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                val density = LocalDensity.current
-                val itemWidth = maxWidth / count
-                val itemPx = with(density) { itemWidth.toPx() }
-                val barPx = with(density) { maxWidth.toPx() }
-
-                // 拖动中的手指 x(px),null = 未拖动
-                var dragX by remember { mutableStateOf<Float?>(null) }
-                val dragging = dragX != null
-                // 高亮胶囊的左边缘 x:拖动时跟手居中,否则对齐选中格
-                val targetLeft = if (dragging)
-                    (dragX!! - itemPx / 2f).coerceIn(0f, (count - 1) * itemPx)
-                else
-                    itemPx * selectedIndex
-                val animLeft by animateFloatAsState(
-                    targetValue = targetLeft,
-                    animationSpec = spring(
-                        dampingRatio = if (dragging) 1f else 0.6f,
-                        stiffness = if (dragging) Spring.StiffnessHigh else Spring.StiffnessMediumLow,
-                    ),
-                    label = "navIndicator",
-                )
-                val liveIndex = ((animLeft + itemPx / 2f) / itemPx).toInt().coerceIn(0, count - 1)
-
-                // 液态玻璃高亮椭圆胶囊(两端全圆弧,竖向罩住一格的「图标+文字」)
-                Box(
-                    Modifier
-                        .offset { IntOffset(animLeft.roundToInt(), 0) }
-                        .width(itemWidth)
-                        .fillMaxHeight()
-                        .padding(horizontal = 9.dp, vertical = 5.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                                )
-                            )
-                        )
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = 0.32f),
-                                0.55f to Color.Transparent,
-                            )
-                        )
-                        .border(1.dp, Color.White.copy(alpha = 0.40f), CircleShape)
-                )
-
-                // tab 行:点选 + 拖动滑选(图标固定不动)
-                Row(
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(count, itemPx) {
-                            detectTapGestures { pos ->
-                                onSelect((pos.x / itemPx).toInt().coerceIn(0, count - 1))
-                            }
-                        }
-                        .pointerInput(count, itemPx) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { off -> dragX = off.x },
-                                onHorizontalDrag = { _, amt ->
-                                    dragX = ((dragX ?: 0f) + amt).coerceIn(0f, barPx)
-                                },
-                                onDragEnd = {
-                                    val d = dragX; dragX = null
-                                    if (d != null) onSelect((d / itemPx).toInt().coerceIn(0, count - 1))
-                                },
-                                onDragCancel = { dragX = null },
-                            )
-                        }
-                ) {
-                    items.forEachIndexed { i, (label, icon) ->
-                        NavTab(
-                            label = label,
-                            icon = icon,
-                            selected = i == liveIndex,
-                            modifier = Modifier.width(itemWidth).fillMaxHeight(),
-                        )
-                    }
+                items.forEachIndexed { i, (label, icon) ->
+                    NavTab(
+                        label = label,
+                        icon = icon,
+                        selected = i == selectedIndex,
+                        onClick = { onSelect(i) },
+                    )
                 }
             }
         }
@@ -311,18 +239,42 @@ private fun NavTab(
     label: String,
     icon: ImageVector,
     selected: Boolean,
-    modifier: Modifier,
+    onClick: () -> Unit,
 ) {
     val fg by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "navFg",
     )
-    // 图标 + 文字始终显示、固定居中(不随选中出现/消失,故完全不上下跳)
-    Column(
-        modifier.padding(horizontal = 2.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+    val interaction = remember { MutableInteractionSource() }
+    val shape = CircleShape
+    Row(
+        Modifier
+            .clip(shape)
+            .then(
+                if (selected) Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                            )
+                        )
+                    )
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.White.copy(alpha = 0.30f),
+                            0.6f to Color.Transparent,
+                        )
+                    )
+                    .border(1.dp, Color.White.copy(alpha = 0.40f), shape)
+                else Modifier
+            )
+            .clickable(interaction, indication = null, onClick = onClick)
+            .padding(horizontal = if (selected) 16.dp else 12.dp, vertical = 9.dp)
+            // 选中项横向展开时平滑改变宽度,其余项跟着挪
+            .animateContentSize(spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow)),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             icon,
@@ -330,15 +282,18 @@ private fun NavTab(
             tint = fg,
             modifier = Modifier.size(23.dp),
         )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            label,
-            color = fg,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-            softWrap = false,
-        )
+        // 选中: 图标右侧横向展开文字
+        if (selected) {
+            Spacer(Modifier.width(7.dp))
+            Text(
+                label,
+                color = fg,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
     }
 }
 
