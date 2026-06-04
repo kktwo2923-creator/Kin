@@ -11,7 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -314,33 +314,59 @@ fun FloatingGlassNav(
                 val density = LocalDensity.current
                 val slotWpx = with(density) { maxWidth.toPx() } / n
                 val slotWdp = maxWidth / n
+                val primary = MaterialTheme.colorScheme.primary
 
-                // 1) 液态玻璃高亮指示器(跟手平移,盖住整格)
+                // 长按拿起 -> 指示器抬起(放大 + 发光 + 玻璃更浓),0=落下 1=拿起
+                val lift by animateFloatAsState(
+                    targetValue = if (dragging) 1f else 0f,
+                    animationSpec = spring(
+                        dampingRatio = 0.55f,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    label = "navLift",
+                )
+
+                // 1) 液态玻璃高亮指示器 —— 横向「椭圆」(宽 > 高),坐在图标区,文字在下方
                 Box(
                     Modifier
+                        .align(Alignment.CenterStart)
                         .offset { IntOffset((pos.value * slotWpx).roundToInt(), 0) }
                         .width(slotWdp)
-                        .fillMaxHeight()
-                        .padding(vertical = 8.dp, horizontal = 6.dp)
+                        .height(38.dp)
+                        .padding(horizontal = 3.dp)
+                        .graphicsLayer {
+                            // 拿起时横向更夸张地拉伸(液态被"提"起来的手感)
+                            scaleX = 1f + 0.22f * lift
+                            scaleY = 1f + 0.12f * lift
+                            shadowElevation = 22f * lift
+                            shape = CircleShape
+                            clip = false
+                            ambientShadowColor = primary
+                            spotShadowColor = primary
+                        }
                         .clip(CircleShape)
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.40f),
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                    primary.copy(alpha = 0.40f + 0.32f * lift),
+                                    primary.copy(alpha = 0.22f + 0.22f * lift),
                                 )
                             )
                         )
                         .background(
                             Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = 0.38f),
+                                0f to Color.White.copy(alpha = 0.38f + 0.34f * lift),
                                 0.55f to Color.Transparent,
                             )
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape)
+                        .border(
+                            1.dp,
+                            Color.White.copy(alpha = 0.45f + 0.35f * lift),
+                            CircleShape,
+                        )
                 )
 
-                // 2) 手势层(点击选格 + 横向拖动指示器)+ 图标/文字
+                // 2) 手势层(点击选格 + 长按拿起后滑动)+ 图标/文字
                 Row(
                     Modifier
                         .fillMaxSize()
@@ -351,8 +377,17 @@ fun FloatingGlassNav(
                             }
                         }
                         .pointerInput(n, slotWpx) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { dragging = true },
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { o ->
+                                    dragging = true
+                                    // 拿起瞬间指示器跳到手指下
+                                    scope.launch {
+                                        pos.snapTo(
+                                            (o.x / slotWpx - 0.5f)
+                                                .coerceIn(0f, (n - 1).toFloat())
+                                        )
+                                    }
+                                },
                                 onDragEnd = {
                                     val target = pos.value.roundToInt().coerceIn(0, n - 1)
                                     dragging = false
@@ -368,11 +403,11 @@ fun FloatingGlassNav(
                                     }
                                 },
                                 onDragCancel = { dragging = false },
-                            ) { change, dx ->
+                            ) { change, dragAmount ->
                                 change.consume()
                                 scope.launch {
                                     pos.snapTo(
-                                        (pos.value + dx / slotWpx)
+                                        (pos.value + dragAmount.x / slotWpx)
                                             .coerceIn(0f, (n - 1).toFloat())
                                     )
                                 }
