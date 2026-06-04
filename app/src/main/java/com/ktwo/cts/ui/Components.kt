@@ -1,5 +1,6 @@
 package com.ktwo.cts.ui
 
+import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -32,15 +33,19 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
@@ -139,22 +144,81 @@ fun WallpaperBackground(
     }
 }
 
-/** 液态玻璃容器: Haze 真实模糊背景 + 高光 + 渐变描边 */
+// iOS 26 液态玻璃折射着色器(AGSL,Android 13+)。
+// 在圆角矩形/胶囊的「边缘带」内把背景采样坐标向内拉,产生玻璃边缘的折射放大,
+// 再叠左上镜面高光 / 右下轻阴影。content = 本层已绘制的(模糊)背景。
+private const val LIQUID_GLASS_AGSL = """
+uniform shader content;
+uniform float2 size;
+uniform float radius;
+uniform float band;
+
+float sdRoundBox(float2 p, float2 b, float r) {
+    float2 q = abs(p) - b + float2(r);
+    return min(max(q.x, q.y), 0.0) + length(max(q, float2(0.0))) - r;
+}
+
+half4 main(float2 coord) {
+    float2 hsz = size * 0.5;
+    float2 c = coord - hsz;
+    float r = min(radius, min(hsz.x, hsz.y));
+    float d = sdRoundBox(c, hsz, r);           // <0 在内部
+    float edge = -d;                            // 距边缘的内向距离
+    float t = clamp(1.0 - edge / band, 0.0, 1.0);
+    float2 dir = c / max(length(c), 1.0);
+    // 边缘附近把采样点向内拉 -> 边缘折射放大
+    float2 uv = coord - dir * (t * t * 11.0);
+    half4 col = content.eval(uv);
+    // 左上镜面高光 / 右下轻阴影
+    float tl = clamp((-dir.x - dir.y) * 0.5 + 0.5, 0.0, 1.0);
+    col.rgb += (t * t) * tl * 0.30;
+    col.rgb -= (t * t) * (1.0 - tl) * 0.06;
+    return col;
+}
+"""
+
+/** 在玻璃背景层上叠 AGSL 折射(仅 Android 13+,低版本无操作) */
+@Composable
+private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modifier {
+    if (Build.VERSION.SDK_INT < 33) return this
+    val shader = remember { android.graphics.RuntimeShader(LIQUID_GLASS_AGSL) }
+    var sz by remember { mutableStateOf(IntSize.Zero) }
+    return this
+        .onSizeChanged { sz = it }
+        .graphicsLayer {
+            this.clip = true
+            this.shape = shape
+            if (sz.width > 0 && sz.height > 0) {
+                shader.setFloatUniform("size", sz.width.toFloat(), sz.height.toFloat())
+                shader.setFloatUniform("radius", cornerRadiusPx)
+                shader.setFloatUniform("band", 18f)
+                renderEffect = android.graphics.RenderEffect
+                    .createRuntimeShaderEffect(shader, "content")
+                    .asComposeRenderEffect()
+            }
+        }
+}
+
+/**
+ * 液态玻璃容器: Haze 真实模糊背景 + (Android 13+)AGSL 边缘折射 + 高光 + 渐变描边。
+ * @param cornerDp 用于折射 SDF 的圆角半径(胶囊/圆传入较大值即可,着色器内自动夹到 min/2)。
+ */
 @Composable
 fun GlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(22.dp),
     tint: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     blurRadius: Dp = 24.dp,
+    cornerDp: Dp = 22.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val hazeState = LocalHazeState.current
+    val cornerPx = with(LocalDensity.current) { cornerDp.toPx() }
     val glassMod = if (hazeState != null) {
         Modifier.hazeEffect(
             state = hazeState,
             style = HazeStyle(
                 backgroundColor = tint,
-                // 更透(0.40 -> 0.26),贴近 iOS 26 液态玻璃的通透感
                 tints = listOf(HazeTint(tint.copy(alpha = 0.26f))),
                 blurRadius = blurRadius,
                 noiseFactor = 0.04f,
@@ -165,21 +229,25 @@ fun GlassSurface(
     } else {
         Modifier.background(tint.copy(alpha = 0.55f))
     }
-    Box(
-        modifier
-            .clip(shape)
-            .then(glassMod)
-            // 顶面镜面高光: 顶部一条更亮的反光,快速衰减(液态玻璃的"亮顶")
-            .background(
-                Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.38f),
-                    0.12f to Color.White.copy(alpha = 0.12f),
-                    0.5f to Color.White.copy(alpha = 0.03f),
-                    1f to Color.Transparent,
+    Box(modifier.clip(shape)) {
+        // 玻璃背景层(被折射):模糊背景 + 顶面镜面高光
+        Box(
+            Modifier
+                .matchParentSize()
+                .liquidRefraction(cornerPx, shape)   // Android 13+ 折射
+                .then(glassMod)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.38f),
+                        0.12f to Color.White.copy(alpha = 0.12f),
+                        0.5f to Color.White.copy(alpha = 0.03f),
+                        1f to Color.Transparent,
+                    )
                 )
-            )
-            // 渐变描边: 上缘亮(镜面)、两侧/底淡,凸显玻璃厚度
-            .border(
+        )
+        // 渐变描边(独立层,不被折射)
+        Box(
+            Modifier.matchParentSize().border(
                 width = 1.dp,
                 brush = Brush.verticalGradient(
                     0f to Color.White.copy(alpha = 0.70f),
@@ -187,9 +255,11 @@ fun GlassSurface(
                     1f to Color.White.copy(alpha = 0.10f),
                 ),
                 shape = shape,
-            ),
-        content = content,
-    )
+            )
+        )
+        // 内容层(清晰,不被折射)
+        content()
+    }
 }
 
 /**
@@ -215,6 +285,7 @@ fun FloatingGlassNav(
             shape = CircleShape,
             tint = MaterialTheme.colorScheme.surfaceContainer,
             blurRadius = 30.dp,
+            cornerDp = 48.dp,   // 胶囊: 着色器内自动夹到高度的一半
         ) {
             Row(
                 Modifier.fillMaxWidth().height(62.dp).padding(horizontal = 8.dp),
