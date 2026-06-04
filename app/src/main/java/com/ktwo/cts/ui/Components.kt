@@ -266,11 +266,11 @@ fun GlassSurface(
 }
 
 /**
- * iOS 26 / Apple Music 风格悬浮液态玻璃导航 —
- *  - 等宽 N 格,背后一颗「液态玻璃胶囊」高亮指示器
+ * OShin / SukiSU 风格悬浮液态玻璃导航 —
+ *  - 等宽 N 格,每格「图标在上 + 文字在下」竖排,文字常显
+ *  - 背后一颗「液态玻璃椭圆胶囊」高亮指示器,盖住整格(图标+文字)
  *  - 指示器可被手指自由横向拖动,实时跟手,松手吸附到最近的格
- *  - 点击某格也会把指示器平滑移过去
- *  - 选中格: 图标 + 文字「左右并排」(横的胶囊);其余格只显示图标
+ *  - 点击某格也会把指示器平滑移过去;最近的格点亮成主色
  */
 @Composable
 fun FloatingGlassNav(
@@ -291,7 +291,7 @@ fun FloatingGlassNav(
         )
     }
 
-    // 跟手/吸附过程中,指示器最接近哪一格 -> 该格点亮 + 展开文字
+    // 跟手/吸附过程中,指示器最接近哪一格 -> 该格点亮
     val activeIndex = pos.value.roundToInt().coerceIn(0, n - 1)
 
     Box(
@@ -309,35 +309,35 @@ fun FloatingGlassNav(
             cornerDp = 48.dp,   // 胶囊: 着色器内自动夹到高度的一半
         ) {
             BoxWithConstraints(
-                Modifier.fillMaxWidth().height(62.dp).padding(horizontal = 8.dp),
+                Modifier.fillMaxWidth().height(66.dp).padding(horizontal = 8.dp),
             ) {
                 val density = LocalDensity.current
                 val slotWpx = with(density) { maxWidth.toPx() } / n
                 val slotWdp = maxWidth / n
 
-                // 1) 液态玻璃高亮指示器(跟手平移)
+                // 1) 液态玻璃高亮指示器(跟手平移,盖住整格)
                 Box(
                     Modifier
                         .offset { IntOffset((pos.value * slotWpx).roundToInt(), 0) }
                         .width(slotWdp)
                         .fillMaxHeight()
-                        .padding(vertical = 7.dp, horizontal = 5.dp)
+                        .padding(vertical = 8.dp, horizontal = 6.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.40f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
                                 )
                             )
                         )
                         .background(
                             Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = 0.32f),
-                                0.6f to Color.Transparent,
+                                0f to Color.White.copy(alpha = 0.38f),
+                                0.55f to Color.Transparent,
                             )
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.42f), CircleShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape)
                 )
 
                 // 2) 手势层(点击选格 + 横向拖动指示器)+ 图标/文字
@@ -406,10 +406,10 @@ private fun NavSlot(
         else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "navFg",
     )
-    Row(
+    Column(
         modifier,
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
         Icon(
             icon,
@@ -417,18 +417,15 @@ private fun NavSlot(
             tint = fg,
             modifier = Modifier.size(23.dp),
         )
-        // 选中格: 图标右侧横向展开文字
-        if (active) {
-            Spacer(Modifier.width(6.dp))
-            Text(
-                label,
-                color = fg,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                softWrap = false,
-            )
-        }
+        Spacer(Modifier.height(3.dp))
+        Text(
+            label,
+            color = fg,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
 
