@@ -315,6 +315,7 @@ fun FloatingGlassNav(
                 val slotWpx = with(density) { maxWidth.toPx() } / n
                 val slotWdp = maxWidth / n
                 val primary = MaterialTheme.colorScheme.primary
+                val pill = RoundedCornerShape(20.dp)   // 整块覆盖图标+文字的圆角胶囊
 
                 // 长按拿起 -> 指示器抬起(放大 + 发光 + 玻璃更浓),0=落下 1=拿起
                 val lift by animateFloatAsState(
@@ -326,26 +327,25 @@ fun FloatingGlassNav(
                     label = "navLift",
                 )
 
-                // 1) 液态玻璃高亮指示器 —— OShin/SukiSU 风:横向「椭圆」只罩在图标上,
-                //    文字在椭圆下方、不被遮住(只染成主色)
+                // 1) 液态玻璃高亮指示器 —— 整块圆角胶囊,覆盖选中格的「图标 + 文字」
                 Box(
                     Modifier
-                        .align(Alignment.TopStart)
-                        .offset { IntOffset((pos.value * slotWpx).roundToInt(), 9.dp.roundToPx()) }
+                        .align(Alignment.CenterStart)
+                        .offset { IntOffset((pos.value * slotWpx).roundToInt(), 0) }
                         .width(slotWdp)
-                        .height(30.dp)
-                        .padding(horizontal = 2.dp)
+                        .fillMaxHeight()
+                        .padding(vertical = 6.dp, horizontal = 4.dp)
                         .graphicsLayer {
-                            // 拿起时横向更夸张地拉伸(液态被"提"起来的手感)
-                            scaleX = 1f + 0.22f * lift
-                            scaleY = 1f + 0.12f * lift
+                            // 拿起时放大(横向更夸张),液态被"提"起来的手感
+                            scaleX = 1f + 0.16f * lift
+                            scaleY = 1f + 0.08f * lift
                             shadowElevation = 22f * lift
-                            shape = CircleShape
+                            shape = pill
                             clip = false
                             ambientShadowColor = primary
                             spotShadowColor = primary
                         }
-                        .clip(CircleShape)
+                        .clip(pill)
                         .background(
                             Brush.verticalGradient(
                                 listOf(
@@ -363,7 +363,7 @@ fun FloatingGlassNav(
                         .border(
                             1.dp,
                             Color.White.copy(alpha = 0.45f + 0.35f * lift),
-                            CircleShape,
+                            pill,
                         )
                 )
 
