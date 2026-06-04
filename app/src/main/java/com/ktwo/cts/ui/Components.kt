@@ -244,14 +244,14 @@ fun FloatingGlassNav(
                 )
                 val liveIndex = ((animLeft + itemPx / 2f) / itemPx).toInt().coerceIn(0, count - 1)
 
-                // 液态玻璃高亮胶囊(罩住一格的「图标+文字」)
+                // 液态玻璃高亮椭圆胶囊(两端全圆弧,竖向罩住一格的「图标+文字」)
                 Box(
                     Modifier
                         .offset { IntOffset(animLeft.roundToInt(), 0) }
                         .width(itemWidth)
                         .fillMaxHeight()
-                        .padding(horizontal = 5.dp, vertical = 6.dp)
-                        .clip(RoundedCornerShape(22.dp))
+                        .padding(horizontal = 9.dp, vertical = 5.dp)
+                        .clip(CircleShape)
                         .background(
                             Brush.verticalGradient(
                                 listOf(
@@ -266,7 +266,7 @@ fun FloatingGlassNav(
                                 0.55f to Color.Transparent,
                             )
                         )
-                        .border(1.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(22.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.40f), CircleShape)
                 )
 
                 // tab 行:点选 + 拖动滑选(图标固定不动)
