@@ -326,14 +326,15 @@ fun FloatingGlassNav(
                     label = "navLift",
                 )
 
-                // 1) 液态玻璃高亮指示器 —— 横向「椭圆」(宽 > 高),坐在图标区,文字在下方
+                // 1) 液态玻璃高亮指示器 —— OShin/SukiSU 风:横向「椭圆」只罩在图标上,
+                //    文字在椭圆下方、不被遮住(只染成主色)
                 Box(
                     Modifier
-                        .align(Alignment.CenterStart)
-                        .offset { IntOffset((pos.value * slotWpx).roundToInt(), 0) }
+                        .align(Alignment.TopStart)
+                        .offset { IntOffset((pos.value * slotWpx).roundToInt(), 9.dp.roundToPx()) }
                         .width(slotWdp)
-                        .height(38.dp)
-                        .padding(horizontal = 3.dp)
+                        .height(30.dp)
+                        .padding(horizontal = 2.dp)
                         .graphicsLayer {
                             // 拿起时横向更夸张地拉伸(液态被"提"起来的手感)
                             scaleX = 1f + 0.22f * lift
