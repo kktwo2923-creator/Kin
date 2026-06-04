@@ -2,7 +2,7 @@ package com.ktwo.cts.ui
 
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -21,10 +21,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +55,7 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
@@ -264,8 +267,10 @@ fun GlassSurface(
 
 /**
  * iOS 26 / Apple Music 风格悬浮液态玻璃导航 —
- *  - 未选中: 只显示图标
- *  - 选中: 横向展开成液态玻璃胶囊,图标 + 文字「左右并排」(横的),平滑展开动画
+ *  - 等宽 N 格,背后一颗「液态玻璃胶囊」高亮指示器
+ *  - 指示器可被手指自由横向拖动,实时跟手,松手吸附到最近的格
+ *  - 点击某格也会把指示器平滑移过去
+ *  - 选中格: 图标 + 文字「左右并排」(横的胶囊);其余格只显示图标
  */
 @Composable
 fun FloatingGlassNav(
@@ -273,6 +278,22 @@ fun FloatingGlassNav(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
 ) {
+    val n = items.size
+    val pos = remember { Animatable(selectedIndex.toFloat()) }
+    var dragging by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // 外部选中变化时(且非拖动中)把指示器平滑移过去
+    LaunchedEffect(selectedIndex) {
+        if (!dragging) pos.animateTo(
+            selectedIndex.toFloat(),
+            spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
+        )
+    }
+
+    // 跟手/吸附过程中,指示器最接近哪一格 -> 该格点亮 + 展开文字
+    val activeIndex = pos.value.roundToInt().coerceIn(0, n - 1)
+
     Box(
         Modifier
             .fillMaxWidth()
@@ -287,18 +308,86 @@ fun FloatingGlassNav(
             blurRadius = 30.dp,
             cornerDp = 48.dp,   // 胶囊: 着色器内自动夹到高度的一半
         ) {
-            Row(
+            BoxWithConstraints(
                 Modifier.fillMaxWidth().height(62.dp).padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                items.forEachIndexed { i, (label, icon) ->
-                    NavTab(
-                        label = label,
-                        icon = icon,
-                        selected = i == selectedIndex,
-                        onClick = { onSelect(i) },
-                    )
+                val density = LocalDensity.current
+                val slotWpx = with(density) { maxWidth.toPx() } / n
+                val slotWdp = maxWidth / n
+
+                // 1) 液态玻璃高亮指示器(跟手平移)
+                Box(
+                    Modifier
+                        .offset { IntOffset((pos.value * slotWpx).roundToInt(), 0) }
+                        .width(slotWdp)
+                        .fillMaxHeight()
+                        .padding(vertical = 7.dp, horizontal = 5.dp)
+                        .clip(CircleShape)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                                )
+                            )
+                        )
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.White.copy(alpha = 0.32f),
+                                0.6f to Color.Transparent,
+                            )
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.42f), CircleShape)
+                )
+
+                // 2) 手势层(点击选格 + 横向拖动指示器)+ 图标/文字
+                Row(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(n, slotWpx) {
+                            detectTapGestures { o ->
+                                val i = (o.x / slotWpx).toInt().coerceIn(0, n - 1)
+                                onSelect(i)
+                            }
+                        }
+                        .pointerInput(n, slotWpx) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { dragging = true },
+                                onDragEnd = {
+                                    val target = pos.value.roundToInt().coerceIn(0, n - 1)
+                                    dragging = false
+                                    onSelect(target)
+                                    scope.launch {
+                                        pos.animateTo(
+                                            target.toFloat(),
+                                            spring(
+                                                dampingRatio = 0.72f,
+                                                stiffness = Spring.StiffnessMediumLow,
+                                            ),
+                                        )
+                                    }
+                                },
+                                onDragCancel = { dragging = false },
+                            ) { change, dx ->
+                                change.consume()
+                                scope.launch {
+                                    pos.snapTo(
+                                        (pos.value + dx / slotWpx)
+                                            .coerceIn(0f, (n - 1).toFloat())
+                                    )
+                                }
+                            }
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    items.forEachIndexed { i, (label, icon) ->
+                        NavSlot(
+                            label = label,
+                            icon = icon,
+                            active = i == activeIndex,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
                 }
             }
         }
@@ -306,45 +395,20 @@ fun FloatingGlassNav(
 }
 
 @Composable
-private fun NavTab(
+private fun NavSlot(
     label: String,
     icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
+    active: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val fg by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primary
+        if (active) MaterialTheme.colorScheme.primary
         else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "navFg",
     )
-    val interaction = remember { MutableInteractionSource() }
-    val shape = CircleShape
     Row(
-        Modifier
-            .clip(shape)
-            .then(
-                if (selected) Modifier
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                            )
-                        )
-                    )
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.White.copy(alpha = 0.30f),
-                            0.6f to Color.Transparent,
-                        )
-                    )
-                    .border(1.dp, Color.White.copy(alpha = 0.40f), shape)
-                else Modifier
-            )
-            .clickable(interaction, indication = null, onClick = onClick)
-            .padding(horizontal = if (selected) 16.dp else 12.dp, vertical = 9.dp)
-            // 选中项横向展开时平滑改变宽度,其余项跟着挪
-            .animateContentSize(spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow)),
+        modifier,
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -353,9 +417,9 @@ private fun NavTab(
             tint = fg,
             modifier = Modifier.size(23.dp),
         )
-        // 选中: 图标右侧横向展开文字
-        if (selected) {
-            Spacer(Modifier.width(7.dp))
+        // 选中格: 图标右侧横向展开文字
+        if (active) {
+            Spacer(Modifier.width(6.dp))
             Text(
                 label,
                 color = fg,
