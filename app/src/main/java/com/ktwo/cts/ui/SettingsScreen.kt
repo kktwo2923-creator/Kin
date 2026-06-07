@@ -35,11 +35,42 @@ fun SettingsScreen() {
     val scope = rememberCoroutineScope()
 
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
-    val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
+    val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "dynamic")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
-    var pollMs by remember { mutableStateOf(2000) }
+    val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
+
+    // 通知开关: 开启时申请通知权限 + 悬浮窗权限,再开服务
+    fun enableNotify() = scope.launch {
+        Prefs.setNotifyEnabled(ctx, true)
+        com.ktwo.cts.service.NotifyService.start(ctx)
+        if (!Settings.canDrawOverlays(ctx)) {
+            runCatching {
+                ctx.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:${ctx.packageName}")
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }
+    }
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> enableNotify() }
+    fun toggleNotify(on: Boolean) {
+        if (on) {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            else enableNotify()
+        } else scope.launch {
+            Prefs.setNotifyEnabled(ctx, false)
+            com.ktwo.cts.service.NotifyService.stop(ctx)
+        }
+    }
 
     // 壁纸选择器: 打开系统相册(照片选择器),把选中图片复制到 App 私有目录,
     // 存绝对路径,避免临时授权重启失效。
@@ -61,7 +92,6 @@ fun SettingsScreen() {
     }
 
     LaunchedEffect(Unit) {
-        pollMs = Prefs.pollMs(ctx)
         hasUsagePerm = ForegroundDetector(ctx).hasUsageStatsPermission()
         isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
     }
@@ -132,6 +162,15 @@ fun SettingsScreen() {
                 }
             }
 
+            Section("通知") {
+                ToggleRow(
+                    title = "状态栏常驻通知",
+                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
+                    checked = notifyEnabled,
+                    onCheckedChange = { toggleNotify(it) },
+                )
+            }
+
             Section("接管行为") {
                 ToggleRow(
                     title = "STRICT 同模式重发",
@@ -171,26 +210,6 @@ fun SettingsScreen() {
                             ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
-                    )
-                }
-            }
-
-            Section("性能") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("前台 App 轮询间隔: ${pollMs / 1000.0} 秒", fontWeight = FontWeight.Medium)
-                    Slider(
-                        value = pollMs.toFloat(),
-                        onValueChange = { pollMs = it.toInt() },
-                        valueRange = 1000f..10000f,
-                        steps = 17,
-                        onValueChangeFinished = {
-                            scope.launch { Prefs.setPollMs(ctx, pollMs) }
-                        }
-                    )
-                    Text(
-                        "短=切换跟手但耗电略多; 长=省电但有延迟",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

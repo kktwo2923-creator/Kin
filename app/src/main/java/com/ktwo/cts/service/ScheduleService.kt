@@ -50,16 +50,37 @@ class ScheduleService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // daemon 存活时由它主导切换,本前台服务多余 -> 满足 FGS 合约后立刻撤通知自停,
+        // 避免状态栏挂一条没用的"启动中…"。daemon 不在时才作为兜底运行。
+        if (RootShell.daemonAlive()) {
+            startForegroundCompat()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         pm = getSystemService(POWER_SERVICE) as PowerManager
         screenOn = pm.isInteractive
         loadImePackages()
-        startForeground(NOTIF_ID, buildNotification("启动中…"))
+        startForegroundCompat()
         registerReceiver(screenRx, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
         })
         startLoop()
+    }
+
+    /** Android 14+ 必须带 foregroundServiceType,否则抛 ForegroundServiceTypeNotAllowedException */
+    private fun startForegroundCompat() {
+        val notif = buildNotification("启动中…")
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                NOTIF_ID, notif,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(NOTIF_ID, notif)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
@@ -101,6 +122,9 @@ class ScheduleService : Service() {
         while (isActive) {
             try {
                 if (!Prefs.enabled(this@ScheduleService)) { delay(3000); continue }
+                // [§4 互斥] daemon 存活时由 daemon 主导切档,App 退为纯 GUI 不重复探测/切换,
+                // 避免两者同时写 sysfs 打架,也省掉 App 端的探测开销。
+                if (RootShell.daemonAlive()) { delay(5000); continue }
                 if (!screenOn) { delay(5000); continue }
                 val pkg = detector.currentForegroundPackage().orEmpty()
                 if (pkg.isNotEmpty() && pkg != lastPkg) {

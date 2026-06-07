@@ -45,6 +45,24 @@
                 android:value="System scheduler companion: monitors foreground app and switches power profile via root" />
         </service>
 
+        <!-- 状态栏常驻通知服务(显示模式+电量,点击弹悬浮窗快切) -->
+        <service
+            android:name=".service.NotifyService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Persistent status notification showing current power mode and battery, with a floating quick mode switcher" />
+        </service>
+
+        <!-- 无悬浮窗权限时的快切回退对话框 -->
+        <activity
+            android:name=".ui.QuickSwitchActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.OnePlusVPro.Dialog" />
+
         <receiver
             android:name=".service.BootReceiver"
             android:exported="true"

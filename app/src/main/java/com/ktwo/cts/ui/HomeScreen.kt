@@ -106,7 +106,10 @@ fun HomeScreen() {
                         onCheckedChange = { on ->
                             scope.launch {
                                 Prefs.setEnabled(ctx, on)
-                                if (on) ScheduleService.start(ctx) else ScheduleService.stop(ctx)
+                                // daemon 存活时由它主导,不启动 App 端兜底服务(避免多余的"启动中"通知)
+                                if (on) {
+                                    if (!RootShell.daemonAlive()) ScheduleService.start(ctx)
+                                } else ScheduleService.stop(ctx)
                             }
                         }
                     )
@@ -168,7 +171,7 @@ private fun ModeButton(mode: Mode, selected: Boolean, modifier: Modifier, onClic
     GlassSurface(
         modifier = modifier
             .height(72.dp)
-            .clickable(onClick = onClick),
+            .pressClickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         tint = if (selected) MaterialTheme.colorScheme.primaryContainer
                else MaterialTheme.colorScheme.surfaceContainerHigh,

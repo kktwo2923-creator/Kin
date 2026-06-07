@@ -16,10 +16,20 @@ object Prefs {
     private val POLL_MS_KEY      = intPreferencesKey("poll_ms")
     private val THEME_KEY        = stringPreferencesKey("theme_mode")     // system/light/dark/mono
     private val WALLPAPER_KEY    = stringPreferencesKey("wallpaper_uri")  // content:// 或空=默认渐变
+    private val NOTIFY_KEY       = booleanPreferencesKey("notify_enabled")// 状态栏常驻通知+悬浮快切
 
-    /** 主题模式(system/light/dark/mono),默认跟随系统 */
+    /** 状态栏常驻通知(显示当前模式+电量,点击弹悬浮窗快切),默认关 */
+    fun notifyEnabledFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[NOTIFY_KEY] ?: false }
+    suspend fun notifyEnabled(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[NOTIFY_KEY] ?: false
+    suspend fun setNotifyEnabled(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[NOTIFY_KEY] = b }
+    }
+
+    /** 主题模式(dynamic/system/light/dark/mono),默认动态取色 */
     fun themeModeFlow(ctx: Context): Flow<String> =
-        ctx.dataStore.data.map { it[THEME_KEY] ?: "system" }
+        ctx.dataStore.data.map { it[THEME_KEY] ?: "dynamic" }
     suspend fun setThemeMode(ctx: Context, mode: String) {
         ctx.dataStore.edit { it[THEME_KEY] = mode }
     }
@@ -45,6 +55,17 @@ object Prefs {
         ctx.dataStore.data.first()[POLL_MS_KEY] ?: 2000
     suspend fun setPollMs(ctx: Context, ms: Int) {
         ctx.dataStore.edit { it[POLL_MS_KEY] = ms }
+    }
+
+    // 电芯数:用于功耗计算的双芯倍率。默认 2(目标设备一加大电池多为双芯串联)。
+    // 若实测功耗偏高一倍,把它改成 1(说明 voltage_now 已是整包电压)。
+    private val CELL_COUNT_KEY = intPreferencesKey("cell_count")
+    fun cellCountFlow(ctx: Context): Flow<Int> =
+        ctx.dataStore.data.map { it[CELL_COUNT_KEY] ?: 2 }
+    suspend fun cellCount(ctx: Context): Int =
+        ctx.dataStore.data.first()[CELL_COUNT_KEY] ?: 2
+    suspend fun setCellCount(ctx: Context, n: Int) {
+        ctx.dataStore.edit { it[CELL_COUNT_KEY] = n }
     }
 }
 
