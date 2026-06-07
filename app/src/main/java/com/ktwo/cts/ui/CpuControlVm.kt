@@ -179,13 +179,23 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
     fun save() {
         val p = _editing.value ?: return
         viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                // 重新读最新原始 JSON(防止其它进程/daemon 期间改过),再合并写回
+            val merged = withContext(Dispatchers.IO) {
+                // 重新读最新原始 JSON(防止其它进程/daemon 期间改过),再合并
                 val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                val merged = _cfg.value.mergeProfileInto(raw, p)
-                RootShell.writeConfigRaw(merged)
+                _cfg.value.mergeProfileInto(raw, p)
             }
-            if (ok) reload()           // 写成功后重读,保证 UI 与文件一致
+            val ok = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
+            if (ok) {
+                // 备份用户配置到 App 私有目录:模块开机会用默认 config 覆盖 sdcard,
+                // 开机后由 BootReceiver 用此备份恢复用户配置(见 BootReceiver.restoreUserConfig)
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        java.io.File(getApplication<Application>().filesDir, "config_backup.json")
+                            .writeText(merged)
+                    }
+                }
+                reload()           // 写成功后重读,保证 UI 与文件一致
+            }
             _saveResult.value = ok
         }
     }
