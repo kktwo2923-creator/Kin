@@ -28,10 +28,10 @@
 
 - 🎯 **按应用画像接管** —— 每个 App 可绑定独立调度模式,切到前台自动生效
 - 🔋 **灭屏自动省电** —— 息屏切省电模式(默认 powersave),亮屏恢复当前 App 画像
-- 🧩 **Scene 风格忽略规则** —— 输入法 / 系统 UI / 启动器 / 锁屏永不接管
+- 🧩 **忽略规则** —— 输入法 / 系统 UI / 启动器 / 锁屏永不接管
 - 🚫 **用户黑名单** —— Apps 屏长按任意 App 即可加入,加入后不接管
 - 🔁 **STRICT 同模式重发** —— 部分游戏切回同模式需重发,可在设置开启
-- 🔍 **前台双轨探测** —— 有 root 用 `dumpsys`,无 root 退回 `UsageStatsManager`
+- 🔍 **前台双轨探测** —— 有`dumpsys`,无退回 `UsageStatsManager`
 - 🎨 **Material You 界面** —— Jetpack Compose + Material 3 动态取色
 
 > **平台**:OnePlus V Pro(骁龙 8 至尊版 / 8 Elite Gen 5) · **技术栈**:Kotlin + Jetpack Compose
@@ -43,7 +43,7 @@
 监听屏幕开关 + 前台 App 变化,按 **App 画像 → 全局默认 → 灭屏模式** 决定要切的模式,
 通过 root 调用 `/data/powercfg.sh <mode>`(Scene 接管协议)由 CoreTurboScheduler 模块执行。
 
-### Scene 风格的接管细节
+### 接管细节
 
 - **输入法包永远忽略**(切到搜狗/讯飞不动模式)
 - **系统 UI / 启动器 / 锁屏永远忽略**(builtin ignored list)
