@@ -242,8 +242,8 @@ private fun ClusterCard(
 
             FreqPickerRow("最小频率", cfg.minKhzLong, availFreqsKhz, onMin)
             FreqPickerRow("最大频率", cfg.maxKhzLong, availFreqsKhz, onMax)
-            // 调速器: 空 = 跟随系统(config 写 gov=""), liveGov 仅作当前实际值提示
-            GovPickerRow("调速器", cfg.governor, liveGov, availGovs, onGov)
+            // 调速器: 空 = 跟随系统(config 写 gov="")
+            GovPickerRow("调速器", cfg.governor, availGovs, onGov)
         }
     }
 }
@@ -281,7 +281,6 @@ private fun FreqPickerRow(
 private fun GovPickerRow(
     label: String,
     value: String,        // 空白 = 跟随系统(config 里 gov="")
-    liveGov: String,      // 当前系统实际调速器, 仅在「跟随系统」时作提示
     avail: List<String>,
     onPick: (String) -> Unit,
 ) {
@@ -292,13 +291,7 @@ private fun GovPickerRow(
         Box {
             AssistChip(
                 onClick = { expanded = true },   // 「跟随系统」始终可选, 即使读不到 avail
-                label = {
-                    Text(
-                        if (follow)
-                            if (liveGov.isNotBlank()) "跟随系统 ($liveGov)" else "跟随系统"
-                        else value
-                    )
-                },
+                label = { Text(if (follow) "跟随系统" else value) },
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 // 跟随系统 = 写空串, daemon 不强制覆盖调速器
