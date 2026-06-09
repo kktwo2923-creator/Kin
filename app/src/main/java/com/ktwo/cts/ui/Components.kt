@@ -184,7 +184,11 @@ half4 main(float2 coord) {
 @Composable
 private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modifier {
     if (Build.VERSION.SDK_INT < 33) return this
-    val shader = remember { android.graphics.RuntimeShader(LIQUID_GLASS_AGSL) }
+    // AGSL 在运行时由 GPU 驱动编译,个别机型/驱动可能拒绝 -> 兜底,失败就退化为无折射,
+    // 绝不让整屏崩溃。
+    val shader = remember {
+        runCatching { android.graphics.RuntimeShader(LIQUID_GLASS_AGSL) }.getOrNull()
+    } ?: return this
     var sz by remember { mutableStateOf(IntSize.Zero) }
     return this
         .onSizeChanged { sz = it }
@@ -192,12 +196,14 @@ private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modi
             this.clip = true
             this.shape = shape
             if (sz.width > 0 && sz.height > 0) {
-                shader.setFloatUniform("size", sz.width.toFloat(), sz.height.toFloat())
-                shader.setFloatUniform("radius", cornerRadiusPx)
-                shader.setFloatUniform("band", 18f)
-                renderEffect = android.graphics.RenderEffect
-                    .createRuntimeShaderEffect(shader, "content")
-                    .asComposeRenderEffect()
+                runCatching {
+                    shader.setFloatUniform("size", sz.width.toFloat(), sz.height.toFloat())
+                    shader.setFloatUniform("radius", cornerRadiusPx)
+                    shader.setFloatUniform("band", 18f)
+                    renderEffect = android.graphics.RenderEffect
+                        .createRuntimeShaderEffect(shader, "content")
+                        .asComposeRenderEffect()
+                }
             }
         }
 }
