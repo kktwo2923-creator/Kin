@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -169,13 +170,15 @@ half4 main(float2 coord) {
     float edge = -d;                            // 距边缘的内向距离
     float t = clamp(1.0 - edge / band, 0.0, 1.0);
     float2 dir = c / max(length(c), 1.0);
-    // 边缘附近把采样点向内拉 -> 边缘折射放大
-    float2 uv = coord - dir * (t * t * 11.0);
+    // 边缘附近把采样点向内拉 -> 边缘折射放大(iOS26: 边带更窄、拉伸更强 = 边缘像玻璃珠般弯折)
+    float2 uv = coord - dir * (t * t * 14.0);
     half4 col = content.eval(uv);
-    // 左上镜面高光 / 右下轻阴影
+    // 左上镜面高光 / 右下轻阴影 + 极窄的高光内沿(玻璃珠亮边)
     float tl = clamp((-dir.x - dir.y) * 0.5 + 0.5, 0.0, 1.0);
-    col.rgb += (t * t) * tl * 0.30;
-    col.rgb -= (t * t) * (1.0 - tl) * 0.06;
+    float rim = smoothstep(0.78, 1.0, t);      // 仅最贴边一小条
+    col.rgb += (t * t) * tl * 0.22;
+    col.rgb += rim * tl * 0.18;
+    col.rgb -= (t * t) * (1.0 - tl) * 0.05;
     return col;
 }
 """
@@ -194,7 +197,7 @@ private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modi
             if (sz.width > 0 && sz.height > 0) {
                 shader.setFloatUniform("size", sz.width.toFloat(), sz.height.toFloat())
                 shader.setFloatUniform("radius", cornerRadiusPx)
-                shader.setFloatUniform("band", 18f)
+                shader.setFloatUniform("band", 15f)
                 renderEffect = android.graphics.RenderEffect
                     .createRuntimeShaderEffect(shader, "content")
                     .asComposeRenderEffect()
@@ -209,10 +212,10 @@ private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modi
 @Composable
 fun GlassSurface(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(22.dp),
+    shape: Shape = RoundedCornerShape(26.dp),
     tint: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    blurRadius: Dp = 24.dp,
-    cornerDp: Dp = 22.dp,
+    blurRadius: Dp = 30.dp,
+    cornerDp: Dp = 26.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val hazeState = LocalHazeState.current
@@ -222,18 +225,30 @@ fun GlassSurface(
             state = hazeState,
             style = HazeStyle(
                 backgroundColor = tint,
-                tints = listOf(HazeTint(tint.copy(alpha = 0.26f))),
+                // iOS26 液态玻璃: 更清透(tint 0.26→0.12)、几乎无颗粒, 让背景透出来折射
+                tints = listOf(HazeTint(tint.copy(alpha = 0.12f))),
                 blurRadius = blurRadius,
-                noiseFactor = 0.04f,
+                noiseFactor = 0.015f,
             ),
         ) {
             inputScale = HazeInputScale.Auto
         }
     } else {
-        Modifier.background(tint.copy(alpha = 0.55f))
+        Modifier.background(tint.copy(alpha = 0.5f))
     }
-    Box(modifier.clip(shape)) {
-        // 玻璃背景层(被折射):模糊背景 + 顶面镜面高光
+    Box(
+        modifier
+            // 柔和外阴影 — 让玻璃像 iOS26 一样"浮"在背景上
+            .shadow(
+                elevation = 12.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.10f),
+                spotColor = Color.Black.copy(alpha = 0.16f),
+            )
+            .clip(shape)
+    ) {
+        // 玻璃背景层(被折射): 模糊背景 + 顶面薄镜面(比之前更清透, 少奶白)
         Box(
             Modifier
                 .matchParentSize()
@@ -241,26 +256,27 @@ fun GlassSurface(
                 .then(glassMod)
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.White.copy(alpha = 0.38f),
-                        0.12f to Color.White.copy(alpha = 0.12f),
-                        0.5f to Color.White.copy(alpha = 0.03f),
-                        1f to Color.Transparent,
+                        0f to Color.White.copy(alpha = 0.24f),
+                        0.16f to Color.White.copy(alpha = 0.06f),
+                        0.66f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.035f),   // 底部极轻内阴影 → 立体
                     )
                 )
         )
-        // 渐变描边(独立层,不被折射)
+        // 双边高光描边(玻璃珠光): 顶/左极亮镜面 + 底部一道回光, 中段近乎透明
         Box(
             Modifier.matchParentSize().border(
                 width = 1.dp,
                 brush = Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.70f),
-                    0.35f to Color.White.copy(alpha = 0.16f),
-                    1f to Color.White.copy(alpha = 0.10f),
+                    0f to Color.White.copy(alpha = 0.95f),
+                    0.22f to Color.White.copy(alpha = 0.22f),
+                    0.7f to Color.White.copy(alpha = 0.06f),
+                    1f to Color.White.copy(alpha = 0.34f),   // 底沿回光 = 光从背后绕过玻璃
                 ),
                 shape = shape,
             )
         )
-        // 内容层(清晰,不被折射)
+        // 内容层(清晰, 不被折射)
         content()
     }
 }
