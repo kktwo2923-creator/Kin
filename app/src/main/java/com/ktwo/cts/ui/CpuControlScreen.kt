@@ -242,7 +242,10 @@ private fun ClusterCard(
 
             FreqPickerRow("最小频率", cfg.minKhzLong, availFreqsKhz, onMin)
             FreqPickerRow("最大频率", cfg.maxKhzLong, availFreqsKhz, onMax)
-            GovPickerRow("调速器", cfg.governor.ifEmpty { liveGov }, availGovs, onGov)
+            // [Fix] 传配置里"真实写的" governor(可能为空=未固定/交ROM), liveGov 只作提示。
+            //   不再用 ifEmpty{liveGov} 把实测值当成选中值, 否则一点选就把 walt 等实测值
+            //   固化进 config, 破坏"留空交ROM", 也会造成大核被写成 walt 与小核不一致。
+            GovPickerRow("调速器", cfg.governor, liveGov, availGovs, onGov)
         }
     }
 }
@@ -279,19 +282,35 @@ private fun FreqPickerRow(
 @Composable
 private fun GovPickerRow(
     label: String,
-    value: String,
+    value: String,        // 配置里实际写的 governor;空 = 未固定(交 ROM / 跟随基础档)
+    liveHint: String,     // 实测当前 governor;仅提示, 绝不写入 config
     avail: List<String>,
     onPick: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.weight(1f)) {
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 配置留空时, 把实测值降级为"提示", 不冒充选中值 —— 避免一点选就固化 walt 等。
+            if (value.isEmpty() && liveHint.isNotEmpty()) {
+                Text(
+                    "未固定 · 实测 $liveHint",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Box {
             AssistChip(
-                onClick = { if (avail.isNotEmpty()) expanded = true },
-                label = { Text(value.ifEmpty { "—" }) },
+                onClick = { expanded = true },
+                label = { Text(if (value.isNotEmpty()) value else "默认/交ROM") },
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                // 显式"留空": 不在 config 写死 governor(交 ROM / 跟随基础档), daemon 检测到风驰自会初始化。
+                DropdownMenuItem(
+                    text = { Text("默认/交ROM(留空)") },
+                    onClick = { onPick(""); expanded = false },
+                )
                 avail.forEach { g ->
                     DropdownMenuItem(text = { Text(g) }, onClick = { onPick(g); expanded = false })
                 }
