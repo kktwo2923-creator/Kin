@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -98,7 +99,7 @@ fun WallpaperBackground(
     wallpaperUri: String = "",
     modifier: Modifier = Modifier,
 ) {
-    val cs = MaterialTheme.colorScheme
+
     val ctx = LocalContext.current
     val bitmap = remember(wallpaperUri) {
         if (wallpaperUri.isBlank()) null
@@ -123,24 +124,23 @@ fun WallpaperBackground(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.linearGradient(
-                        listOf(
-                            cs.primary.copy(alpha = 0.55f),
-                            cs.tertiary.copy(alpha = 0.40f),
-                            cs.secondary.copy(alpha = 0.50f),
-                        )
-                    )
-                )
-            ) {
+            // [iOS26] 默认底色: 中性灰渐变(不再用主题蓝), 玻璃白边/折射在其上更接近官方观感
+            val dark = isSystemInDarkTheme()
+            val grad = if (dark)
+                listOf(Color(0xFF26282E), Color(0xFF3A3D46), Color(0xFF1C1D22))
+            else
+                listOf(Color(0xFFE9EBEF), Color(0xFFCBD0D8), Color(0xFFDFE2E8))
+            Box(Modifier.fillMaxSize().background(Brush.linearGradient(grad))) {
                 Box(
                     Modifier.size(260.dp).align(Alignment.TopEnd)
-                        .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                        .background(Color.White.copy(alpha = if (dark) 0.08f else 0.30f), CircleShape)
                 )
                 Box(
                     Modifier.size(220.dp).align(Alignment.BottomStart)
-                        .background(cs.tertiary.copy(alpha = 0.30f), CircleShape)
+                        .background(
+                            (if (dark) Color.White else Color.Black).copy(alpha = 0.06f),
+                            CircleShape,
+                        )
                 )
             }
         }
@@ -202,8 +202,14 @@ private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modi
                 shader.setFloatUniform("size", sz.width.toFloat(), sz.height.toFloat())
                 shader.setFloatUniform("radius", cornerRadiusPx)
                 shader.setFloatUniform("band", 15f)
-                renderEffect = android.graphics.RenderEffect
+                val lens = android.graphics.RenderEffect
                     .createRuntimeShaderEffect(shader, "content")
+                // [SukiSU vibrancy] 玻璃后内容饱和度提升(colorControls saturation), 先提饱和再折射
+                val sat = android.graphics.ColorMatrix().apply { setSaturation(1.35f) }
+                val vibrancy = android.graphics.RenderEffect
+                    .createColorFilterEffect(android.graphics.ColorMatrixColorFilter(sat))
+                renderEffect = android.graphics.RenderEffect
+                    .createChainEffect(lens, vibrancy)
                     .asComposeRenderEffect()
             }
         }
@@ -217,20 +223,25 @@ private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modi
 fun GlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(26.dp),
-    tint: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    tint: Color = Color.Unspecified,
     blurRadius: Dp = 30.dp,
     cornerDp: Dp = 26.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val hazeState = LocalHazeState.current
     val cornerPx = with(LocalDensity.current) { cornerDp.toPx() }
+    // [iOS26/SukiSU] 玻璃体是中性材质, 不吃主题色:
+    //   亮色 = 白色超薄材质(ultraThin), 暗色 = 深灰玻璃。
+    //   tint 仅当调用方显式传入(如状态卡的绿/红语义色)时才参与染色。
+    val dark = isSystemInDarkTheme()
+    val neutral = if (dark) Color(0xFF2A2A2C) else Color.White
+    val effTint = if (tint == Color.Unspecified) neutral else tint
     val glassMod = if (hazeState != null) {
         Modifier.hazeEffect(
             state = hazeState,
             style = HazeStyle(
-                backgroundColor = tint,
-                // iOS26 液态玻璃: 更清透(tint 0.26→0.12)、几乎无颗粒, 让背景透出来折射
-                tints = listOf(HazeTint(tint.copy(alpha = 0.12f))),
+                backgroundColor = neutral,
+                tints = listOf(HazeTint(effTint.copy(alpha = if (tint == Color.Unspecified) 0.14f else 0.20f))),
                 blurRadius = blurRadius,
                 noiseFactor = 0.015f,
             ),
@@ -238,7 +249,7 @@ fun GlassSurface(
             inputScale = HazeInputScale.Auto
         }
     } else {
-        Modifier.background(tint.copy(alpha = 0.5f))
+        Modifier.background(effTint.copy(alpha = 0.5f))
     }
     Box(
         modifier
@@ -324,7 +335,6 @@ fun FloatingGlassNav(
         GlassSurface(
             modifier = Modifier.fillMaxWidth(),
             shape = CircleShape,
-            tint = MaterialTheme.colorScheme.surfaceContainer,
             blurRadius = 30.dp,
             cornerDp = 48.dp,   // 胶囊: 着色器内自动夹到高度的一半
         ) {
@@ -334,7 +344,11 @@ fun FloatingGlassNav(
                 val density = LocalDensity.current
                 val slotWpx = with(density) { maxWidth.toPx() } / n
                 val slotWdp = maxWidth / n
-                val primary = MaterialTheme.colorScheme.primary
+                // [SukiSU/iOS26] 指示器是中性玻璃, 不用主题色:
+                //   亮色模式 = 黑 8%(玻璃上的暗压片), 暗色模式 = 白 12%(玻璃上的亮片)
+                val dark = isSystemInDarkTheme()
+                val pillFill = if (dark) Color.White.copy(alpha = 0.12f)
+                               else Color.Black.copy(alpha = 0.08f)
                 val pill = RoundedCornerShape(20.dp)   // 整块覆盖图标+文字的圆角胶囊
 
                 // 长按拿起 -> 指示器抬起(放大 + 发光 + 玻璃更浓),0=落下 1=拿起
@@ -359,30 +373,28 @@ fun FloatingGlassNav(
                             // 拿起时放大(横向更夸张),液态被"提"起来的手感
                             scaleX = 1f + 0.16f * lift
                             scaleY = 1f + 0.08f * lift
-                            shadowElevation = 22f * lift
+                            shadowElevation = 18f * lift
                             shape = pill
                             clip = false
-                            ambientShadowColor = primary
-                            spotShadowColor = primary
+                            ambientShadowColor = Color.Black
+                            spotShadowColor = Color.Black
                         }
                         .clip(pill)
+                        // [SukiSU/iOS26] 中性玻璃压片: 单层中性填充 + 顶部白色镜面 + 白描边, 无主题色
+                        .background(pillFill.copy(alpha = pillFill.alpha * (1f + 0.8f * lift)))
                         .background(
                             Brush.verticalGradient(
-                                listOf(
-                                    primary.copy(alpha = 0.40f + 0.32f * lift),
-                                    primary.copy(alpha = 0.22f + 0.22f * lift),
-                                )
-                            )
-                        )
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = 0.38f + 0.34f * lift),
-                                0.55f to Color.Transparent,
+                                0f to Color.White.copy(alpha = 0.30f + 0.26f * lift),
+                                0.5f to Color.Transparent,
                             )
                         )
                         .border(
                             1.dp,
-                            Color.White.copy(alpha = 0.45f + 0.35f * lift),
+                            Brush.verticalGradient(
+                                0f to Color.White.copy(alpha = 0.85f),
+                                0.6f to Color.White.copy(alpha = 0.10f + 0.20f * lift),
+                                1f to Color.White.copy(alpha = 0.30f),
+                            ),
                             pill,
                         )
                 )
@@ -457,9 +469,10 @@ private fun NavSlot(
     active: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    // [SukiSU/iOS26] 单色: 全部 onSurface, 选中=全亮, 未选中=降透明度; 不用主题色
+    val base = MaterialTheme.colorScheme.onSurface
     val fg by animateColorAsState(
-        if (active) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.onSurfaceVariant,
+        if (active) base else base.copy(alpha = 0.55f),
         label = "navFg",
     )
     Column(
@@ -485,12 +498,13 @@ private fun NavSlot(
     }
 }
 
-/** 大圆角玻璃卡片(替代原 Tonal 卡片,接口保持兼容) */
+/** 大圆角玻璃卡片(替代原 Tonal 卡片,接口保持兼容)。默认中性白/深灰玻璃(iOS26),不吃主题色。 */
 @Composable
 fun TonalCard(
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    contentColor: Color = contentColorFor(color),
+    color: Color = Color.Unspecified,
+    contentColor: Color = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurface
+                          else contentColorFor(color),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     GlassSurface(modifier = modifier, tint = color) {
