@@ -303,12 +303,12 @@ private fun GovPickerRow(
         Box {
             AssistChip(
                 onClick = { expanded = true },
-                label = { Text(if (value.isNotEmpty()) value else "默认/交系统") },
+                label = { Text(if (value.isNotEmpty()) value else "默认") },
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                // 显式"留空": 不在 config 写死 governor(交系统 / 跟随基础档), daemon 检测到风驰自会初始化。
+                // 显式"留空": 不在 config 写死 governor(默认 / 跟随基础档), daemon 检测到风驰自会初始化。
                 DropdownMenuItem(
-                    text = { Text("默认/交系统(留空)") },
+                    text = { Text("默认(留空)") },
                     onClick = { onPick(""); expanded = false },
                 )
                 avail.forEach { g ->
