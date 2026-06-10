@@ -294,7 +294,7 @@ private fun GovPickerRow(
             // 配置留空时, 把实测值降级为"提示", 不冒充选中值 —— 避免一点选就固化 walt 等。
             if (value.isEmpty() && liveHint.isNotEmpty()) {
                 Text(
-                    "未固定 · 实测 $liveHint",
+                    "当前 $liveHint",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -303,12 +303,12 @@ private fun GovPickerRow(
         Box {
             AssistChip(
                 onClick = { expanded = true },
-                label = { Text(if (value.isNotEmpty()) value else "默认/交ROM") },
+                label = { Text(if (value.isNotEmpty()) value else "默认/交系统") },
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                // 显式"留空": 不在 config 写死 governor(交 ROM / 跟随基础档), daemon 检测到风驰自会初始化。
+                // 显式"留空": 不在 config 写死 governor(交系统 / 跟随基础档), daemon 检测到风驰自会初始化。
                 DropdownMenuItem(
-                    text = { Text("默认/交ROM(留空)") },
+                    text = { Text("默认/交系统(留空)") },
                     onClick = { onPick(""); expanded = false },
                 )
                 avail.forEach { g ->
