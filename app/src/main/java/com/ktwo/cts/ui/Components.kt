@@ -1,6 +1,5 @@
 package com.ktwo.cts.ui
 
-import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -170,9 +169,15 @@ half4 main(float2 coord) {
     float edge = -d;                            // 距边缘的内向距离
     float t = clamp(1.0 - edge / band, 0.0, 1.0);
     float2 dir = c / max(length(c), 1.0);
-    // 边缘附近把采样点向内拉 -> 边缘折射放大(iOS26: 边带更窄、拉伸更强 = 边缘像玻璃珠般弯折)
-    float2 uv = coord - dir * (t * t * 14.0);
-    half4 col = content.eval(uv);
+    // 边缘附近把采样点向内拉 -> 边缘折射放大(iOS26: 边带窄、拉伸强 = 玻璃珠弯折)
+    float pull = t * t * 14.0;
+    // 色散: R/G/B 以略不同的折射率采样 -> 边缘出现 iOS26 标志性的彩色镶边
+    half4 col;
+    col.r = content.eval(coord - dir * (pull * 1.14)).r;
+    col.g = content.eval(coord - dir * pull).g;
+    half4 cb = content.eval(coord - dir * (pull * 0.86));
+    col.b = cb.b;
+    col.a = cb.a;
     // 左上镜面高光 / 右下轻阴影 + 极窄的高光内沿(玻璃珠亮边)
     float tl = clamp((-dir.x - dir.y) * 0.5 + 0.5, 0.0, 1.0);
     float rim = smoothstep(0.78, 1.0, t);      // 仅最贴边一小条
@@ -183,10 +188,9 @@ half4 main(float2 coord) {
 }
 """
 
-/** 在玻璃背景层上叠 AGSL 折射(仅 Android 13+,低版本无操作) */
+/** 在玻璃背景层上叠 AGSL 折射(minSdk=33, 全量启用, 不再留低版本退化) */
 @Composable
 private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modifier {
-    if (Build.VERSION.SDK_INT < 33) return this
     val shader = remember { android.graphics.RuntimeShader(LIQUID_GLASS_AGSL) }
     var sz by remember { mutableStateOf(IntSize.Zero) }
     return this

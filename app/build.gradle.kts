@@ -10,7 +10,8 @@ android {
 
     defaultConfig {
         applicationId = "com.ktwo.cts"
-        minSdk = 26
+        // iOS26 液态玻璃依赖 AGSL RuntimeShader(Android 13+), 不再适配低版本
+        minSdk = 33
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
