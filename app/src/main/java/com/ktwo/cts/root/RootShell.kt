@@ -64,10 +64,10 @@ object RootShell {
     }
 
     /**
-     * 读取某个日志文件的末尾若干行(默认 500),避免大文件卡 UI。
+     * 读取某个日志文件的末尾若干行(默认 2000, 配合 daemon 512KB 滚动日志),避免大文件卡 UI。
      * 返回从旧到新的行列表。
      */
-    fun readLogTail(path: String, lines: Int = 500): List<String> =
+    fun readLogTail(path: String, lines: Int = 2000): List<String> =
         Shell.cmd("tail -n $lines '$path' 2>/dev/null").exec().out
 
     /** 清空(截断)某个日志文件。受保护文件(perapp_powermode.txt)拒绝操作。 */
