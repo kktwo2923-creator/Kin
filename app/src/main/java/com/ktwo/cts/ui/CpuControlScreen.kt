@@ -36,6 +36,9 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
     val live by vm.live.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val saveResult by vm.saveResult.collectAsStateWithLifecycle()
+    val soc by vm.soc.collectAsStateWithLifecycle()
+    val restoreResult by vm.restoreResult.collectAsStateWithLifecycle()
+    var showRestoreDialog by remember { mutableStateOf(false) }
 
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(saveResult) {
@@ -45,6 +48,26 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
             null -> {}
         }
         if (saveResult != null) { delay(100); vm.clearSaveResult() }
+    }
+    LaunchedEffect(restoreResult) {
+        when (restoreResult) {
+            true -> snackbar.showSnackbar("已恢复默认配置(${soc?.configName ?: "config.json"}),daemon 将热重载")
+            false -> snackbar.showSnackbar("恢复失败:模块默认配置缺失或无 Root")
+            null -> {}
+        }
+        if (restoreResult != null) { delay(100); vm.clearRestoreResult() }
+    }
+
+    if (showRestoreDialog) {
+        RestoreDefaultsDialog(
+            configName = soc?.configName ?: "config.json",
+            chip = soc?.chip.orEmpty(),
+            onConfirm = { alsoPerapp ->
+                showRestoreDialog = false
+                vm.restoreDefaults(alsoPerapp)
+            },
+            onDismiss = { showRestoreDialog = false },
+        )
     }
 
     Scaffold(
@@ -71,6 +94,9 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             HelpCard()
+
+            // SoC 识别 + 恢复默认(进 App 已预热识别)
+            SocCard(soc = soc, onRestore = { showRestoreDialog = true })
 
             // 画像选择器(方案丙核心)
             ProfileSelectorCard(
@@ -191,6 +217,75 @@ private fun ProfileSelectorCard(
             }
         }
     }
+}
+
+/** SoC 识别卡: 显示识别结果与默认配置文件, 右侧「恢复默认」 */
+@Composable
+private fun SocCard(soc: com.ktwo.cts.root.RootShell.SocInfo?, onRestore: () -> Unit) {
+    TonalCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(16.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("SoC", fontWeight = FontWeight.Bold)
+                if (soc == null) {
+                    Text(
+                        "识别中…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        buildString {
+                            append(soc.socModel.ifEmpty { soc.platform.ifEmpty { "未知" } }.uppercase())
+                            if (soc.chip.isNotEmpty()) append("(${soc.chip})")
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "默认配置: ${soc.configName}" + if (soc.chip.isEmpty()) "(未识别, 用通用配置)" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            OutlinedButton(onClick = onRestore, enabled = soc != null) { Text("恢复默认") }
+        }
+    }
+}
+
+/** 恢复默认确认对话框: 可勾选连同应用画像(perapp_powermode.txt)一起恢复 */
+@Composable
+private fun RestoreDefaultsDialog(
+    configName: String,
+    chip: String,
+    onConfirm: (alsoPerapp: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var alsoPerapp by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("恢复默认配置?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "将用模块内置的 $configName" +
+                        (if (chip.isNotEmpty()) "(按 SoC $chip 匹配)" else "") +
+                        " 覆盖当前 config.json,你的所有画像修改会丢失。daemon 会自动热重载。"
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { alsoPerapp = !alsoPerapp },
+                ) {
+                    Checkbox(checked = alsoPerapp, onCheckedChange = { alsoPerapp = it })
+                    Text("同时恢复应用画像表(perapp_powermode.txt)")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(alsoPerapp) }) { Text("恢复") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable

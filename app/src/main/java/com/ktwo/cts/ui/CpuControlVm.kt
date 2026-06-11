@@ -48,6 +48,14 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
     private val _saveResult = MutableStateFlow<Boolean?>(null)
     val saveResult: StateFlow<Boolean?> = _saveResult.asStateFlow()
 
+    /** 识别到的 SoC(App 启动已预热, 这里读缓存即回) */
+    private val _soc = MutableStateFlow<RootShell.SocInfo?>(null)
+    val soc: StateFlow<RootShell.SocInfo?> = _soc.asStateFlow()
+
+    /** 恢复默认结果(null=无, true/false=成功/失败), 驱动 Snackbar */
+    private val _restoreResult = MutableStateFlow<Boolean?>(null)
+    val restoreResult: StateFlow<Boolean?> = _restoreResult.asStateFlow()
+
     // 可用频率档 / 调速器,按物理 policy 缓存(只读一次)
     private val freqCache = HashMap<Int, List<Long>>()
     private val govCache = HashMap<Int, List<String>>()
@@ -61,7 +69,10 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
     }.flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LiveStatus.EMPTY)
 
-    init { reload() }
+    init {
+        reload()
+        viewModelScope.launch(Dispatchers.IO) { _soc.value = runCatching { RootShell.detectSoc() }.getOrNull() }
+    }
 
     // 设备实际 CPU policy(从 /sys 动态发现),用于让面板按真机簇展示/读频率
     private var devicePolicies: List<Int> = emptyList()
@@ -201,4 +212,30 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearSaveResult() { _saveResult.value = null }
+
+    /**
+     * 恢复默认配置: 按识别 SoC 从 /data/adb/modules/CoreTurboScheduler/config/
+     * 拷贝对应默认 config 覆盖运行配置(daemon 热重载)。
+     * 成功后同步覆盖 App 私有备份(config_backup.json), 否则 BootReceiver 开机
+     * 又会把旧的用户配置盖回来, 恢复就白做了。
+     */
+    fun restoreDefaults(alsoPerapp: Boolean) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                val r = runCatching { RootShell.restoreDefaultConfig(alsoPerapp) }.getOrDefault(false)
+                if (r) {
+                    runCatching {
+                        val raw = RootShell.readConfigRaw()
+                        val f = java.io.File(getApplication<Application>().filesDir, "config_backup.json")
+                        if (raw.isNotBlank()) f.writeText(raw) else f.delete()
+                    }
+                }
+                r
+            }
+            if (ok) reload()
+            _restoreResult.value = ok
+        }
+    }
+
+    fun clearRestoreResult() { _restoreResult.value = null }
 }

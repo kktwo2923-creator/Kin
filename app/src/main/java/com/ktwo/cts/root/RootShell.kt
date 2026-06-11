@@ -124,6 +124,68 @@ object RootShell {
         return writePerApp(cur, globalMode)
     }
 
+    // ============ SoC 识别 + 恢复默认配置 ============
+    // 默认配置目录(Magisk 模块内置, 装机时由 customize.sh 按 SoC 部署)
+    private const val MODULE_CONFIG_DIR = "/data/adb/modules/CoreTurboScheduler/config"
+
+    /** SoC 识别结果: socModel=ro.soc.model, platform=ro.board.platform, chip=映射档(空=未识别), configName=对应默认配置文件名 */
+    data class SocInfo(
+        val socModel: String,
+        val platform: String,
+        val chip: String,
+        val configName: String,
+    )
+
+    @Volatile private var cachedSoc: SocInfo? = null
+
+    /**
+     * 识别 SoC(与模块 customize.sh 的 identify_chip 同一套映射)。
+     * 结果进程内缓存; App 启动时预热(CtsApp), 进面板直接可用。
+     */
+    fun detectSoc(): SocInfo {
+        cachedSoc?.let { return it }
+        fun prop(k: String) =
+            Shell.cmd("getprop $k").exec().out.firstOrNull()?.trim()?.lowercase().orEmpty()
+        val model = prop("ro.soc.model")
+        val plat = prop("ro.board.platform")
+        val chip = when {
+            model.startsWith("sm8750") -> "8E"
+            model.startsWith("sm8850") -> "8E5"
+            model.startsWith("sm8650") -> "8G3"
+            model.startsWith("sm8550") -> "8G2"
+            model.startsWith("sm8450") -> "8G1"
+            model.startsWith("sm8845") -> "8G5"
+            model == "mt6989" || plat == "mt6989" -> "D9300"
+            model.startsWith("mt6991") || plat == "mt6991" -> "D9400"
+            else -> ""
+        }
+        val cfg = if (chip.isEmpty()) "config.json" else "config_$chip.json"
+        return SocInfo(model, plat, chip, cfg).also { cachedSoc = it }
+    }
+
+    /**
+     * 恢复默认配置: 按识别到的 SoC 从模块目录拷贝对应 config_XXX.json 覆盖
+     * /sdcard/Android/CTS/config.json(daemon inotify 热重载)。
+     * 源文件缺失时兜底用模块 config.json。alsoPerapp=true 时一并恢复 perapp_powermode.txt。
+     * 返回恢复后 config.json 是否非空。
+     */
+    fun restoreDefaultConfig(alsoPerapp: Boolean = false): Boolean {
+        val soc = detectSoc()
+        val script = buildString {
+            append("SRC='$MODULE_CONFIG_DIR/${soc.configName}'; ")
+            append("[ -s \"\$SRC\" ] || SRC='$MODULE_CONFIG_DIR/config.json'; ")
+            append("[ -s \"\$SRC\" ] || exit 1; ")
+            append("command -v chattr >/dev/null 2>&1 && chattr -i '$CONFIG' 2>/dev/null; ")
+            append("cp -f \"\$SRC\" '$CONFIG' && chmod 666 '$CONFIG'")
+            if (alsoPerapp) {
+                append("; [ -s '$MODULE_CONFIG_DIR/perapp_powermode.txt' ] && ")
+                append("cp -f '$MODULE_CONFIG_DIR/perapp_powermode.txt' '$PERAPP' && chmod 666 '$PERAPP'")
+            }
+        }
+        Shell.cmd(script).exec()
+        return Shell.cmd("[ -s '$CONFIG' ] && echo ok").exec().out.firstOrNull() == "ok"
+    }
+
     // ============ config.json 读写(CPU 控制面板;daemon 靠 inotify 热重载) ============
     private const val CONFIG = "$CTS_DIR/config.json"
 
