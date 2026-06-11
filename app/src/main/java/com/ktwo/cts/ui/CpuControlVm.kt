@@ -63,19 +63,25 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
     /** 实时状态:1 秒刷新,无订阅自动停 */
     val live: StateFlow<LiveStatus> = flow {
         while (true) {
-            emit(loadLive())
+            // [Fix] loadLive 里有未包 runCatching 的 root IO(readStatusRaw 的 Shell 兜底),
+            //   一旦抛异常会沿 stateIn(viewModelScope) 冒泡成未捕获异常 → 进 CPU 页即闪退。
+            //   这里整体兜底,采样失败退回 EMPTY,下一秒重试。
+            emit(runCatching { loadLive() }.getOrDefault(LiveStatus.EMPTY))
             delay(1000)
         }
     }.flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LiveStatus.EMPTY)
 
+    // 设备实际 CPU policy(从 /sys 动态发现),用于让面板按真机簇展示/读频率
+    // [Fix] 必须声明在 init{} 之前:viewModelScope 是 Main.immediate,init 里 reload()
+    //   会同步执行到 withContext(IO) 才挂起,IO 线程可能赶在本字段初始化器(声明在
+    //   init 之后则晚于 init 执行)之前读它 → 读到 null 直接 NPE。
+    private var devicePolicies: List<Int> = emptyList()
+
     init {
         reload()
         viewModelScope.launch(Dispatchers.IO) { _soc.value = runCatching { RootShell.detectSoc() }.getOrNull() }
     }
-
-    // 设备实际 CPU policy(从 /sys 动态发现),用于让面板按真机簇展示/读频率
-    private var devicePolicies: List<Int> = emptyList()
 
     fun reload() {
         viewModelScope.launch {
@@ -201,23 +207,29 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
     fun save() {
         val p = _editing.value ?: return
         viewModelScope.launch {
-            val merged = withContext(Dispatchers.IO) {
-                // 重新读最新原始 JSON(防止其它进程/daemon 期间改过),再合并
-                val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                _cfg.value.mergeProfileInto(raw, p)
-            }
-            val ok = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
-            if (ok) {
-                // 备份用户配置到 App 私有目录:模块开机会用默认 config 覆盖 sdcard,
-                // 开机后由 BootReceiver 用此备份恢复用户配置(见 BootReceiver.restoreUserConfig)
-                withContext(Dispatchers.IO) {
-                    runCatching {
-                        java.io.File(getApplication<Application>().filesDir, "config_backup.json")
-                            .writeText(merged)
-                    }
+            // [Fix] 整体兜底:mergeProfileInto 的 JSONObject 操作 / 读写 config 的 Shell
+            //   都可能抛(JSONException、NoShellException 等),viewModelScope 里未捕获
+            //   异常会直接闪退;失败按"写入失败"提示。
+            val ok = runCatching {
+                val merged = withContext(Dispatchers.IO) {
+                    // 重新读最新原始 JSON(防止其它进程/daemon 期间改过),再合并
+                    val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
+                    _cfg.value.mergeProfileInto(raw, p)
                 }
-                reload()           // 写成功后重读,保证 UI 与文件一致
-            }
+                val written = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
+                if (written) {
+                    // 备份用户配置到 App 私有目录:模块开机会用默认 config 覆盖 sdcard,
+                    // 开机后由 BootReceiver 用此备份恢复用户配置(见 BootReceiver.restoreUserConfig)
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            java.io.File(getApplication<Application>().filesDir, "config_backup.json")
+                                .writeText(merged)
+                        }
+                    }
+                    reload()           // 写成功后重读,保证 UI 与文件一致
+                }
+                written
+            }.getOrDefault(false)
             _saveResult.value = ok
         }
     }

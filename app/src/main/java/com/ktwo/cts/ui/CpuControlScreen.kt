@@ -19,7 +19,6 @@ import com.ktwo.cts.data.ClusterModelCfg
 import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.PolicyMap
 import com.ktwo.cts.data.ProfileModel
-import kotlinx.coroutines.delay
 
 /**
  * CPU 控制面板(方案丙:画像编辑器)。
@@ -35,27 +34,36 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
     val editing by vm.editing.collectAsStateWithLifecycle()
     val live by vm.live.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
-    val saveResult by vm.saveResult.collectAsStateWithLifecycle()
     val soc by vm.soc.collectAsStateWithLifecycle()
-    val restoreResult by vm.restoreResult.collectAsStateWithLifecycle()
     var showRestoreDialog by remember { mutableStateOf(false) }
 
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(saveResult) {
-        when (saveResult) {
-            true -> snackbar.showSnackbar("已写入 config.json,daemon 将热重载")
-            false -> snackbar.showSnackbar("写入失败,请检查 Root 权限")
-            null -> {}
+    // [Fix] 结果作为"事件"先消费再弹 Snackbar:
+    //   旧写法 showSnackbar(挂起约 4s)结束后才 clear,期间切走页面协程被取消,
+    //   结果值永远留在 VM,之后每次进 CPU 页都会重放一次 Snackbar;
+    //   而 clear 放最前又会改 LaunchedEffect 的 key,把还没显示的 Snackbar 取消掉。
+    //   用 collect 不依赖 key,先 clear 再显示,两个问题都消掉。
+    LaunchedEffect(Unit) {
+        vm.saveResult.collect { r ->
+            if (r != null) {
+                vm.clearSaveResult()
+                snackbar.showSnackbar(
+                    if (r) "已写入 config.json,daemon 将热重载"
+                    else "写入失败,请检查 Root 权限"
+                )
+            }
         }
-        if (saveResult != null) { delay(100); vm.clearSaveResult() }
     }
-    LaunchedEffect(restoreResult) {
-        when (restoreResult) {
-            true -> snackbar.showSnackbar("已恢复默认配置(${soc?.configName ?: "config.json"}),daemon 将热重载")
-            false -> snackbar.showSnackbar("恢复失败:模块默认配置缺失或无 Root")
-            null -> {}
+    LaunchedEffect(Unit) {
+        vm.restoreResult.collect { r ->
+            if (r != null) {
+                vm.clearRestoreResult()
+                snackbar.showSnackbar(
+                    if (r) "已恢复默认配置(${soc?.configName ?: "config.json"}),daemon 将热重载"
+                    else "恢复失败:模块默认配置缺失或无 Root"
+                )
+            }
         }
-        if (restoreResult != null) { delay(100); vm.clearRestoreResult() }
     }
 
     if (showRestoreDialog) {

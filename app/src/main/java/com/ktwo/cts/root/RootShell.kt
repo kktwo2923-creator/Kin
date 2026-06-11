@@ -22,10 +22,12 @@ object RootShell {
         val r1 = Shell.cmd("[ -s /data/powercfg.sh ] && sh /data/powercfg.sh $mode").exec()
         if (r1.isSuccess) return true
         // fallback: switch.sh 直接调
+        // [Fix] 不用 exit(libsu 持久 shell 里 exit 会终止会话,之后所有 root 调用失效/重建),
+        //   与 restoreDefaultConfig 同款处理:用变量记结果,最后以测试命令返回退出码。
         val r2 = Shell.cmd(
-            "for d in /data/adb/modules/CoreTurboScheduler /data/adb/ksu/modules/CoreTurboScheduler; do" +
-            "  [ -s \"\$d/switch.sh\" ] && sh \"\$d/switch.sh\" $mode && exit 0;" +
-            " done; exit 1"
+            "ok=1; for d in /data/adb/modules/CoreTurboScheduler /data/adb/ksu/modules/CoreTurboScheduler; do" +
+            "  [ -s \"\$d/switch.sh\" ] && sh \"\$d/switch.sh\" $mode && ok=0 && break;" +
+            " done; [ \"\$ok\" = 0 ]"
         ).exec()
         return r2.isSuccess
     }

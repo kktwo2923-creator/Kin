@@ -38,13 +38,20 @@ class CtsApp : Application() {
                 val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
                     .format(java.util.Date())
                 val text = "==== APP CRASH $ts thread=${t.name} ====\n$sw\n"
-                val b64 = android.util.Base64.encodeToString(
-                    text.toByteArray(), android.util.Base64.NO_WRAP,
-                )
-                Shell.cmd(
-                    "mkdir -p /sdcard/Android/CTS; " +
-                        "echo '$b64' | base64 -d >> /sdcard/Android/CTS/app_crash.log",
-                ).exec()
+                // [Fix] 只复用已存活的 shell;崩溃线程上同步新建 su 会话可能卡授权窗/超时
+                //   数秒甚至死锁,系统会把崩溃升级成 ANR。没有现成 shell 就退化写私有目录。
+                val shell = Shell.getCachedShell()
+                if (shell != null && shell.isAlive) {
+                    val b64 = android.util.Base64.encodeToString(
+                        text.toByteArray(), android.util.Base64.NO_WRAP,
+                    )
+                    Shell.cmd(
+                        "mkdir -p /sdcard/Android/CTS; " +
+                            "echo '$b64' | base64 -d >> /sdcard/Android/CTS/app_crash.log",
+                    ).exec()
+                } else {
+                    java.io.File(filesDir, "app_crash.log").appendText(text)
+                }
             }
             prev?.uncaughtException(t, e)
         }
