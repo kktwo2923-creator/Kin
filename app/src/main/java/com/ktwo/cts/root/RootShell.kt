@@ -5,12 +5,21 @@ import com.topjohnwu.superuser.Shell
 object RootShell {
     fun isRooted(): Boolean = try { Shell.getShell().isRoot } catch (_: Exception) { false }
 
-    /** 执行一行 root 命令,返回 stdout */
-    fun exec(cmd: String): String =
-        Shell.cmd(cmd).exec().out.joinToString("\n")
+    // ============ 永不抛出的 Shell 原语 ============
+    // [Fix] Shell.cmd().exec() 在 root 会话死亡/重建失败时抛 NoShellException,
+    //   任何未守护的调用点都会把进程打崩(CPU tab 闪退即此类)。
+    //   全部调用统一走这三个原语 → RootShell 对外永不抛出, 调用方不必再各自 try/catch。
+    private fun sh(cmd: String): Shell.Result? =
+        runCatching { Shell.cmd(cmd).exec() }.getOrNull()
 
-    fun execSilent(cmd: String): Boolean =
-        Shell.cmd(cmd).exec().isSuccess
+    private fun shOut(cmd: String): List<String> = sh(cmd)?.out ?: emptyList()
+
+    private fun shOk(cmd: String): Boolean = sh(cmd)?.isSuccess == true
+
+    /** 执行一行 root 命令,返回 stdout(失败/无 shell 返回空串, 不抛出) */
+    fun exec(cmd: String): String = shOut(cmd).joinToString("\n")
+
+    fun execSilent(cmd: String): Boolean = shOk(cmd)
 
     /**
      * 触发 /data/powercfg.sh <mode>(Scene 接管协议,模块的 init_vtools.sh 生成)
@@ -19,30 +28,24 @@ object RootShell {
     fun applyMode(mode: String): Boolean {
         if (mode.isBlank()) return false
         // 优先 /data/powercfg.sh,这是 Scene 接管协议入口
-        val r1 = Shell.cmd("[ -s /data/powercfg.sh ] && sh /data/powercfg.sh $mode").exec()
-        if (r1.isSuccess) return true
+        if (shOk("[ -s /data/powercfg.sh ] && sh /data/powercfg.sh $mode")) return true
         // fallback: switch.sh 直接调
         // [Fix] 不用 exit(libsu 持久 shell 里 exit 会终止会话,之后所有 root 调用失效/重建),
         //   与 restoreDefaultConfig 同款处理:用变量记结果,最后以测试命令返回退出码。
-        val r2 = Shell.cmd(
+        return shOk(
             "ok=1; for d in /data/adb/modules/CoreTurboScheduler /data/adb/ksu/modules/CoreTurboScheduler; do" +
             "  [ -s \"\$d/switch.sh\" ] && sh \"\$d/switch.sh\" $mode && ok=0 && break;" +
             " done; [ \"\$ok\" = 0 ]"
-        ).exec()
-        return r2.isSuccess
+        )
     }
 
     /** 读取当前模式状态文件 */
-    fun currentMode(): String = try {
-        Shell.cmd("cat /data/coreturbo_powermode 2>/dev/null").exec()
-            .out.firstOrNull()?.trim().orEmpty()
-    } catch (_: Exception) { "" }
+    fun currentMode(): String =
+        shOut("cat /data/coreturbo_powermode 2>/dev/null").firstOrNull()?.trim().orEmpty()
 
     /** 模块是否已安装 */
     fun moduleInstalled(): Boolean =
-        Shell.cmd(
-            "[ -d /data/adb/modules/CoreTurboScheduler ] || [ -d /data/adb/ksu/modules/CoreTurboScheduler ]"
-        ).exec().isSuccess
+        shOk("[ -d /data/adb/modules/CoreTurboScheduler ] || [ -d /data/adb/ksu/modules/CoreTurboScheduler ]")
 
     // ============ perapp_powermode.txt 读写(app = txt 的 GUI 编辑器) ============
     // 格式: 每行 "包名 模式"; 以 # 开头为注释; 以 * 开头为全局默认行(* balance)。
@@ -58,30 +61,28 @@ object RootShell {
      * 列出 CTS 目录下的日志文件(扩展名 log 或 txt),按修改时间倒序(最新在前)。
      * 排除受保护的数据文件(如 perapp_powermode.txt),防止误清空画像。
      */
-    fun listLogFiles(): List<String> {
-        val cmd = "ls -1t " + CTS_DIR + "/*.log " + CTS_DIR + "/*.txt 2>/dev/null"
-        return Shell.cmd(cmd).exec().out
+    fun listLogFiles(): List<String> =
+        shOut("ls -1t " + CTS_DIR + "/*.log " + CTS_DIR + "/*.txt 2>/dev/null")
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.substringAfterLast('/') !in PROTECTED_FILES }
-    }
 
     /**
      * 读取某个日志文件的末尾若干行(默认 2000, 配合 daemon 512KB 滚动日志),避免大文件卡 UI。
      * 返回从旧到新的行列表。
      */
     fun readLogTail(path: String, lines: Int = 2000): List<String> =
-        Shell.cmd("tail -n $lines '$path' 2>/dev/null").exec().out
+        shOut("tail -n $lines '$path' 2>/dev/null")
 
     /** 清空(截断)某个日志文件。受保护文件(perapp_powermode.txt)拒绝操作。 */
     fun clearLog(path: String): Boolean {
         if (path.substringAfterLast('/') in PROTECTED_FILES) return false
-        return Shell.cmd(": > '$path'").exec().isSuccess
+        return shOk(": > '$path'")
     }
 
     /** 读取全部画像条目 pkg -> mode(不含注释/默认行) */
     fun readPerApp(): LinkedHashMap<String, String> {
         val map = LinkedHashMap<String, String>()
-        val raw = Shell.cmd("cat $PERAPP 2>/dev/null").exec().out
+        val raw = shOut("cat $PERAPP 2>/dev/null")
         for (line in raw) {
             val t = line.trim()
             if (t.isEmpty() || t.startsWith("#") || t.startsWith("*")) continue
@@ -93,8 +94,7 @@ object RootShell {
 
     /** 读取全局默认模式(* 行),无则 balance */
     fun readGlobalMode(): String {
-        val raw = Shell.cmd("grep '^\\*' $PERAPP 2>/dev/null | head -1").exec().out
-        val line = raw.firstOrNull()?.trim().orEmpty()
+        val line = shOut("grep '^\\*' $PERAPP 2>/dev/null | head -1").firstOrNull()?.trim().orEmpty()
         val sp = line.split(Regex("\\s+"))
         return if (sp.size >= 2) sp[1] else "balance"
     }
@@ -114,9 +114,7 @@ object RootShell {
         val b64 = android.util.Base64.encodeToString(
             sb.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
         )
-        return Shell.cmd(
-            "mkdir -p /sdcard/Android/CTS; echo '$b64' | base64 -d > $PERAPP"
-        ).exec().isSuccess
+        return shOk("mkdir -p /sdcard/Android/CTS; echo '$b64' | base64 -d > $PERAPP")
     }
 
     /** 设置单个 App 画像(follow=移除) */
@@ -146,8 +144,7 @@ object RootShell {
      */
     fun detectSoc(): SocInfo {
         cachedSoc?.let { return it }
-        fun prop(k: String) =
-            Shell.cmd("getprop $k").exec().out.firstOrNull()?.trim()?.lowercase().orEmpty()
+        fun prop(k: String) = shOut("getprop $k").firstOrNull()?.trim()?.lowercase().orEmpty()
         val model = prop("ro.soc.model")
         val plat = prop("ro.board.platform")
         val chip = when {
@@ -187,10 +184,8 @@ object RootShell {
             }
             append("fi")
         }
-        runCatching { Shell.cmd(script).exec() }
-        return runCatching {
-            Shell.cmd("[ -s '$CONFIG' ] && echo ok").exec().out.firstOrNull() == "ok"
-        }.getOrDefault(false)
+        sh(script)
+        return shOut("[ -s '$CONFIG' ] && echo ok").firstOrNull() == "ok"
     }
 
     // ============ config.json 读写(CPU 控制面板;daemon 靠 inotify 热重载) ============
@@ -208,7 +203,7 @@ object RootShell {
                 if (s.isNotBlank()) return s
             }
         }
-        return Shell.cmd("cat $CONFIG 2>/dev/null").exec().out.joinToString("\n")
+        return shOut("cat $CONFIG 2>/dev/null").joinToString("\n")
     }
 
     /**
@@ -220,9 +215,7 @@ object RootShell {
         val b64 = android.util.Base64.encodeToString(
             json.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
         )
-        return Shell.cmd(
-            "mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $CONFIG; touch $CTS_DIR"
-        ).exec().isSuccess
+        return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $CONFIG; touch $CTS_DIR")
     }
 
     /** 读取 daemon 写出的 status.json 原始文本(免 root 优先) */
@@ -234,7 +227,7 @@ object RootShell {
                 if (s.isNotBlank()) return s
             }
         }
-        return Shell.cmd("cat $STATUS 2>/dev/null").exec().out.joinToString("\n")
+        return shOut("cat $STATUS 2>/dev/null").joinToString("\n")
     }
 
     /** daemon 是否存活:读 daemon.alive(秒级时间戳),15s 内更新视为存活 */
@@ -242,7 +235,7 @@ object RootShell {
         val raw = runCatching {
             val f = java.io.File("$CTS_DIR/daemon.alive")
             if (f.canRead()) f.readText().trim()
-            else Shell.cmd("cat $CTS_DIR/daemon.alive 2>/dev/null").exec().out.firstOrNull()?.trim()
+            else shOut("cat $CTS_DIR/daemon.alive 2>/dev/null").firstOrNull()?.trim()
         }.getOrNull().orEmpty()
         val ts = raw.toLongOrNull() ?: return false
         val nowSec = System.currentTimeMillis() / 1000
