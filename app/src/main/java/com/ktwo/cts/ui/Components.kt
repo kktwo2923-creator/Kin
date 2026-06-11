@@ -1,5 +1,6 @@
 package com.ktwo.cts.ui
 
+import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -191,7 +192,12 @@ half4 main(float2 coord) {
 /** 在玻璃背景层上叠 AGSL 折射(minSdk=33, 全量启用, 不再留低版本退化) */
 @Composable
 private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modifier {
-    val shader = remember { android.graphics.RuntimeShader(LIQUID_GLASS_AGSL) }
+    if (Build.VERSION.SDK_INT < 33) return this
+    // AGSL 在运行时由 GPU 驱动编译,个别机型/驱动可能拒绝 -> 兜底,失败就退化为无折射,
+    // 绝不让整屏崩溃。
+    val shader = remember {
+        runCatching { android.graphics.RuntimeShader(LIQUID_GLASS_AGSL) }.getOrNull()
+    } ?: return this
     var sz by remember { mutableStateOf(IntSize.Zero) }
     return this
         .onSizeChanged { sz = it }
@@ -199,18 +205,20 @@ private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modi
             this.clip = true
             this.shape = shape
             if (sz.width > 0 && sz.height > 0) {
-                shader.setFloatUniform("size", sz.width.toFloat(), sz.height.toFloat())
-                shader.setFloatUniform("radius", cornerRadiusPx)
-                shader.setFloatUniform("band", 15f)
-                val lens = android.graphics.RenderEffect
-                    .createRuntimeShaderEffect(shader, "content")
-                // [SukiSU vibrancy] 玻璃后内容饱和度提升(colorControls saturation), 先提饱和再折射
-                val sat = android.graphics.ColorMatrix().apply { setSaturation(1.35f) }
-                val vibrancy = android.graphics.RenderEffect
-                    .createColorFilterEffect(android.graphics.ColorMatrixColorFilter(sat))
-                renderEffect = android.graphics.RenderEffect
-                    .createChainEffect(lens, vibrancy)
-                    .asComposeRenderEffect()
+                runCatching {
+                    shader.setFloatUniform("size", sz.width.toFloat(), sz.height.toFloat())
+                    shader.setFloatUniform("radius", cornerRadiusPx)
+                    shader.setFloatUniform("band", 15f)
+                    val lens = android.graphics.RenderEffect
+                        .createRuntimeShaderEffect(shader, "content")
+                    // [SukiSU vibrancy] 玻璃后内容饱和度提升(colorControls saturation), 先提饱和再折射
+                    val sat = android.graphics.ColorMatrix().apply { setSaturation(1.35f) }
+                    val vibrancy = android.graphics.RenderEffect
+                        .createColorFilterEffect(android.graphics.ColorMatrixColorFilter(sat))
+                    renderEffect = android.graphics.RenderEffect
+                        .createChainEffect(lens, vibrancy)
+                        .asComposeRenderEffect()
+                }
             }
         }
 }
