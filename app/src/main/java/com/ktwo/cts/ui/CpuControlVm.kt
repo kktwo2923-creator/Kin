@@ -80,20 +80,27 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
     fun reload() {
         viewModelScope.launch {
             _loading.value = true
-            val parsed = withContext(Dispatchers.IO) {
-                if (devicePolicies.isEmpty()) devicePolicies = SysfsReader.discoverPolicies()
-                CpuControlCfg.parse(RootShell.readConfigRaw())
+            try {
+                val parsed = withContext(Dispatchers.IO) {
+                    if (devicePolicies.isEmpty())
+                        devicePolicies = runCatching { SysfsReader.discoverPolicies() }.getOrDefault(emptyList())
+                    CpuControlCfg.parse(RootShell.readConfigRaw())
+                }
+                _cfg.value = parsed
+                // 选择默认画像:优先保留当前选择, 否则 balance, 否则第一个
+                val pick = when {
+                    _selected.value.isNotEmpty() && parsed.profileNames.contains(_selected.value) -> _selected.value
+                    parsed.profileNames.contains("balance") -> "balance"
+                    else -> parsed.profileNames.firstOrNull() ?: ""
+                }
+                _selected.value = pick
+                _editing.value = runCatching { deviceAligned(parsed.profile(pick), parsed.policyMap) }.getOrNull()
+            } catch (_: Throwable) {
+                // 解析/对齐任何异常都不该崩 App; 退回空视图, 由 UI 提示
+                _editing.value = null
+            } finally {
+                _loading.value = false
             }
-            _cfg.value = parsed
-            // 选择默认画像:优先 balance,否则第一个
-            val pick = when {
-                _selected.value.isNotEmpty() && parsed.profileNames.contains(_selected.value) -> _selected.value
-                parsed.profileNames.contains("balance") -> "balance"
-                else -> parsed.profileNames.firstOrNull() ?: ""
-            }
-            _selected.value = pick
-            _editing.value = deviceAligned(parsed.profile(pick), parsed.policyMap)
-            _loading.value = false
         }
     }
 
@@ -126,10 +133,14 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
         return p.copy(clusters = clusters)
     }
 
-    /** 簇显示名:用该 policy 的实际核数(related_cpus) */
-    fun clusterName(policy: Int): String {
-        val n = SysfsReader.relatedCpus(policy).size
-        return if (n > 0) "$n 核簇" else "簇"
+    // 簇名缓存: clusterName 在每次重组都会被调用, relatedCpus 是 root IO,
+    //   不缓存的话重组风暴(恢复默认后 snackbar/状态变更)会在主线程反复打 root → 卡顿/ANR。
+    private val nameCache = HashMap<Int, String>()
+
+    /** 簇显示名:用该 policy 的实际核数(related_cpus), 结果缓存 */
+    fun clusterName(policy: Int): String = nameCache.getOrPut(policy) {
+        val n = runCatching { SysfsReader.relatedCpus(policy).size }.getOrDefault(0)
+        if (n > 0) "$n 核簇" else "簇"
     }
 
     private suspend fun loadLive(): LiveStatus {

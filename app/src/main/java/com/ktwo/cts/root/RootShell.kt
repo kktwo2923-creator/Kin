@@ -171,19 +171,24 @@ object RootShell {
      */
     fun restoreDefaultConfig(alsoPerapp: Boolean = false): Boolean {
         val soc = detectSoc()
+        // 不用 exit(libsu 持久 shell 里 exit 会终止会话); 用 if 包裹
         val script = buildString {
-            append("SRC='$MODULE_CONFIG_DIR/${soc.configName}'; ")
-            append("[ -s \"\$SRC\" ] || SRC='$MODULE_CONFIG_DIR/config.json'; ")
-            append("[ -s \"\$SRC\" ] || exit 1; ")
+            append("D='$MODULE_CONFIG_DIR'; SRC=\"\$D/${soc.configName}\"; ")
+            append("[ -s \"\$SRC\" ] || SRC=\"\$D/config.json\"; ")
+            append("if [ -s \"\$SRC\" ]; then ")
             append("command -v chattr >/dev/null 2>&1 && chattr -i '$CONFIG' 2>/dev/null; ")
-            append("cp -f \"\$SRC\" '$CONFIG' && chmod 666 '$CONFIG'")
+            append("cp -f \"\$SRC\" '$CONFIG' && chmod 666 '$CONFIG'; ")
             if (alsoPerapp) {
-                append("; [ -s '$MODULE_CONFIG_DIR/perapp_powermode.txt' ] && ")
-                append("cp -f '$MODULE_CONFIG_DIR/perapp_powermode.txt' '$PERAPP' && chmod 666 '$PERAPP'")
+                append("if [ -s \"\$D/perapp_powermode.txt\" ]; then ")
+                append("chattr -i '$PERAPP' 2>/dev/null; ")
+                append("cp -f \"\$D/perapp_powermode.txt\" '$PERAPP' && chmod 666 '$PERAPP'; fi; ")
             }
+            append("fi")
         }
-        Shell.cmd(script).exec()
-        return Shell.cmd("[ -s '$CONFIG' ] && echo ok").exec().out.firstOrNull() == "ok"
+        runCatching { Shell.cmd(script).exec() }
+        return runCatching {
+            Shell.cmd("[ -s '$CONFIG' ] && echo ok").exec().out.firstOrNull() == "ok"
+        }.getOrDefault(false)
     }
 
     // ============ config.json 读写(CPU 控制面板;daemon 靠 inotify 热重载) ============
