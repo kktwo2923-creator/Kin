@@ -5,6 +5,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,8 +26,10 @@ import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.ForegroundDetector
+import com.ktwo.cts.ui.theme.LocalEnableBlur
 import com.ktwo.cts.ui.theme.ThemeMode
 import kotlinx.coroutines.*
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -37,6 +40,10 @@ fun SettingsScreen() {
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "dynamic")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
+    val enableBlur by Prefs.enableBlurFlow(ctx).collectAsState(initial = true)
+    val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx).collectAsState(initial = true)
+    val enableFloatingBarBlur by Prefs.enableFloatingBottomBarBlurFlow(ctx)
+        .collectAsState(initial = true)
     val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
@@ -95,19 +102,22 @@ fun SettingsScreen() {
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
         topBar = {
-            LargeTopAppBar(
-                title = { Text("设置") },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
-                    containerColor = Color.Transparent,
-                    scrolledContainerColor = Color.Transparent,
-                ),
-            )
+            BlurredBar(blurBackdrop) {
+                LargeTopAppBar(
+                    title = { Text("设置") },
+                    scrollBehavior = scrollBehavior,
+                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = Color.Transparent,
+                    ),
+                )
+            }
         },
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Horizontal),
@@ -115,8 +125,12 @@ fun SettingsScreen() {
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(inner)
+                .then(
+                    if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop)
+                    else Modifier
+                )
                 .verticalScroll(rememberScrollState())
+                .padding(inner)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -156,6 +170,36 @@ fun SettingsScreen() {
                                 )
                             )
                         }) { Text("选择") }
+                    }
+                    HorizontalDivider()
+                    // SukiSU-Ultra 主题设置同款三开关
+                    ToggleRow(
+                        title = "模糊",
+                        desc = "启用顶栏和底栏的模糊效果",
+                        checked = enableBlur,
+                        onCheckedChange = { scope.launch { Prefs.setEnableBlur(ctx, it) } },
+                    )
+                    HorizontalDivider()
+                    ToggleRow(
+                        title = "悬浮底栏",
+                        desc = "使用 Apple 风格的悬浮底栏",
+                        checked = enableFloatingBar,
+                        onCheckedChange = {
+                            scope.launch { Prefs.setEnableFloatingBottomBar(ctx, it) }
+                        },
+                    )
+                    AnimatedVisibility(visible = enableFloatingBar) {
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            HorizontalDivider()
+                            ToggleRow(
+                                title = "液态玻璃",
+                                desc = "启用悬浮底栏的液态玻璃效果",
+                                checked = enableFloatingBarBlur,
+                                onCheckedChange = {
+                                    scope.launch { Prefs.setEnableFloatingBottomBarBlur(ctx, it) }
+                                },
+                            )
+                        }
                     }
                 }
             }

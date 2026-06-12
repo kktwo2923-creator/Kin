@@ -45,7 +45,7 @@ object RootShell {
     /** 受保护文件(禁止清空):perapp_powermode.txt */
     private val PROTECTED_FILES = setOf(PERAPP.substringAfterLast('/'))
 
-    /** 列出日志文件(*.log/*.txt),按修改时间倒序,排除受保护数据文件。 */
+    /** 列出日志文件(*.log 与 *.txt),按修改时间倒序,排除受保护数据文件。 */
     fun listLogFiles(): List<String> =
         shOut("ls -1t " + CTS_DIR + "/*.log " + CTS_DIR + "/*.txt 2>/dev/null")
             .map { it.trim() }

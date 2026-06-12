@@ -1,10 +1,7 @@
 package com.ktwo.cts.ui
 
 import android.os.Build
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
@@ -12,8 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -27,7 +22,6 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,14 +35,12 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeInputScale
@@ -57,8 +49,6 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 /** 当前页面的 Haze 模糊源状态;为 null 时玻璃退化为半透明拟态。 */
 val LocalHazeState = compositionLocalOf<HazeState?> { null }
@@ -274,194 +264,6 @@ fun GlassSurface(
             )
         )
         content()
-    }
-}
-
-/** 悬浮液态玻璃导航:等宽格 + 玻璃胶囊高亮指示器,支持拖动跟手吸附。 */
-@Composable
-fun FloatingGlassNav(
-    items: List<Pair<String, ImageVector>>,
-    selectedIndex: Int,
-    onSelect: (Int) -> Unit,
-) {
-    val n = items.size
-    val pos = remember { Animatable(selectedIndex.toFloat()) }
-    var dragging by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(selectedIndex) {
-        if (!dragging) pos.animateTo(
-            selectedIndex.toFloat(),
-            spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
-        )
-    }
-
-    val activeIndex = pos.value.roundToInt().coerceIn(0, n - 1)
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        GlassSurface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = CircleShape,
-            blurRadius = 30.dp,
-            cornerDp = 48.dp,   // 胶囊: 着色器内自动夹到高度的一半
-        ) {
-            BoxWithConstraints(
-                Modifier.fillMaxWidth().height(66.dp).padding(horizontal = 8.dp),
-            ) {
-                val density = LocalDensity.current
-                val slotWpx = with(density) { maxWidth.toPx() } / n
-                val slotWdp = maxWidth / n
-                // 指示器用中性玻璃色,不用主题色
-                val dark = isSystemInDarkTheme()
-                val pillFill = if (dark) Color.White.copy(alpha = 0.12f)
-                               else Color.Black.copy(alpha = 0.08f)
-                val pill = RoundedCornerShape(20.dp)
-
-                // lift: 0=落下, 1=拿起(长按后放大+发光)
-                val lift by animateFloatAsState(
-                    targetValue = if (dragging) 1f else 0f,
-                    animationSpec = spring(
-                        dampingRatio = 0.55f,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
-                    label = "navLift",
-                )
-
-                // 液态玻璃高亮指示器
-                Box(
-                    Modifier
-                        .align(Alignment.CenterStart)
-                        .offset { IntOffset((pos.value * slotWpx).roundToInt(), 0) }
-                        .width(slotWdp)
-                        .fillMaxHeight()
-                        .padding(vertical = 6.dp, horizontal = 4.dp)
-                        .graphicsLayer {
-                            scaleX = 1f + 0.16f * lift
-                            scaleY = 1f + 0.08f * lift
-                            shadowElevation = 18f * lift
-                            shape = pill
-                            clip = false
-                            ambientShadowColor = Color.Black
-                            spotShadowColor = Color.Black
-                        }
-                        .clip(pill)
-                        .background(pillFill.copy(alpha = pillFill.alpha * (1f + 0.8f * lift)))
-                        .background(
-                            Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = 0.30f + 0.26f * lift),
-                                0.5f to Color.Transparent,
-                            )
-                        )
-                        .border(
-                            1.dp,
-                            Brush.verticalGradient(
-                                0f to Color.White.copy(alpha = 0.85f),
-                                0.6f to Color.White.copy(alpha = 0.10f + 0.20f * lift),
-                                1f to Color.White.copy(alpha = 0.30f),
-                            ),
-                            pill,
-                        )
-                )
-
-                Row(
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(n, slotWpx) {
-                            detectTapGestures { o ->
-                                val i = (o.x / slotWpx).toInt().coerceIn(0, n - 1)
-                                onSelect(i)
-                            }
-                        }
-                        .pointerInput(n, slotWpx) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = { o ->
-                                    dragging = true
-                                    scope.launch {
-                                        pos.snapTo(
-                                            (o.x / slotWpx - 0.5f)
-                                                .coerceIn(0f, (n - 1).toFloat())
-                                        )
-                                    }
-                                },
-                                onDragEnd = {
-                                    val target = pos.value.roundToInt().coerceIn(0, n - 1)
-                                    dragging = false
-                                    onSelect(target)
-                                    scope.launch {
-                                        pos.animateTo(
-                                            target.toFloat(),
-                                            spring(
-                                                dampingRatio = 0.72f,
-                                                stiffness = Spring.StiffnessMediumLow,
-                                            ),
-                                        )
-                                    }
-                                },
-                                onDragCancel = { dragging = false },
-                            ) { change, dragAmount ->
-                                change.consume()
-                                scope.launch {
-                                    pos.snapTo(
-                                        (pos.value + dragAmount.x / slotWpx)
-                                            .coerceIn(0f, (n - 1).toFloat())
-                                    )
-                                }
-                            }
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    items.forEachIndexed { i, (label, icon) ->
-                        NavSlot(
-                            label = label,
-                            icon = icon,
-                            active = i == activeIndex,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NavSlot(
-    label: String,
-    icon: ImageVector,
-    active: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val base = MaterialTheme.colorScheme.onSurface
-    val fg by animateColorAsState(
-        if (active) base else base.copy(alpha = 0.55f),
-        label = "navFg",
-    )
-    Column(
-        modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = fg,
-            modifier = Modifier.size(23.dp),
-        )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            label,
-            color = fg,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-            softWrap = false,
-        )
     }
 }
 

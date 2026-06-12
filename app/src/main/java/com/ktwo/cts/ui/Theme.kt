@@ -9,8 +9,21 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+
+// 同 SukiSU-Ultra ui/theme/Theme.kt 的三个效果开关 CompositionLocal
+val LocalEnableBlur = staticCompositionLocalOf { false }
+val LocalEnableFloatingBottomBar = staticCompositionLocalOf { false }
+val LocalEnableFloatingBottomBarBlur = staticCompositionLocalOf { false }
+
+/** 当前主题是否为暗色(考虑强制浅/深色模式, 而非只看系统)。 */
+val LocalDarkMode = staticCompositionLocalOf { false }
+
+@Composable
+fun isInDarkTheme(): Boolean = LocalDarkMode.current
 
 private val LightScheme = lightColorScheme(
     primary = Color(0xFF1F6FEB),
@@ -78,5 +91,12 @@ fun AppTheme(
         ThemeMode.MONO -> if (sysDark) MonoDark else MonoLight
         ThemeMode.SYSTEM -> if (sysDark) DarkScheme else LightScheme
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    val dark = when (mode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        else -> sysDark
+    }
+    CompositionLocalProvider(LocalDarkMode provides dark) {
+        MaterialTheme(colorScheme = scheme, content = content)
+    }
 }

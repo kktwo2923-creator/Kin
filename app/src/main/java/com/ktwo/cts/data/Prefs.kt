@@ -25,6 +25,29 @@ object Prefs {
         ctx.dataStore.edit { it[NOTIFY_KEY] = b }
     }
 
+    // SukiSU-Ultra 同款外观开关: 模糊 / 悬浮底栏 / 液态玻璃(悬浮底栏的玻璃效果)
+    private val ENABLE_BLUR_KEY              = booleanPreferencesKey("enable_blur")
+    private val ENABLE_FLOATING_BAR_KEY      = booleanPreferencesKey("enable_floating_bottom_bar")
+    private val ENABLE_FLOATING_BAR_BLUR_KEY = booleanPreferencesKey("enable_floating_bottom_bar_blur")
+
+    fun enableBlurFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[ENABLE_BLUR_KEY] ?: true }
+    suspend fun setEnableBlur(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[ENABLE_BLUR_KEY] = b }
+    }
+
+    fun enableFloatingBottomBarFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[ENABLE_FLOATING_BAR_KEY] ?: true }
+    suspend fun setEnableFloatingBottomBar(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[ENABLE_FLOATING_BAR_KEY] = b }
+    }
+
+    fun enableFloatingBottomBarBlurFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[ENABLE_FLOATING_BAR_BLUR_KEY] ?: true }
+    suspend fun setEnableFloatingBottomBarBlur(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[ENABLE_FLOATING_BAR_BLUR_KEY] = b }
+    }
+
     fun themeModeFlow(ctx: Context): Flow<String> =
         ctx.dataStore.data.map { it[THEME_KEY] ?: "dynamic" }
     suspend fun setThemeMode(ctx: Context, mode: String) {
