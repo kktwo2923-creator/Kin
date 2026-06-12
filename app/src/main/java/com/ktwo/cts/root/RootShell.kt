@@ -154,6 +154,7 @@ object RootShell {
             model.startsWith("sm8550") -> "8G2"
             model.startsWith("sm8450") -> "8G1"
             model.startsWith("sm8845") -> "8G5"
+            model.startsWith("sm7675") -> "7P3"
             model == "mt6989" || plat == "mt6989" -> "D9300"
             model.startsWith("mt6991") || plat == "mt6991" -> "D9400"
             else -> ""
