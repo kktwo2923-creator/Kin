@@ -9,14 +9,8 @@ import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
-/**
- * 自定义界面图标(原生 ImageVector,描边线条风格,24x24)。
- * 全部白色描边占位 — Icon() 用 tint 统一着色,跟随主题/选中态。
- * 含: 底栏三图标 + 11 个调度模式图标(替代 emoji)。
- */
+/** 自定义 ImageVector 图标(描边线条风格,24x24);白色占位,由 Icon(tint) 统一着色。 */
 object CtsIcons {
-
-    // ============ 底栏 ============
 
     /** 首页 - 速度计 */
     val Speed: ImageVector by lazy {
@@ -41,7 +35,6 @@ object CtsIcons {
     /** 设置 - 齿轮 */
     val Settings: ImageVector by lazy {
         icon("CtsSettings") {
-            // 8 根均匀短齿(每隔 45°),从内半径 7.2 到外半径 10
             stroke(width = 2.4f) {
                 val cx = 12f; val cy = 12f
                 val inner = 7.4f; val outer = 9.8f
@@ -54,13 +47,11 @@ object CtsIcons {
                     moveTo(sx, sy); lineTo(ex, ey)
                 }
             }
-            // 齿轮主体圆环
             stroke {
                 moveTo(19.2f, 12f)
                 arcTo(7.2f, 7.2f, 0f, true, true, 4.8f, 12f)
                 arcTo(7.2f, 7.2f, 0f, true, true, 19.2f, 12f); close()
             }
-            // 中心孔
             stroke {
                 moveTo(15f, 12f)
                 arcTo(3f, 3f, 0f, true, true, 9f, 12f)
@@ -72,19 +63,15 @@ object CtsIcons {
     /** 日志 - 文档 + 文本行 */
     val Logs: ImageVector by lazy {
         icon("CtsLogs") {
-            // 卷角文档
             stroke {
                 moveTo(6f, 3f); lineTo(14f, 3f); lineTo(19f, 8f); lineTo(19f, 21f); lineTo(6f, 21f); close()
             }
             stroke { moveTo(14f, 3f); lineTo(14f, 8f); lineTo(19f, 8f) }
-            // 文本行
             stroke { moveTo(9f, 12f); lineTo(16f, 12f) }
             stroke { moveTo(9f, 15.5f); lineTo(16f, 15.5f) }
             stroke { moveTo(9f, 19f); lineTo(13f, 19f) }
         }
     }
-
-    // ============ 调度模式(替代 emoji) ============
 
     /** follow 跟随 - 循环箭头 */
     val Follow: ImageVector by lazy {
@@ -97,27 +84,23 @@ object CtsIcons {
     /** powersave 省电 - 电池 + 加号 */
     val PowerSave: ImageVector by lazy {
         icon("CtsPowerSave") {
-            stroke { roundRect(6f, 7f, 18f, 17f, 2f) }                   // 电池主体
-            stroke { moveTo(10.5f, 5f); lineTo(13.5f, 5f) }              // 顶帽
-            stroke { moveTo(12f, 10.5f); lineTo(12f, 14f); moveTo(10.3f, 12.2f); lineTo(13.7f, 12.2f) } // 加号
+            stroke { roundRect(6f, 7f, 18f, 17f, 2f) }
+            stroke { moveTo(10.5f, 5f); lineTo(13.5f, 5f) }
+            stroke { moveTo(12f, 10.5f); lineTo(12f, 14f); moveTo(10.3f, 12.2f); lineTo(13.7f, 12.2f) }
         }
     }
 
     /** balance 均衡 - 天平 */
     val Balance: ImageVector by lazy {
         icon("CtsBalance") {
-            // 立柱 + 底座 + 横梁
             stroke {
                 moveTo(12f, 5f); lineTo(12f, 19f)
                 moveTo(8f, 20f); lineTo(16f, 20f)
                 moveTo(5f, 7f); lineTo(19f, 7f)
             }
-            // 顶钮
             stroke { moveTo(13.3f, 5f); arcTo(1.3f, 1.3f, 0f, true, true, 10.7f, 5f); arcTo(1.3f, 1.3f, 0f, true, true, 13.3f, 5f); close() }
-            // 左吊绳 + 秤盘(向下凹的碗)
             stroke { moveTo(5f, 7f); lineTo(3f, 12f); lineTo(7f, 12f); close() }
             stroke { moveTo(3f, 12f); arcTo(2f, 2f, 0f, false, false, 7f, 12f) }
-            // 右吊绳 + 秤盘
             stroke { moveTo(19f, 7f); lineTo(17f, 12f); lineTo(21f, 12f); close() }
             stroke { moveTo(17f, 12f); arcTo(2f, 2f, 0f, false, false, 21f, 12f) }
         }
@@ -136,27 +119,22 @@ object CtsIcons {
     /** fast 风驰 - 火箭 */
     val Fast: ImageVector by lazy {
         icon("CtsFast") {
-            // 箭体
             stroke {
                 moveTo(12f, 3f)
                 arcTo(7f, 9f, 0f, false, true, 16f, 12f)
                 lineTo(14f, 16f); lineTo(10f, 16f); lineTo(8f, 12f)
                 arcTo(7f, 9f, 0f, false, true, 12f, 3f); close()
             }
-            // 尾翼
             stroke { moveTo(10f, 14f); lineTo(7f, 18f); lineTo(9.5f, 16.5f) }
             stroke { moveTo(14f, 14f); lineTo(17f, 18f); lineTo(14.5f, 16.5f) }
-            // 舷窗
             stroke { moveTo(13.4f, 9f); arcTo(1.4f, 1.4f, 0f, true, true, 10.6f, 9f); arcTo(1.4f, 1.4f, 0f, true, true, 13.4f, 9f); close() }
-            // 尾焰
             stroke { moveTo(12f, 17f); lineTo(12f, 21f) }
         }
     }
 
-    /** game_heavy 重度游戏 - 火焰(外焰 + 内焰) */
+    /** game_heavy 重度游戏 - 火焰 */
     val GameHeavy: ImageVector by lazy {
         icon("CtsGameHeavy") {
-            // 外焰
             stroke {
                 moveTo(12f, 2.5f)
                 curveTo(13f, 6f, 17f, 7.5f, 17f, 13f)
@@ -165,7 +143,6 @@ object CtsIcons {
                 curveTo(9.5f, 10f, 10.5f, 10.5f, 11f, 10f)
                 curveTo(11.5f, 8.5f, 10.5f, 6f, 12f, 2.5f); close()
             }
-            // 内焰
             stroke {
                 moveTo(12f, 11f)
                 curveTo(13f, 12.5f, 13.5f, 13.5f, 13.5f, 14.8f)
@@ -186,9 +163,7 @@ object CtsIcons {
                 arcTo(2.4f, 2.4f, 0f, false, true, 4f, 16f)
                 arcTo(5f, 5f, 0f, false, true, 8f, 8f); close()
             }
-            // 方向键
             stroke { moveTo(7f, 12f); lineTo(10f, 12f); moveTo(8.5f, 10.5f); lineTo(8.5f, 13.5f) }
-            // 按钮
             stroke { moveTo(15.5f, 11f); arcTo(0.6f, 0.6f, 0f, true, true, 15.4f, 11f); close() }
             stroke { moveTo(17.5f, 13f); arcTo(0.6f, 0.6f, 0f, true, true, 17.4f, 13f); close() }
         }
@@ -246,7 +221,6 @@ object CtsIcons {
         }
     }
 
-    /** 按 Mode.key 取图标 */
     fun forMode(key: String): ImageVector = when (key) {
         "follow"      -> Follow
         "powersave"   -> PowerSave
@@ -262,7 +236,6 @@ object CtsIcons {
         else          -> Follow
     }
 
-    // ---- 构建辅助 ----
     private fun icon(
         name: String,
         block: ImageVector.Builder.() -> Unit,

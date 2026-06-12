@@ -41,7 +41,6 @@ fun SettingsScreen() {
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
 
-    // 通知开关: 开启时申请通知权限 + 悬浮窗权限,再开服务
     fun enableNotify() = scope.launch {
         Prefs.setNotifyEnabled(ctx, true)
         com.ktwo.cts.service.NotifyService.start(ctx)
@@ -72,8 +71,7 @@ fun SettingsScreen() {
         }
     }
 
-    // 壁纸选择器: 打开系统相册(照片选择器),把选中图片复制到 App 私有目录,
-    // 存绝对路径,避免临时授权重启失效。
+    // 把选中图片复制到 App 私有目录存绝对路径,避免临时 content URI 重启失效
     val pickWallpaper = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -225,7 +223,6 @@ fun SettingsScreen() {
                 }
             }
 
-            // 给浮动玻璃底栏留出空间
             Spacer(Modifier.height(96.dp))
         }
     }

@@ -60,19 +60,10 @@ import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-/**
- * 共享 UI 组件 - SukiSU-Ultra 风格 + 真·液态玻璃。
- * 整屏铺壁纸背景(WallpaperBackground)作为模糊源,卡片/导航栏用 Haze
- * 真实采样模糊它,叠顶部高光 sheen + 渐变细描边。
- */
-
-/** 当前页面的 Haze 模糊源状态; 为 null 时玻璃退化为半透明拟态。 */
+/** 当前页面的 Haze 模糊源状态;为 null 时玻璃退化为半透明拟态。 */
 val LocalHazeState = compositionLocalOf<HazeState?> { null }
 
-/**
- * 可点击 + 按压回弹(M3 Expressive 手感):按下时轻微缩小,松开弹回。
- * 只在按压瞬间动画,几乎零开销。
- */
+/** 按压时轻微缩小后弹回的点击效果(M3 Expressive 手感)。 */
 @Composable
 fun Modifier.pressClickable(
     pressedScale: Float = 0.96f,
@@ -90,10 +81,7 @@ fun Modifier.pressClickable(
         .clickable(interactionSource = interaction, indication = null, onClick = onClick)
 }
 
-/**
- * 整屏壁纸背景 — 玻璃的模糊采样源。标 hazeSource 让上层玻璃可采样。
- * wallpaperUri 非空时显示用户自定义图片,否则用默认渐变 + 柔光球。
- */
+/** 整屏壁纸背景,作为 Haze 模糊采样源。wallpaperUri 为空时用默认渐变。 */
 @Composable
 fun WallpaperBackground(
     hazeState: HazeState,
@@ -106,8 +94,7 @@ fun WallpaperBackground(
         if (wallpaperUri.isBlank()) null
         else runCatching {
             if (wallpaperUri.startsWith("/")) {
-                // 私有目录绝对路径
-                android.graphics.BitmapFactory.decodeFile(wallpaperUri)?.asImageBitmap()
+                    android.graphics.BitmapFactory.decodeFile(wallpaperUri)?.asImageBitmap()
             } else {
                 ctx.contentResolver.openInputStream(android.net.Uri.parse(wallpaperUri)).use { ins ->
                     android.graphics.BitmapFactory.decodeStream(ins)?.asImageBitmap()
@@ -125,7 +112,6 @@ fun WallpaperBackground(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            // [iOS26] 默认底色: 中性灰渐变(不再用主题蓝), 玻璃白边/折射在其上更接近官方观感
             val dark = isSystemInDarkTheme()
             val grad = if (dark)
                 listOf(Color(0xFF26282E), Color(0xFF3A3D46), Color(0xFF1C1D22))
@@ -148,9 +134,7 @@ fun WallpaperBackground(
     }
 }
 
-// iOS 26 液态玻璃折射着色器(AGSL,Android 13+)。
-// 在圆角矩形/胶囊的「边缘带」内把背景采样坐标向内拉,产生玻璃边缘的折射放大,
-// 再叠左上镜面高光 / 右下轻阴影。content = 本层已绘制的(模糊)背景。
+// AGSL 折射着色器(Android 13+):边缘带内折射放大 + 高光/阴影。
 private const val LIQUID_GLASS_AGSL = """
 uniform shader content;
 uniform float2 size;
@@ -166,35 +150,32 @@ half4 main(float2 coord) {
     float2 hsz = size * 0.5;
     float2 c = coord - hsz;
     float r = min(radius, min(hsz.x, hsz.y));
-    float d = sdRoundBox(c, hsz, r);           // <0 在内部
-    float edge = -d;                            // 距边缘的内向距离
+    float d = sdRoundBox(c, hsz, r);
+    float edge = -d;
     float t = clamp(1.0 - edge / band, 0.0, 1.0);
     float2 dir = c / max(length(c), 1.0);
-    // 边缘附近把采样点向内拉 -> 边缘折射放大(iOS26: 边带窄、拉伸强 = 玻璃珠弯折)
+    // R/G/B 用略不同折射率采样产生色散(iOS26 标志性彩色镶边)
+    // R/G/B 用略不同折射率采样产生色散(iOS26 标志性彩色镶边)
     float pull = t * t * 14.0;
-    // 色散: R/G/B 以略不同的折射率采样 -> 边缘出现 iOS26 标志性的彩色镶边
     half4 col;
     col.r = content.eval(coord - dir * (pull * 1.14)).r;
     col.g = content.eval(coord - dir * pull).g;
     half4 cb = content.eval(coord - dir * (pull * 0.86));
     col.b = cb.b;
     col.a = cb.a;
-    // 左上镜面高光 / 右下轻阴影 + 极窄的高光内沿(玻璃珠亮边)
     float tl = clamp((-dir.x - dir.y) * 0.5 + 0.5, 0.0, 1.0);
-    float rim = smoothstep(0.78, 1.0, t);      // 仅最贴边一小条
-    col.rgb += (t * t) * tl * 0.22;
-    col.rgb += rim * tl * 0.18;
+    float rim = smoothstep(0.78, 1.0, t);
+    col.rgb += (t * t) * tl * 0.22;   // 高光
+    col.rgb += rim * tl * 0.18;       // 边缘补光
     col.rgb -= (t * t) * (1.0 - tl) * 0.05;
     return col;
 }
 """
 
-/** 在玻璃背景层上叠 AGSL 折射(minSdk=33, 全量启用, 不再留低版本退化) */
+/** Android 13+ 在玻璃背景层叠 AGSL 折射;个别驱动拒绝编译时安全退化为无折射。 */
 @Composable
 private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modifier {
     if (Build.VERSION.SDK_INT < 33) return this
-    // AGSL 在运行时由 GPU 驱动编译,个别机型/驱动可能拒绝 -> 兜底,失败就退化为无折射,
-    // 绝不让整屏崩溃。
     val shader = remember {
         runCatching { android.graphics.RuntimeShader(LIQUID_GLASS_AGSL) }.getOrNull()
     } ?: return this
@@ -211,7 +192,7 @@ private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modi
                     shader.setFloatUniform("band", 15f)
                     val lens = android.graphics.RenderEffect
                         .createRuntimeShaderEffect(shader, "content")
-                    // [SukiSU vibrancy] 玻璃后内容饱和度提升(colorControls saturation), 先提饱和再折射
+                    // 先提饱和度再折射,模拟 vibrancy 效果
                     val sat = android.graphics.ColorMatrix().apply { setSaturation(1.35f) }
                     val vibrancy = android.graphics.RenderEffect
                         .createColorFilterEffect(android.graphics.ColorMatrixColorFilter(sat))
@@ -223,10 +204,7 @@ private fun Modifier.liquidRefraction(cornerRadiusPx: Float, shape: Shape): Modi
         }
 }
 
-/**
- * 液态玻璃容器: Haze 真实模糊背景 + (Android 13+)AGSL 边缘折射 + 高光 + 渐变描边。
- * @param cornerDp 用于折射 SDF 的圆角半径(胶囊/圆传入较大值即可,着色器内自动夹到 min/2)。
- */
+/** 液态玻璃容器:Haze 模糊 + AGSL 边缘折射(Android 13+)+ 高光描边。cornerDp 传胶囊/圆时给大值,着色器内自动夹限。 */
 @Composable
 fun GlassSurface(
     modifier: Modifier = Modifier,
@@ -238,9 +216,7 @@ fun GlassSurface(
 ) {
     val hazeState = LocalHazeState.current
     val cornerPx = with(LocalDensity.current) { cornerDp.toPx() }
-    // [iOS26/SukiSU] 玻璃体是中性材质, 不吃主题色:
-    //   亮色 = 白色超薄材质(ultraThin), 暗色 = 深灰玻璃。
-    //   tint 仅当调用方显式传入(如状态卡的绿/红语义色)时才参与染色。
+    // tint 仅调用方显式传入(语义色)时染色;否则用中性白/深灰
     val dark = isSystemInDarkTheme()
     val neutral = if (dark) Color(0xFF2A2A2C) else Color.White
     val effTint = if (tint == Color.Unspecified) neutral else tint
@@ -261,7 +237,6 @@ fun GlassSurface(
     }
     Box(
         modifier
-            // 柔和外阴影 — 让玻璃像 iOS26 一样"浮"在背景上
             .shadow(
                 elevation = 12.dp,
                 shape = shape,
@@ -271,22 +246,21 @@ fun GlassSurface(
             )
             .clip(shape)
     ) {
-        // 玻璃背景层(被折射): 模糊背景 + 顶面薄镜面(比之前更清透, 少奶白)
         Box(
             Modifier
                 .matchParentSize()
-                .liquidRefraction(cornerPx, shape)   // Android 13+ 折射
+                .liquidRefraction(cornerPx, shape)
                 .then(glassMod)
                 .background(
                     Brush.verticalGradient(
                         0f to Color.White.copy(alpha = 0.24f),
                         0.16f to Color.White.copy(alpha = 0.06f),
                         0.66f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.035f),   // 底部极轻内阴影 → 立体
+                        1f to Color.Black.copy(alpha = 0.035f),
                     )
                 )
         )
-        // 双边高光描边(玻璃珠光): 顶/左极亮镜面 + 底部一道回光, 中段近乎透明
+        // 顶部高光 + 底沿回光描边
         Box(
             Modifier.matchParentSize().border(
                 width = 1.dp,
@@ -294,23 +268,16 @@ fun GlassSurface(
                     0f to Color.White.copy(alpha = 0.95f),
                     0.22f to Color.White.copy(alpha = 0.22f),
                     0.7f to Color.White.copy(alpha = 0.06f),
-                    1f to Color.White.copy(alpha = 0.34f),   // 底沿回光 = 光从背后绕过玻璃
+                    1f to Color.White.copy(alpha = 0.34f),
                 ),
                 shape = shape,
             )
         )
-        // 内容层(清晰, 不被折射)
         content()
     }
 }
 
-/**
- * OShin / SukiSU 风格悬浮液态玻璃导航 —
- *  - 等宽 N 格,每格「图标在上 + 文字在下」竖排,文字常显
- *  - 背后一颗「液态玻璃椭圆胶囊」高亮指示器,盖住整格(图标+文字)
- *  - 指示器可被手指自由横向拖动,实时跟手,松手吸附到最近的格
- *  - 点击某格也会把指示器平滑移过去;最近的格点亮成主色
- */
+/** 悬浮液态玻璃导航:等宽格 + 玻璃胶囊高亮指示器,支持拖动跟手吸附。 */
 @Composable
 fun FloatingGlassNav(
     items: List<Pair<String, ImageVector>>,
@@ -322,7 +289,6 @@ fun FloatingGlassNav(
     var dragging by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // 外部选中变化时(且非拖动中)把指示器平滑移过去
     LaunchedEffect(selectedIndex) {
         if (!dragging) pos.animateTo(
             selectedIndex.toFloat(),
@@ -330,7 +296,6 @@ fun FloatingGlassNav(
         )
     }
 
-    // 跟手/吸附过程中,指示器最接近哪一格 -> 该格点亮
     val activeIndex = pos.value.roundToInt().coerceIn(0, n - 1)
 
     Box(
@@ -352,14 +317,13 @@ fun FloatingGlassNav(
                 val density = LocalDensity.current
                 val slotWpx = with(density) { maxWidth.toPx() } / n
                 val slotWdp = maxWidth / n
-                // [SukiSU/iOS26] 指示器是中性玻璃, 不用主题色:
-                //   亮色模式 = 黑 8%(玻璃上的暗压片), 暗色模式 = 白 12%(玻璃上的亮片)
+                // 指示器用中性玻璃色,不用主题色
                 val dark = isSystemInDarkTheme()
                 val pillFill = if (dark) Color.White.copy(alpha = 0.12f)
                                else Color.Black.copy(alpha = 0.08f)
-                val pill = RoundedCornerShape(20.dp)   // 整块覆盖图标+文字的圆角胶囊
+                val pill = RoundedCornerShape(20.dp)
 
-                // 长按拿起 -> 指示器抬起(放大 + 发光 + 玻璃更浓),0=落下 1=拿起
+                // lift: 0=落下, 1=拿起(长按后放大+发光)
                 val lift by animateFloatAsState(
                     targetValue = if (dragging) 1f else 0f,
                     animationSpec = spring(
@@ -369,7 +333,7 @@ fun FloatingGlassNav(
                     label = "navLift",
                 )
 
-                // 1) 液态玻璃高亮指示器 —— 整块圆角胶囊,覆盖选中格的「图标 + 文字」
+                // 液态玻璃高亮指示器
                 Box(
                     Modifier
                         .align(Alignment.CenterStart)
@@ -378,7 +342,6 @@ fun FloatingGlassNav(
                         .fillMaxHeight()
                         .padding(vertical = 6.dp, horizontal = 4.dp)
                         .graphicsLayer {
-                            // 拿起时放大(横向更夸张),液态被"提"起来的手感
                             scaleX = 1f + 0.16f * lift
                             scaleY = 1f + 0.08f * lift
                             shadowElevation = 18f * lift
@@ -388,7 +351,6 @@ fun FloatingGlassNav(
                             spotShadowColor = Color.Black
                         }
                         .clip(pill)
-                        // [SukiSU/iOS26] 中性玻璃压片: 单层中性填充 + 顶部白色镜面 + 白描边, 无主题色
                         .background(pillFill.copy(alpha = pillFill.alpha * (1f + 0.8f * lift)))
                         .background(
                             Brush.verticalGradient(
@@ -407,7 +369,6 @@ fun FloatingGlassNav(
                         )
                 )
 
-                // 2) 手势层(点击选格 + 长按拿起后滑动)+ 图标/文字
                 Row(
                     Modifier
                         .fillMaxSize()
@@ -421,7 +382,6 @@ fun FloatingGlassNav(
                             detectDragGesturesAfterLongPress(
                                 onDragStart = { o ->
                                     dragging = true
-                                    // 拿起瞬间指示器跳到手指下
                                     scope.launch {
                                         pos.snapTo(
                                             (o.x / slotWpx - 0.5f)
@@ -477,7 +437,6 @@ private fun NavSlot(
     active: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    // [SukiSU/iOS26] 单色: 全部 onSurface, 选中=全亮, 未选中=降透明度; 不用主题色
     val base = MaterialTheme.colorScheme.onSurface
     val fg by animateColorAsState(
         if (active) base else base.copy(alpha = 0.55f),
@@ -522,12 +481,7 @@ fun TonalCard(
     }
 }
 
-/**
- * 顶部状态主卡(对应 SukiSU StatusCard / WarningCard):
- *  - working=true  -> secondaryContainer + 勾
- *  - working=false -> errorContainer + 警告
- * 左图标 + 右标题/副标题,可选内联徽章行与尾部内容(开关等)。
- */
+/** 顶部状态主卡:working=true 用 secondaryContainer,否则 errorContainer。 */
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 fun StatusHeroCard(
@@ -559,8 +513,7 @@ fun StatusHeroCard(
             Icon(icon, null, modifier = Modifier.size(40.dp))
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
-                // 标题 + 徽章用 FlowRow: 一行放不下时整块徽章换到下一行,
-                // 而不是被挤成 0 宽导致文字竖排。
+                // FlowRow: 一行放不下时徽章整块换行,避免被挤成 0 宽竖排
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),

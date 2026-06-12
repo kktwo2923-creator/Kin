@@ -27,7 +27,6 @@ private data class TopDest(
     val icon: ImageVector,
 )
 
-// CPU 控制作为第 2 个 tab
 private val TABS = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
     TopDest("cpu",      "CPU", Icons.Outlined.Memory),
@@ -36,11 +35,6 @@ private val TABS = listOf(
     TopDest("settings", "设置", CtsIcons.Settings),
 )
 
-/**
- * 顶层骨架 - SukiSU-Ultra 风格 + 真·液态玻璃:
- *  - 底层整屏壁纸(WallpaperBackground)作为 Haze 模糊源
- *  - 内容透明叠在壁纸上;底部悬浮玻璃胶囊导航栏真实模糊穿透
- */
 @Composable
 fun AppRoot() {
     val nav = rememberNavController()
@@ -53,10 +47,8 @@ fun AppRoot() {
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
         Box(Modifier.fillMaxSize()) {
-            // 1) 壁纸模糊源(最底层)
             WallpaperBackground(hazeState, wallpaperUri = wallpaperUri)
 
-            // 2) 内容层(透明,叠在壁纸上)
             val selectedIndex = TABS.indexOfFirst { d ->
                 curRoute?.any { it.route == d.route } == true
             }.coerceAtLeast(0)
@@ -79,7 +71,7 @@ fun AppRoot() {
                     }
                 }
             ) { _ ->
-                // 轻量快速淡入淡出过渡(去掉整页缩放,避免缩放时反复重算 Haze 模糊导致卡顿)
+                // 淡入淡出过渡;整页缩放会反复重算 Haze 模糊导致卡顿
                 NavHost(
                     navController = nav,
                     startDestination = "home",

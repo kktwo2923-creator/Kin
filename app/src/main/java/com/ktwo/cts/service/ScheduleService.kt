@@ -15,12 +15,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
 /**
- * 前台服务: 替代 Scene 接管
- * 思路参考 Scene (helloklf/vtools) 的 AppSwitchHandler:
- *   - 输入法/系统 UI 包强制忽略
- *   - 用户黑名单
- *   - dynamic 总开关 + STRICT 同模式强制重发
- *   - 灭屏切设定模式(默认 powersave)
+ * 前台服务:替代 Scene 接管。daemon 存活时立即自停;daemon 不在时作为兜底运行。
+ * 参考 Scene AppSwitchHandler:输入法/系统UI忽略,用户黑名单,STRICT 同模式重发,灭屏切省电。
  */
 class ScheduleService : Service() {
 
@@ -32,7 +28,6 @@ class ScheduleService : Service() {
 
     private val detector by lazy { ForegroundDetector(this) }
 
-    /** Scene 风格: 永远忽略的前台 App(系统 UI / 启动器 / 锁屏 等) */
     private val builtinIgnored = setOf(
         "com.android.systemui",
         "com.android.launcher", "com.android.launcher3",
@@ -43,15 +38,12 @@ class ScheduleService : Service() {
         "com.system.ui",
     )
 
-    /** 输入法包(动态查询) */
     private var imePackages: Set<String> = emptySet()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        // daemon 存活时由它主导切换,本前台服务多余 -> 满足 FGS 合约后立刻撤通知自停,
-        // 避免状态栏挂一条没用的"启动中…"。daemon 不在时才作为兜底运行。
         if (RootShell.daemonAlive()) {
             startForegroundCompat()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -70,7 +62,7 @@ class ScheduleService : Service() {
         startLoop()
     }
 
-    /** Android 14+ 必须带 foregroundServiceType,否则抛 ForegroundServiceTypeNotAllowedException */
+    /** Android 14+ startForeground 必须带 foregroundServiceType,否则抛异常。 */
     private fun startForegroundCompat() {
         val notif = buildNotification("启动中…")
         if (Build.VERSION.SDK_INT >= 34) {
@@ -91,7 +83,6 @@ class ScheduleService : Service() {
         scope.cancel()
     }
 
-    /** 加载输入法列表(Scene 风格 — 输入法切到前台不动模式) */
     private fun loadImePackages() {
         runCatching {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -108,8 +99,7 @@ class ScheduleService : Service() {
                 }
                 Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
                     screenOn = true
-                    // 亮屏强制重发当前画像: 同时清空 lastPkg,
-                    // 否则解锁后前台仍是同一 App(pkg == lastPkg),主循环不会重新下发,
+                    // 清空 lastPkg 强制重发:否则解锁后前台仍同一 App,主循环不重新下发,
                     // 设备会卡在灭屏的省电模式。
                     lastPkg = ""
                     lastDispatched = ""
@@ -122,8 +112,7 @@ class ScheduleService : Service() {
         while (isActive) {
             try {
                 if (!Prefs.enabled(this@ScheduleService)) { delay(3000); continue }
-                // [§4 互斥] daemon 存活时由 daemon 主导切档,App 退为纯 GUI 不重复探测/切换,
-                // 避免两者同时写 sysfs 打架,也省掉 App 端的探测开销。
+                // daemon 存活时退为纯 GUI,避免与 daemon 同时写 sysfs 打架
                 if (RootShell.daemonAlive()) { delay(5000); continue }
                 if (!screenOn) { delay(5000); continue }
                 val pkg = detector.currentForegroundPackage().orEmpty()
@@ -139,11 +128,7 @@ class ScheduleService : Service() {
 
     private suspend fun dispatchForPackage(pkg: String) {
         val ctx = this@ScheduleService
-
-        // Scene 风格: 输入法 / 系统 UI / 启动器永远忽略
         if (pkg in builtinIgnored || pkg in imePackages) return
-
-        // 用户黑名单忽略
         val bl = PrefsExt.blacklist(ctx)
         if (pkg in bl) return
 
@@ -153,7 +138,6 @@ class ScheduleService : Service() {
             RootShell.readGlobalMode() else perApp
         if (target.isBlank()) return
 
-        // STRICT: 即使同模式也重发(默认关)
         val strict = PrefsExt.strict(ctx)
         if (!strict && target == lastDispatched) return
 
@@ -161,7 +145,6 @@ class ScheduleService : Service() {
     }
 
     private suspend fun dispatchScreenOff() {
-        // 灭屏统一切省电(原可配置的"灭屏模式"已移除)
         applyAndUpdate("powersave", "(灭屏)")
     }
 

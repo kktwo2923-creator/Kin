@@ -20,12 +20,7 @@ import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.PolicyMap
 import com.ktwo.cts.data.ProfileModel
 
-/**
- * CPU 控制面板(方案丙:画像编辑器)。
- * 顶部画像选择器选中哪个画像,下面就编辑 config.json 里那个 model 的
- * 频率 / 调速器 / GPU / 核心开关。改完「应用」写回 config.json,daemon inotify 热重载。
- * 顶栏显示实时功耗 + 主频(daemon status.json 或 App 自读 sysfs)。
- */
+/** CPU 控制面板:编辑 config.json 里选中 model 的频率/调速器/GPU/核心,写回后 daemon 热重载。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
@@ -38,11 +33,8 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
     var showRestoreDialog by remember { mutableStateOf(false) }
 
     val snackbar = remember { SnackbarHostState() }
-    // [Fix] 结果作为"事件"先消费再弹 Snackbar:
-    //   旧写法 showSnackbar(挂起约 4s)结束后才 clear,期间切走页面协程被取消,
-    //   结果值永远留在 VM,之后每次进 CPU 页都会重放一次 Snackbar;
-    //   而 clear 放最前又会改 LaunchedEffect 的 key,把还没显示的 Snackbar 取消掉。
-    //   用 collect 不依赖 key,先 clear 再显示,两个问题都消掉。
+    // 用 collect 先 clear 再 showSnackbar:避免离开页面协程被取消导致结果永留 VM 而重放,
+    // 也避免 clear 改 key 把未显示的 Snackbar 取消。
     LaunchedEffect(Unit) {
         vm.saveResult.collect { r ->
             if (r != null) {
@@ -103,10 +95,8 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
         ) {
             HelpCard()
 
-            // SoC 识别 + 恢复默认(进 App 已预热识别)
             SocCard(soc = soc, onRestore = { showRestoreDialog = true })
 
-            // 画像选择器(方案丙核心)
             ProfileSelectorCard(
                 profiles = cfg.profileNames,
                 selected = selected,
@@ -163,7 +153,6 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
     }
 }
 
-/** 顶栏功耗 + 主频徽章,对应截图 "1.13W 883MHz" */
 @Composable
 private fun PowerFreqBadge(watt: Double, mainMhz: Int) {
     Row(
@@ -189,11 +178,9 @@ private fun PowerFreqBadge(watt: Double, mainMhz: Int) {
     }
 }
 
-/** 主频 = 所有 policy 当前频率里的最大值(通常是大核) */
 private fun mainMhz(live: com.ktwo.cts.data.LiveStatus): Int =
     live.clusterFreqMhz.values.filter { it > 0 }.maxOrNull() ?: -1
 
-/** 画像 key -> 中文标签 */
 private fun profileLabel(key: String): String = Mode.fromKey(key).label.ifEmpty { key }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -227,7 +214,6 @@ private fun ProfileSelectorCard(
     }
 }
 
-/** SoC 识别卡: 显示识别结果与默认配置文件, 右侧「恢复默认」 */
 @Composable
 private fun SocCard(soc: com.ktwo.cts.root.RootShell.SocInfo?, onRestore: () -> Unit) {
     TonalCard(modifier = Modifier.fillMaxWidth()) {
@@ -263,7 +249,6 @@ private fun SocCard(soc: com.ktwo.cts.root.RootShell.SocInfo?, onRestore: () -> 
     }
 }
 
-/** 恢复默认确认对话框: 可勾选连同应用画像(perapp_powermode.txt)一起恢复 */
 @Composable
 private fun RestoreDefaultsDialog(
     configName: String,
@@ -345,9 +330,8 @@ private fun ClusterCard(
 
             FreqPickerRow("最小频率", cfg.minKhzLong, availFreqsKhz, onMin)
             FreqPickerRow("最大频率", cfg.maxKhzLong, availFreqsKhz, onMax)
-            // [Fix] 传配置里"真实写的" governor(可能为空=未固定/交ROM), liveGov 只作提示。
-            //   不再用 ifEmpty{liveGov} 把实测值当成选中值, 否则一点选就把 walt 等实测值
-            //   固化进 config, 破坏"留空交ROM", 也会造成大核被写成 walt 与小核不一致。
+            // cfg.governor 传配置里实际写的值(可能为空=留空交ROM);liveGov 仅提示,不写入。
+            // 不用 ifEmpty{liveGov}:否则点选就把实测 walt 固化进 config,破坏"留空"语义。
             GovPickerRow("调速器", cfg.governor, liveGov, availGovs, onGov)
         }
     }
@@ -385,8 +369,8 @@ private fun FreqPickerRow(
 @Composable
 private fun GovPickerRow(
     label: String,
-    value: String,        // 配置里实际写的 governor;空 = 未固定(交 ROM / 跟随基础档)
-    liveHint: String,     // 实测当前 governor;仅提示, 绝不写入 config
+    value: String,        // 配置里实际写的值;空 = 留空交 ROM
+    liveHint: String,     // 实测值;仅提示,绝不写入 config
     avail: List<String>,
     onPick: (String) -> Unit,
 ) {
@@ -394,7 +378,6 @@ private fun GovPickerRow(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            // 配置留空时, 把实测值降级为"提示", 不冒充选中值 —— 避免一点选就固化 walt 等。
             if (value.isEmpty() && liveHint.isNotEmpty()) {
                 Text(
                     "当前 $liveHint",
@@ -409,7 +392,6 @@ private fun GovPickerRow(
                 label = { Text(if (value.isNotEmpty()) value else "默认") },
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                // 显式"留空": 不在 config 写死 governor(默认 / 跟随基础档), daemon 检测到风驰自会初始化。
                 DropdownMenuItem(
                     text = { Text("默认(留空)") },
                     onClick = { onPick(""); expanded = false },
@@ -442,7 +424,6 @@ private fun GpuCard(
                     )
                 }
             }
-            // 候选项从 sysfs 的 GPU 可用频率表读;读不到则禁用选择,仅显示当前值
             MhzPickerRow("最小频率", minMhz, availMhz) { onChange(it, maxMhz) }
             MhzPickerRow("最大频率", maxMhz, availMhz) { onChange(minMhz, it) }
         }
@@ -489,9 +470,7 @@ private fun CoreOnlineCard(online: List<Int>, onToggle: (Int) -> Unit) {
                 ) {
                     for (col in 0 until 4) {
                         val idx = row * 4 + col
-                        // -1(不指定)在 UI 上当作开
                         val on = online.getOrElse(idx) { 1 } != 0
-                        // 竖排居中: 复选框在上、CPU 标签在下,文字不换行
                         Column(
                             Modifier.weight(1f).clickable { onToggle(idx) },
                             horizontalAlignment = Alignment.CenterHorizontally,

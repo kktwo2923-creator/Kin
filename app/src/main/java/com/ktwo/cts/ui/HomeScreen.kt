@@ -22,14 +22,6 @@ import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.ScheduleService
 import kotlinx.coroutines.*
 
-/**
- * 主屏 - SukiSU-Ultra 风格:
- *  - 可折叠 LargeTopAppBar
- *  - 顶部状态主卡(接管中=secondaryContainer / 未接管=errorContainer),内联状态徽章
- *  - 2 个并排统计卡(Root / 模块)
- *  - 信息卡(当前模式 / 服务 / 调用入口)
- *  - 全局模式网格(图标按钮)
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen() {
@@ -82,8 +74,7 @@ fun HomeScreen() {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1) 大状态主卡
-            // 读不到模块上报的当前模式时,回退显示全局模式,避免一直"等待首次切换"
+            // 读不到当前模式时回退显示全局模式
             val shownMode = Mode.fromKey(currentMode.ifEmpty { globalMode })
             StatusHeroCard(
                 working = working,
@@ -106,7 +97,6 @@ fun HomeScreen() {
                         onCheckedChange = { on ->
                             scope.launch {
                                 Prefs.setEnabled(ctx, on)
-                                // daemon 存活时由它主导,不启动 App 端兜底服务(避免多余的"启动中"通知)
                                 if (on) {
                                     if (!RootShell.daemonAlive()) ScheduleService.start(ctx)
                                 } else ScheduleService.stop(ctx)
@@ -116,7 +106,6 @@ fun HomeScreen() {
                 }
             )
 
-            // 2) 并排统计卡
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 StatCard(
                     modifier = Modifier.weight(1f),
@@ -136,7 +125,6 @@ fun HomeScreen() {
                 )
             }
 
-            // 3) 信息卡
             InfoCard(
                 title = "调度状态",
                 rows = listOf(
@@ -146,9 +134,6 @@ fun HomeScreen() {
                 )
             )
 
-            // (模式切换已移至「调度」页)
-
-            // 给浮动玻璃底栏留出空间
             Spacer(Modifier.height(96.dp))
         }
     }
@@ -156,7 +141,6 @@ fun HomeScreen() {
 
 @Composable
 fun ModeGrid(selectedKey: String, onSelect: (Mode) -> Unit) {
-    // 全局模式只有 4 档,单行紧凑排布(图标小 + 文字),都完整显示
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         Mode.DOWNSTREAM.forEach { m ->
             ModeButton(m, m.key == selectedKey, Modifier.weight(1f)) { onSelect(m) }

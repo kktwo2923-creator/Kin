@@ -16,7 +16,6 @@ import kotlinx.coroutines.runBlocking
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 若开启了常驻通知,启动时确保服务在跑
         runCatching {
             if (runBlocking { Prefs.notifyEnabled(this@MainActivity) }) NotifyService.start(this)
         }

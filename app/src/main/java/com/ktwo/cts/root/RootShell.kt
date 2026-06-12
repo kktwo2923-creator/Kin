@@ -5,10 +5,7 @@ import com.topjohnwu.superuser.Shell
 object RootShell {
     fun isRooted(): Boolean = try { Shell.getShell().isRoot } catch (_: Exception) { false }
 
-    // ============ 永不抛出的 Shell 原语 ============
-    // [Fix] Shell.cmd().exec() 在 root 会话死亡/重建失败时抛 NoShellException,
-    //   任何未守护的调用点都会把进程打崩(CPU tab 闪退即此类)。
-    //   全部调用统一走这三个原语 → RootShell 对外永不抛出, 调用方不必再各自 try/catch。
+    // Shell.cmd().exec() 在 root 会话死亡时抛 NoShellException;统一用这三个原语兜底,对外永不抛出。
     private fun sh(cmd: String): Shell.Result? =
         runCatching { Shell.cmd(cmd).exec() }.getOrNull()
 
@@ -21,17 +18,11 @@ object RootShell {
 
     fun execSilent(cmd: String): Boolean = shOk(cmd)
 
-    /**
-     * 触发 /data/powercfg.sh <mode>(Scene 接管协议,模块的 init_vtools.sh 生成)
-     * 失败则 fallback 直接调 switch.sh
-     */
+    /** 优先走 /data/powercfg.sh(Scene 接管协议入口),失败则 fallback 到 switch.sh。 */
     fun applyMode(mode: String): Boolean {
         if (mode.isBlank()) return false
-        // 优先 /data/powercfg.sh,这是 Scene 接管协议入口
         if (shOk("[ -s /data/powercfg.sh ] && sh /data/powercfg.sh $mode")) return true
-        // fallback: switch.sh 直接调
-        // [Fix] 不用 exit(libsu 持久 shell 里 exit 会终止会话,之后所有 root 调用失效/重建),
-        //   与 restoreDefaultConfig 同款处理:用变量记结果,最后以测试命令返回退出码。
+        // libsu 持久 shell 里 exit 会终止会话,用变量记结果代替 exit
         return shOk(
             "ok=1; for d in /data/adb/modules/CoreTurboScheduler /data/adb/ksu/modules/CoreTurboScheduler; do" +
             "  [ -s \"\$d/switch.sh\" ] && sh \"\$d/switch.sh\" $mode && ok=0 && break;" +
@@ -39,47 +30,37 @@ object RootShell {
         )
     }
 
-    /** 读取当前模式状态文件 */
     fun currentMode(): String =
         shOut("cat /data/coreturbo_powermode 2>/dev/null").firstOrNull()?.trim().orEmpty()
 
-    /** 模块是否已安装 */
     fun moduleInstalled(): Boolean =
         shOk("[ -d /data/adb/modules/CoreTurboScheduler ] || [ -d /data/adb/ksu/modules/CoreTurboScheduler ]")
 
-    // ============ perapp_powermode.txt 读写(app = txt 的 GUI 编辑器) ============
-    // 格式: 每行 "包名 模式"; 以 # 开头为注释; 以 * 开头为全局默认行(* balance)。
+    // perapp_powermode.txt 格式: 每行 "包名 模式"; # 开头注释; * 开头全局默认行。
     private const val PERAPP = "/sdcard/Android/CTS/perapp_powermode.txt"
 
     /** CTS 数据/日志目录 */
     const val CTS_DIR = "/sdcard/Android/CTS"
 
-    /** 受保护、严禁删除/清空的数据文件(画像表) */
-    private val PROTECTED_FILES = setOf(PERAPP.substringAfterLast('/'))  // perapp_powermode.txt
+    /** 受保护文件(禁止清空):perapp_powermode.txt */
+    private val PROTECTED_FILES = setOf(PERAPP.substringAfterLast('/'))
 
-    /**
-     * 列出 CTS 目录下的日志文件(扩展名 log 或 txt),按修改时间倒序(最新在前)。
-     * 排除受保护的数据文件(如 perapp_powermode.txt),防止误清空画像。
-     */
+    /** 列出日志文件(*.log/*.txt),按修改时间倒序,排除受保护数据文件。 */
     fun listLogFiles(): List<String> =
         shOut("ls -1t " + CTS_DIR + "/*.log " + CTS_DIR + "/*.txt 2>/dev/null")
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.substringAfterLast('/') !in PROTECTED_FILES }
 
-    /**
-     * 读取某个日志文件的末尾若干行(默认 2000, 配合 daemon 512KB 滚动日志),避免大文件卡 UI。
-     * 返回从旧到新的行列表。
-     */
+    /** 读取日志末尾若干行(默认 2000,避免大文件卡 UI)。 */
     fun readLogTail(path: String, lines: Int = 2000): List<String> =
         shOut("tail -n $lines '$path' 2>/dev/null")
 
-    /** 清空(截断)某个日志文件。受保护文件(perapp_powermode.txt)拒绝操作。 */
+    /** 截断日志文件;受保护文件拒绝操作。 */
     fun clearLog(path: String): Boolean {
         if (path.substringAfterLast('/') in PROTECTED_FILES) return false
         return shOk(": > '$path'")
     }
 
-    /** 读取全部画像条目 pkg -> mode(不含注释/默认行) */
     fun readPerApp(): LinkedHashMap<String, String> {
         val map = LinkedHashMap<String, String>()
         val raw = shOut("cat $PERAPP 2>/dev/null")
@@ -92,16 +73,14 @@ object RootShell {
         return map
     }
 
-    /** 读取全局默认模式(* 行),无则 balance */
+    /** 读取全局默认模式(* 行),无则返回 "balance"。 */
     fun readGlobalMode(): String {
         val line = shOut("grep '^\\*' $PERAPP 2>/dev/null | head -1").firstOrNull()?.trim().orEmpty()
         val sp = line.split(Regex("\\s+"))
         return if (sp.size >= 2) sp[1] else "balance"
     }
 
-    /**
-     * 写回整个画像表 + 全局默认。用 base64 落地避免特殊字符破坏 shell。
-     */
+    /** 写回整个画像表 + 全局默认;base64 落地避免特殊字符破坏 shell。 */
     fun writePerApp(profiles: Map<String, String>, globalMode: String): Boolean {
         val sb = StringBuilder()
         sb.append("# 应用画像: 包名 模式 (由 OnePlus V Pro App 管理)\n")
@@ -117,18 +96,15 @@ object RootShell {
         return shOk("mkdir -p /sdcard/Android/CTS; echo '$b64' | base64 -d > $PERAPP")
     }
 
-    /** 设置单个 App 画像(follow=移除) */
     fun setPerApp(pkg: String, mode: String, globalMode: String): Boolean {
         val cur = readPerApp()
         if (mode == "follow") cur.remove(pkg) else cur[pkg] = mode
         return writePerApp(cur, globalMode)
     }
 
-    // ============ SoC 识别 + 恢复默认配置 ============
-    // 默认配置目录(Magisk 模块内置, 装机时由 customize.sh 按 SoC 部署)
     private const val MODULE_CONFIG_DIR = "/data/adb/modules/CoreTurboScheduler/config"
 
-    /** SoC 识别结果: socModel=ro.soc.model, platform=ro.board.platform, chip=映射档(空=未识别), configName=对应默认配置文件名 */
+    /** SoC 识别结果;chip 为空表示未识别,configName 是对应的默认配置文件名。 */
     data class SocInfo(
         val socModel: String,
         val platform: String,
@@ -138,10 +114,7 @@ object RootShell {
 
     @Volatile private var cachedSoc: SocInfo? = null
 
-    /**
-     * 识别 SoC(与模块 customize.sh 的 identify_chip 同一套映射)。
-     * 结果进程内缓存; App 启动时预热(CtsApp), 进面板直接可用。
-     */
+    /** 识别 SoC,与模块 customize.sh 同一套映射;结果进程内缓存。 */
     fun detectSoc(): SocInfo {
         cachedSoc?.let { return it }
         fun prop(k: String) = shOut("getprop $k").firstOrNull()?.trim()?.lowercase().orEmpty()
@@ -164,14 +137,12 @@ object RootShell {
     }
 
     /**
-     * 恢复默认配置: 按识别到的 SoC 从模块目录拷贝对应 config_XXX.json 覆盖
-     * /sdcard/Android/CTS/config.json(daemon inotify 热重载)。
-     * 源文件缺失时兜底用模块 config.json。alsoPerapp=true 时一并恢复 perapp_powermode.txt。
-     * 返回恢复后 config.json 是否非空。
+     * 按 SoC 从模块目录拷贝 config_XXX.json 覆盖运行配置(daemon inotify 热重载)。
+     * alsoPerapp=true 时一并恢复 perapp_powermode.txt。
      */
     fun restoreDefaultConfig(alsoPerapp: Boolean = false): Boolean {
         val soc = detectSoc()
-        // 不用 exit(libsu 持久 shell 里 exit 会终止会话); 用 if 包裹
+        // libsu 持久 shell 里 exit 会终止会话,用 if 包裹代替 exit
         val script = buildString {
             append("D='$MODULE_CONFIG_DIR'; SRC=\"\$D/${soc.configName}\"; ")
             append("[ -s \"\$SRC\" ] || SRC=\"\$D/config.json\"; ")
@@ -189,13 +160,10 @@ object RootShell {
         return shOut("[ -s '$CONFIG' ] && echo ok").firstOrNull() == "ok"
     }
 
-    // ============ config.json 读写(CPU 控制面板;daemon 靠 inotify 热重载) ============
     private const val CONFIG = "$CTS_DIR/config.json"
-
-    /** 状态文件:daemon 周期写出的实时功耗/频率(App 只读) */
     private const val STATUS = "$CTS_DIR/status.json"
 
-    /** 读取 config.json 原始文本(免 root 优先,失败再 root) */
+    /** 读取 config.json(免 root 优先,失败再 root 读)。 */
     fun readConfigRaw(): String {
         runCatching {
             val f = java.io.File(CONFIG)
@@ -208,9 +176,8 @@ object RootShell {
     }
 
     /**
-     * 写回 config.json。base64 落地,避免 JSON 里的引号/换行/特殊字符破坏 shell。
-     * 与 perapp 同款范式。写成功后 daemon 的 configTriggerTask(inotify)会热重载。
-     * 额外 touch 目录:/sdcard 是 FUSE,inotify 偶尔漏文件事件,touch 目录补触发。
+     * 写回 config.json;base64 落地避免特殊字符破坏 shell。
+     * touch 目录是因为 /sdcard FUSE 偶尔漏 inotify 文件事件,touch 父目录补触发。
      */
     fun writeConfigRaw(json: String): Boolean {
         val b64 = android.util.Base64.encodeToString(
@@ -219,7 +186,6 @@ object RootShell {
         return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $CONFIG; touch $CTS_DIR")
     }
 
-    /** 读取 daemon 写出的 status.json 原始文本(免 root 优先) */
     fun readStatusRaw(): String {
         runCatching {
             val f = java.io.File(STATUS)
@@ -231,7 +197,7 @@ object RootShell {
         return shOut("cat $STATUS 2>/dev/null").joinToString("\n")
     }
 
-    /** daemon 是否存活:读 daemon.alive(秒级时间戳),15s 内更新视为存活 */
+    /** daemon.alive 是秒级时间戳,15s 内更新视为存活。 */
     fun daemonAlive(): Boolean {
         val raw = runCatching {
             val f = java.io.File("$CTS_DIR/daemon.alive")

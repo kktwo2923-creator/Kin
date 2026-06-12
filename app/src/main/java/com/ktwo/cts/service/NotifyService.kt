@@ -27,11 +27,7 @@ import com.ktwo.cts.ui.QuickSwitchActivity
 import kotlinx.coroutines.*
 
 /**
- * 状态栏常驻通知服务:
- *  - 标题显示当前模式,正文显示电量
- *  - 点击通知 -> 在任意 App 之上弹出玻璃悬浮窗(WindowManager 叠加层)快切基础模式
- *    (无悬浮窗权限时回退到对话框 Activity)
- *  仅展示 + 手动入口,不做自动调度(那是 CTS 模块的事)。
+ * 状态栏常驻通知服务:显示当前模式+电量;点击弹 WindowManager 悬浮窗快切(无悬浮窗权限则回退到 Activity)。
  */
 class NotifyService : Service() {
 
@@ -79,8 +75,6 @@ class NotifyService : Service() {
         removeOverlay()
         scope.cancel()
     }
-
-    // ============ 玻璃悬浮窗 ============
 
     private fun showSwitcher() {
         if (!Settings.canDrawOverlays(this)) {
@@ -216,8 +210,6 @@ class NotifyService : Service() {
             runCatching { wm.removeView(v) }
         }
     }
-
-    // ============ 通知 ============
 
     private fun updateNotification() {
         getSystemService(NotificationManager::class.java)
