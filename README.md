@@ -1,9 +1,42 @@
-# OnePlus V Pro · 接管助手
+<div align="center">
 
-> 替代 Scene 接管,按应用画像自动切换调度模式
+# CTS · 接管助手
+
+**CoreTurboScheduler Companion**
+
+替代 Scene 的轻量接管前端 —— 监听前台 App,按应用画像自动切换 CPU 调度模式
+
+[![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](#license)
+[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)](#)
+[![Language](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](#)
+[![Daemon](https://img.shields.io/badge/Daemon-CoreTurboScheduler-orange)](https://github.com/kktwo2923-creator/CTS-Daemon)
+
+</div>
+
+---
+
+## 这是什么
+
+**CTS 接管助手** 是 [CoreTurboScheduler (CTS-Daemon)](https://github.com/kktwo2923-creator/CTS-Daemon) 的图形控制端,二者分工明确:
+
+- **守护进程(CTS-Daemon)** 负责真正的 CPU 调频与 governor 参数;
+- **本 App** 负责"什么时候、对哪个 App、切到哪个模式"—— 监听屏幕开关与前台 App 变化,自动下发模式。
+
+两者通过 root 调用 `/data/powercfg.sh <mode>`(Scene 接管协议)对接,完整替代 Scene 的接管能力。
+
+## 核心特性
+
+- 🎯 **按应用画像接管** —— 每个 App 可绑定独立调度模式,切到前台自动生效
+- 🔋 **灭屏自动省电** —— 息屏切省电模式(默认 powersave),亮屏恢复当前 App 画像
+- 🧩 **Scene 风格忽略规则** —— 输入法 / 系统 UI / 启动器 / 锁屏永不接管
+- 🚫 **用户黑名单** —— Apps 屏长按任意 App 即可加入,加入后不接管
+- 🔁 **STRICT 同模式重发** —— 部分游戏切回同模式需重发,可在设置开启
+- 🔍 **前台双轨探测** —— 有 root 用 `dumpsys`,无 root 退回 `UsageStatsManager`
+- 🎨 **Material You 界面** —— Jetpack Compose + Material 3 动态取色
+
+> **平台**:OnePlus V Pro(骁龙 8 至尊版 / 8 Elite Gen 5) · **技术栈**:Kotlin + Jetpack Compose
 >
-> UI 风格参考 [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) (GPL-3.0)
-> 接管逻辑参考 [helloklf/vtools](https://github.com/helloklf/vtools) (GPL-3.0)
+> **致谢**:UI 风格参考 [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)(GPL-3.0),接管逻辑参考 [helloklf/vtools](https://github.com/helloklf/vtools)(GPL-3.0)。
 
 ## 工作方式
 

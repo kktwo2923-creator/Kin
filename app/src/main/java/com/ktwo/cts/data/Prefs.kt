@@ -9,29 +9,50 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "cts_prefs")
 
-// 注: App 画像与全局模式已迁移到 perapp_powermode.txt(见 RootShell),
-// 故 DataStore 仅保留服务开关 / 轮询间隔 / 外观(主题、壁纸)等本地设置。
+// App 画像与全局模式已迁移到 perapp_powermode.txt;DataStore 只存本地设置。
 object Prefs {
     private val ENABLED_KEY      = booleanPreferencesKey("service_enabled")
     private val POLL_MS_KEY      = intPreferencesKey("poll_ms")
-    private val THEME_KEY        = stringPreferencesKey("theme_mode")     // system/light/dark/mono
-    private val WALLPAPER_KEY    = stringPreferencesKey("wallpaper_uri")  // content:// 或空=默认渐变
+    private val THEME_KEY        = stringPreferencesKey("theme_mode")
+    private val WALLPAPER_KEY    = stringPreferencesKey("wallpaper_uri")
+    private val NOTIFY_KEY       = booleanPreferencesKey("notify_enabled")
 
-    /** 主题模式(system/light/dark/mono),默认跟随系统 */
+    fun notifyEnabledFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[NOTIFY_KEY] ?: false }
+    suspend fun notifyEnabled(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[NOTIFY_KEY] ?: false
+    suspend fun setNotifyEnabled(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[NOTIFY_KEY] = b }
+    }
+
+    // SukiSU-Ultra 同款外观开关: 悬浮底栏 / 液态玻璃(悬浮底栏的玻璃效果)
+    private val ENABLE_FLOATING_BAR_KEY      = booleanPreferencesKey("enable_floating_bottom_bar")
+    private val ENABLE_FLOATING_BAR_BLUR_KEY = booleanPreferencesKey("enable_floating_bottom_bar_blur")
+
+    fun enableFloatingBottomBarFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[ENABLE_FLOATING_BAR_KEY] ?: true }
+    suspend fun setEnableFloatingBottomBar(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[ENABLE_FLOATING_BAR_KEY] = b }
+    }
+
+    fun enableFloatingBottomBarBlurFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[ENABLE_FLOATING_BAR_BLUR_KEY] ?: true }
+    suspend fun setEnableFloatingBottomBarBlur(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[ENABLE_FLOATING_BAR_BLUR_KEY] = b }
+    }
+
     fun themeModeFlow(ctx: Context): Flow<String> =
         ctx.dataStore.data.map { it[THEME_KEY] ?: "system" }
     suspend fun setThemeMode(ctx: Context, mode: String) {
         ctx.dataStore.edit { it[THEME_KEY] = mode }
     }
 
-    /** 自定义壁纸 URI(空 = 用默认渐变) */
     fun wallpaperUriFlow(ctx: Context): Flow<String> =
         ctx.dataStore.data.map { it[WALLPAPER_KEY] ?: "" }
     suspend fun setWallpaperUri(ctx: Context, uri: String) {
         ctx.dataStore.edit { it[WALLPAPER_KEY] = uri }
     }
 
-    /** 服务总开关 */
     fun enabledFlow(ctx: Context): Flow<Boolean> =
         ctx.dataStore.data.map { it[ENABLED_KEY] ?: true }
     suspend fun enabled(ctx: Context): Boolean =
@@ -40,20 +61,27 @@ object Prefs {
         ctx.dataStore.edit { it[ENABLED_KEY] = b }
     }
 
-    /** 轮询间隔毫秒 (默认 2000) */
     suspend fun pollMs(ctx: Context): Int =
         ctx.dataStore.data.first()[POLL_MS_KEY] ?: 2000
     suspend fun setPollMs(ctx: Context, ms: Int) {
         ctx.dataStore.edit { it[POLL_MS_KEY] = ms }
     }
+
+    // 电芯数:默认 2(一加大电池多为双芯串联)。若功耗偏高一倍,改 1(voltage_now 已是整包电压)。
+    private val CELL_COUNT_KEY = intPreferencesKey("cell_count")
+    fun cellCountFlow(ctx: Context): Flow<Int> =
+        ctx.dataStore.data.map { it[CELL_COUNT_KEY] ?: 2 }
+    suspend fun cellCount(ctx: Context): Int =
+        ctx.dataStore.data.first()[CELL_COUNT_KEY] ?: 2
+    suspend fun setCellCount(ctx: Context, n: Int) {
+        ctx.dataStore.edit { it[CELL_COUNT_KEY] = n }
+    }
 }
 
-// ============ Scene 风格新增配置 ============
 private val STRICT_KEY      = booleanPreferencesKey("strict_mode")
-private val BLACKLIST_KEY   = stringPreferencesKey("blacklist_json")  // 不接管包名列表
+private val BLACKLIST_KEY   = stringPreferencesKey("blacklist_json")
 
 object PrefsExt {
-    /** STRICT: 同模式也强制重发(对应 Scene 的 GLOBAL_SPF_DYNAMIC_CONTROL_STRICT) */
     fun strictFlow(ctx: Context): Flow<Boolean> =
         ctx.dataStore.data.map { it[STRICT_KEY] ?: false }
     suspend fun strict(ctx: Context): Boolean =
@@ -62,7 +90,6 @@ object PrefsExt {
         ctx.dataStore.edit { it[STRICT_KEY] = b }
     }
 
-    /** 黑名单: 不接管的包(对应 Scene 的 sceneBlackList) */
     fun blacklistFlow(ctx: Context): Flow<Set<String>> =
         ctx.dataStore.data.map { p ->
             val raw = p[BLACKLIST_KEY] ?: return@map emptySet()

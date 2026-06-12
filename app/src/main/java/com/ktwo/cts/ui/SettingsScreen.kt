@@ -5,11 +5,14 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,19 +33,51 @@ import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
-    var pollMs by remember { mutableStateOf(2000) }
+    val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx).collectAsState(initial = true)
+    val enableFloatingBarBlur by Prefs.enableFloatingBottomBarBlurFlow(ctx)
+        .collectAsState(initial = true)
+    val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
 
-    // 壁纸选择器: 打开系统相册(照片选择器),把选中图片复制到 App 私有目录,
-    // 存绝对路径,避免临时授权重启失效。
+    fun enableNotify() = scope.launch {
+        Prefs.setNotifyEnabled(ctx, true)
+        com.ktwo.cts.service.NotifyService.start(ctx)
+        if (!Settings.canDrawOverlays(ctx)) {
+            runCatching {
+                ctx.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:${ctx.packageName}")
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }
+    }
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> enableNotify() }
+    fun toggleNotify(on: Boolean) {
+        if (on) {
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            else enableNotify()
+        } else scope.launch {
+            Prefs.setNotifyEnabled(ctx, false)
+            com.ktwo.cts.service.NotifyService.stop(ctx)
+        }
+    }
+
+    // 把选中图片复制到 App 私有目录存绝对路径,避免临时 content URI 重启失效
     val pickWallpaper = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -61,7 +96,6 @@ fun SettingsScreen() {
     }
 
     LaunchedEffect(Unit) {
-        pollMs = Prefs.pollMs(ctx)
         hasUsagePerm = ForegroundDetector(ctx).hasUsageStatsPermission()
         isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
     }
@@ -129,7 +163,39 @@ fun SettingsScreen() {
                             )
                         }) { Text("选择") }
                     }
+                    HorizontalDivider()
+                    // SukiSU-Ultra 主题设置同款开关
+                    ToggleRow(
+                        title = "悬浮底栏",
+                        desc = "使用 Apple 风格的悬浮底栏",
+                        checked = enableFloatingBar,
+                        onCheckedChange = {
+                            scope.launch { Prefs.setEnableFloatingBottomBar(ctx, it) }
+                        },
+                    )
+                    AnimatedVisibility(visible = enableFloatingBar) {
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            HorizontalDivider()
+                            ToggleRow(
+                                title = "液态玻璃",
+                                desc = "启用悬浮底栏的液态玻璃效果",
+                                checked = enableFloatingBarBlur,
+                                onCheckedChange = {
+                                    scope.launch { Prefs.setEnableFloatingBottomBarBlur(ctx, it) }
+                                },
+                            )
+                        }
+                    }
                 }
+            }
+
+            Section("通知") {
+                ToggleRow(
+                    title = "状态栏常驻通知",
+                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
+                    checked = notifyEnabled,
+                    onCheckedChange = { toggleNotify(it) },
+                )
             }
 
             Section("接管行为") {
@@ -175,38 +241,38 @@ fun SettingsScreen() {
                 }
             }
 
-            Section("性能") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("前台 App 轮询间隔: ${pollMs / 1000.0} 秒", fontWeight = FontWeight.Medium)
-                    Slider(
-                        value = pollMs.toFloat(),
-                        onValueChange = { pollMs = it.toInt() },
-                        valueRange = 1000f..10000f,
-                        steps = 17,
-                        onValueChangeFinished = {
-                            scope.launch { Prefs.setPollMs(ctx, pollMs) }
-                        }
+            // 同 SukiSU 设置页: 关于作为入口行, 点开展示图标/版本/GitHub 链接
+            SectionTitle("其他")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenAbout)
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
                     )
-                    Text(
-                        "短=切换跟手但耗电略多; 长=省电但有延迟",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("关于", fontWeight = FontWeight.Medium)
+                        Text(
+                            "版本信息 · 开源地址",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            Section("关于") {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("OnePlus V Pro · 接管助手", fontWeight = FontWeight.Medium)
-                    Text(
-                        "替代 Scene 接管,按应用画像自动切换调度模式\n调用入口: /data/powercfg.sh <mode>",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            // 给浮动玻璃底栏留出空间
             Spacer(Modifier.height(96.dp))
         }
     }

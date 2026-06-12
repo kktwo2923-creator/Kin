@@ -24,11 +24,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * 日志页 - 读取 /sdcard/Android/CTS 下的 *.log / *.txt。
- *  - 顶部文件选择(芯片) + 刷新/清空
- *  - 等宽字体逐行展示,自动滚到底
- */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LogScreen() {
@@ -41,7 +36,6 @@ fun LogScreen() {
     var loading by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
-    // 全局模式(上半区切换)
     var globalMode by remember { mutableStateOf("balance") }
     LaunchedEffect(Unit) {
         globalMode = withContext(Dispatchers.IO) { RootShell.readGlobalMode() }
@@ -62,7 +56,6 @@ fun LogScreen() {
 
     LaunchedEffect(Unit) { loadFiles() }
     LaunchedEffect(selected) { loadLines() }
-    // 自动刷新: 每 2 秒重读当前日志(以及文件列表)
     LaunchedEffect(selected) {
         while (true) {
             kotlinx.coroutines.delay(2000)
@@ -75,10 +68,10 @@ fun LogScreen() {
             }
         }
     }
-    // 行变化后滚到底部
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) listState.scrollToItem(lines.size - 1)
     }
+
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -95,10 +88,12 @@ fun LogScreen() {
             .only(WindowInsetsSides.Horizontal),
     ) { inner ->
         Column(
-            Modifier.fillMaxSize().padding(inner).padding(horizontal = 16.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(inner)
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // ===== 上区: 模式切换(紧凑,自然高度) =====
             Column(
                 Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -115,7 +110,6 @@ fun LogScreen() {
                 }
             }
 
-            // ===== 下区: 日志(填满剩余空间) =====
             Column(
                 Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -133,7 +127,6 @@ fun LogScreen() {
                         }
                     }) { Icon(Icons.Outlined.DeleteOutline, "清空") }
                 }
-                // 文件选择芯片
                 if (files.isNotEmpty()) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         files.forEach { f ->
@@ -182,12 +175,11 @@ fun LogScreen() {
                 }
             }
 
-            Spacer(Modifier.height(88.dp)) // 给浮动底栏留位
+            Spacer(Modifier.height(88.dp))
         }
     }
 }
 
-/** 日志着色(玻璃底,跟随主题): 错误红 / 警告橙 / 其余正文色 */
 @Composable
 private fun colorForLine(line: String): Color {
     val l = line.lowercase()

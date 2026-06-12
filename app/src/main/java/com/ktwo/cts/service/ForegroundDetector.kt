@@ -7,9 +7,8 @@ import android.os.Process
 import com.ktwo.cts.root.RootShell
 
 /**
- * 前台 App 探测,双轨:
- * - root + dumpsys window (优先,最快最准)
- * - UsageStatsManager (兜底,要"使用情况"权限)
+ * 前台 App 探测优先级:cpuset 直读(最省电) -> dumpsys window(约 100~300ms,兜底) ->
+ * UsageStatsManager(无 root 时)。
  */
 class ForegroundDetector(private val ctx: Context) {
 
@@ -17,13 +16,23 @@ class ForegroundDetector(private val ctx: Context) {
 
     fun currentForegroundPackage(): String? {
         if (hasRoot) {
-            val r = tryDumpsys()
-            if (!r.isNullOrEmpty()) return r
+            tryCpuset()?.let { return it }
+            tryDumpsys()?.let { return it }
         }
         return tryUsageStats()
     }
 
-    /** 优先用 dumpsys window — 最快最准 */
+    /** top-app cgroup pid -> /proc/pid/cmdline 取包名;与 CTS-Daemon getTopAppFast 同思路。 */
+    private fun tryCpuset(): String? = try {
+        val out = RootShell.exec(
+            "for p in \$(cat /dev/cpuset/top-app/tasks 2>/dev/null); do " +
+            "  c=\$(tr '\\0' ' ' < /proc/\$p/cmdline 2>/dev/null | awk '{print \$1}'); " +
+            "  case \"\$c\" in *.*) echo \"\${c%%:*}\";; esac; " +
+            "done | tail -1"
+        ).trim()
+        out.ifEmpty { null }
+    } catch (_: Exception) { null }
+
     private fun tryDumpsys(): String? = try {
         val out = RootShell.exec(
             "dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | head -1"

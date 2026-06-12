@@ -49,7 +49,6 @@ fun AppsScreen() {
     var apps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
     var query by remember { mutableStateOf(TextFieldValue("")) }
     var showSystem by remember { mutableStateOf(false) }
-    // 画像从 perapp.txt 读(app = txt 的 GUI 编辑器),不再用 DataStore
     val profiles = remember { mutableStateMapOf<String, String>() }
     var globalMode by remember { mutableStateOf("balance") }
     val blacklist by PrefsExt.blacklistFlow(ctx).collectAsState(initial = emptySet())
@@ -107,8 +106,11 @@ fun AppsScreen() {
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Horizontal),
     ) { inner ->
-        Column(Modifier.fillMaxSize().padding(inner)) {
-            // 搜索栏 + 过滤
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(inner)
+        ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -186,7 +188,6 @@ private fun AppCard(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 图标
                 val bmp = remember(app.pkg) {
                     runCatching { app.icon?.toBitmap(96, 96) }.getOrNull()
                 }
@@ -234,7 +235,6 @@ private fun AppCard(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text("调度模式", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                    // 完整画像集(follow + 基础档 + game_heavy/video 等细分画像),每行 2 个
                     Mode.PROFILES.chunked(2).forEach { rowModes ->
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             rowModes.forEach {
@@ -244,7 +244,6 @@ private fun AppCard(
                                     }
                                 }
                             }
-                            // 奇数个时补空位占满整行
                             if (rowModes.size == 1) Box(Modifier.weight(1f)) {}
                         }
                     }
