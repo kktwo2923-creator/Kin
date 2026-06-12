@@ -93,7 +93,7 @@ fun HomeScreen() {
                 icon = if (working) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
                 title = if (working) "接管中" else "未接管",
                 subtitle = if (working)
-                    "当前 ${shownMode.label} · 按画像 + 灭屏自动切换"
+                    "当前 ${shownMode.label} · 自动切换"
                 else if (!isRoot)
                     "未授予 Root · 无法接管"
                 else if (!moduleInstalled)

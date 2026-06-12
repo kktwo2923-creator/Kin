@@ -6,8 +6,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
+import com.ktwo.cts.ui.theme.isInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -102,7 +102,7 @@ fun WallpaperBackground(
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            val dark = isSystemInDarkTheme()
+            val dark = isInDarkTheme()
             val grad = if (dark)
                 listOf(Color(0xFF26282E), Color(0xFF3A3D46), Color(0xFF1C1D22))
             else
@@ -207,7 +207,7 @@ fun GlassSurface(
     val hazeState = LocalHazeState.current
     val cornerPx = with(LocalDensity.current) { cornerDp.toPx() }
     // tint 仅调用方显式传入(语义色)时染色;否则用中性白/深灰
-    val dark = isSystemInDarkTheme()
+    val dark = isInDarkTheme()
     val neutral = if (dark) Color(0xFF2A2A2C) else Color.White
     val effTint = if (tint == Color.Unspecified) neutral else tint
     val glassMod = if (hazeState != null) {

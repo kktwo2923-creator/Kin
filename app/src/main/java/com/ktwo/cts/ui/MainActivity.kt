@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val ctx = LocalContext.current
-            val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "dynamic")
+            val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
             val enableBlur by Prefs.enableBlurFlow(ctx).collectAsState(initial = true)
             val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx)
                 .collectAsState(initial = true)

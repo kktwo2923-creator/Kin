@@ -71,10 +71,11 @@ fun AppRoot() {
         val selectedIndex = TABS.indexOfFirst { d ->
             curRoute?.any { it.route == d.route } == true
         }.coerceAtLeast(0)
+        val onAboutPage = entry?.destination?.route == "about"
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
-                BottomBar(
+                if (!onAboutPage) BottomBar(
                     blurBackdrop = blurBackdrop,
                     backdrop = backdrop,
                     items = TABS.map { it.label to it.icon },
@@ -127,7 +128,12 @@ fun AppRoot() {
                     composable("cpu")      { CpuControlScreen() }
                     composable("apps")     { AppsScreen() }
                     composable("logs")     { LogScreen() }
-                    composable("settings") { SettingsScreen() }
+                    composable("settings") {
+                        SettingsScreen(onOpenAbout = { nav.navigate("about") })
+                    }
+                    composable("about") {
+                        AboutScreen(onBack = { nav.popBackStack() })
+                    }
                 }
             }
         }

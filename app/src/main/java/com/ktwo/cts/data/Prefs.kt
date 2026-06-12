@@ -49,7 +49,7 @@ object Prefs {
     }
 
     fun themeModeFlow(ctx: Context): Flow<String> =
-        ctx.dataStore.data.map { it[THEME_KEY] ?: "dynamic" }
+        ctx.dataStore.data.map { it[THEME_KEY] ?: "system" }
     suspend fun setThemeMode(ctx: Context, mode: String) {
         ctx.dataStore.edit { it[THEME_KEY] = mode }
     }

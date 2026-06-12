@@ -6,11 +6,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,12 +35,12 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
-    val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "dynamic")
+    val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
     val enableBlur by Prefs.enableBlurFlow(ctx).collectAsState(initial = true)
     val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx).collectAsState(initial = true)
@@ -257,13 +259,34 @@ fun SettingsScreen() {
                 }
             }
 
-            Section("关于") {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("OnePlus V Pro · 接管助手", fontWeight = FontWeight.Medium)
-                    Text(
-                        "替代 Scene 接管,按应用画像自动切换调度模式\n调用入口: /data/powercfg.sh <mode>",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            // 同 SukiSU 设置页: 关于作为入口行, 点开展示图标/版本/GitHub 链接
+            SectionTitle("其他")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenAbout)
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("关于", fontWeight = FontWeight.Medium)
+                        Text(
+                            "版本信息 · 开源地址",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
