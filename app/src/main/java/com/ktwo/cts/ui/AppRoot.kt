@@ -57,12 +57,17 @@ fun AppRoot() {
     // 同 SukiSU MainScreen 双采样源: blurBackdrop 供非悬浮底栏的模糊,
     // backdrop 供悬浮底栏液态玻璃折射(整页内容+壁纸)
     val blurBackdrop = rememberBlurBackdrop(enableBlur)
+    // 壁纸单独一层采样源, 供各页顶栏合成"壁纸+内容"的模糊
+    val wallpaperBackdrop = rememberLayerBackdrop()
     val backdrop = rememberLayerBackdrop {
         drawRect(surfaceColor)
         drawContent()
     }
 
-    CompositionLocalProvider(LocalHazeState provides hazeState) {
+    CompositionLocalProvider(
+        LocalHazeState provides hazeState,
+        LocalWallpaperBackdrop provides if (blurBackdrop != null) wallpaperBackdrop else null,
+    ) {
         val selectedIndex = TABS.indexOfFirst { d ->
             curRoute?.any { it.route == d.route } == true
         }.coerceAtLeast(0)
@@ -100,7 +105,13 @@ fun AppRoot() {
                         else Modifier
                     )
             ) {
-                WallpaperBackground(hazeState, wallpaperUri = wallpaperUri)
+                WallpaperBackground(
+                    hazeState,
+                    wallpaperUri = wallpaperUri,
+                    modifier = if (blurBackdrop != null)
+                        Modifier.layerBackdrop(wallpaperBackdrop)
+                    else Modifier,
+                )
 
                 // 淡入淡出过渡;整页缩放会反复重算模糊导致卡顿
                 NavHost(

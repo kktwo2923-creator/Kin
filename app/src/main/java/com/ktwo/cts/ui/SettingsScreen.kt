@@ -103,12 +103,13 @@ fun SettingsScreen() {
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
+    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(blurBackdrop) {
+            BlurredBar(barBackdrop) {
                 LargeTopAppBar(
                     title = { Text("设置") },
                     scrollBehavior = scrollBehavior,

@@ -54,11 +54,12 @@ fun HomeScreen() {
 
     // SukiSU 顶栏模糊: 顶栏作为 textureBlur 消费者, 滚动内容作为 layerBackdrop 采样源
     val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
+    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(blurBackdrop) {
+            BlurredBar(barBackdrop) {
                 TopAppBar(
                     title = {
                         Text("OnePlus V Pro", fontWeight = FontWeight.Bold)

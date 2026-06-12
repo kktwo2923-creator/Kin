@@ -73,12 +73,13 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
     }
 
     val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
+    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            BlurredBar(blurBackdrop) {
+            BlurredBar(barBackdrop) {
                 TopAppBar(
                     title = { Text("CPU 控制", fontWeight = FontWeight.Bold) },
                     colors = TopAppBarDefaults.topAppBarColors(

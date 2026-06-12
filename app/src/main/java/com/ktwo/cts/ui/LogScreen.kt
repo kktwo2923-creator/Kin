@@ -75,11 +75,12 @@ fun LogScreen() {
     }
 
     val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
+    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(blurBackdrop) {
+            BlurredBar(barBackdrop) {
                 TopAppBar(
                     title = { Text("调度") },
                     colors = TopAppBarDefaults.topAppBarColors(

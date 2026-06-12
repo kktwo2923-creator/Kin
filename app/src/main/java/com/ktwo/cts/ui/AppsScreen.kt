@@ -92,12 +92,13 @@ fun AppsScreen() {
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
+    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(blurBackdrop) {
+            BlurredBar(barBackdrop) {
                 TopAppBar(
                     title = { Text("应用画像") },
                     scrollBehavior = scrollBehavior,
