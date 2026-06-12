@@ -19,7 +19,6 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.ktwo.cts.data.Prefs
-import com.ktwo.cts.ui.theme.LocalEnableBlur
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import dev.chrisbanes.haze.HazeState
@@ -50,24 +49,16 @@ fun AppRoot() {
     val view = LocalView.current
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
 
-    val enableBlur = LocalEnableBlur.current
     val enableFloatingBottomBar = LocalEnableFloatingBottomBar.current
     val enableFloatingBottomBarBlur = LocalEnableFloatingBottomBarBlur.current
     val surfaceColor = MaterialTheme.colorScheme.surface
-    // 同 SukiSU MainScreen 双采样源: blurBackdrop 供非悬浮底栏的模糊,
-    // backdrop 供悬浮底栏液态玻璃折射(整页内容+壁纸)
-    val blurBackdrop = rememberBlurBackdrop(enableBlur)
-    // 壁纸单独一层采样源, 供各页顶栏合成"壁纸+内容"的模糊
-    val wallpaperBackdrop = rememberLayerBackdrop()
+    // 同 SukiSU MainScreen: backdrop 供悬浮底栏液态玻璃折射(整页内容+壁纸)
     val backdrop = rememberLayerBackdrop {
         drawRect(surfaceColor)
         drawContent()
     }
 
-    CompositionLocalProvider(
-        LocalHazeState provides hazeState,
-        LocalWallpaperBackdrop provides if (blurBackdrop != null) wallpaperBackdrop else null,
-    ) {
+    CompositionLocalProvider(LocalHazeState provides hazeState) {
         val selectedIndex = TABS.indexOfFirst { d ->
             curRoute?.any { it.route == d.route } == true
         }.coerceAtLeast(0)
@@ -76,7 +67,6 @@ fun AppRoot() {
             containerColor = Color.Transparent,
             bottomBar = {
                 if (!onAboutPage) BottomBar(
-                    blurBackdrop = blurBackdrop,
                     backdrop = backdrop,
                     items = TABS.map { it.label to it.icon },
                     selectedIndex = selectedIndex,
@@ -97,22 +87,12 @@ fun AppRoot() {
                 Modifier
                     .fillMaxSize()
                     .then(
-                        if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop)
-                        else Modifier
-                    )
-                    .then(
                         if (enableFloatingBottomBar && enableFloatingBottomBarBlur)
                             Modifier.layerBackdrop(backdrop)
                         else Modifier
                     )
             ) {
-                WallpaperBackground(
-                    hazeState,
-                    wallpaperUri = wallpaperUri,
-                    modifier = if (blurBackdrop != null)
-                        Modifier.layerBackdrop(wallpaperBackdrop)
-                    else Modifier,
-                )
+                WallpaperBackground(hazeState, wallpaperUri = wallpaperUri)
 
                 // 淡入淡出过渡;整页缩放会反复重算模糊导致卡顿
                 NavHost(

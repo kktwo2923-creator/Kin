@@ -19,8 +19,6 @@ import com.ktwo.cts.data.ClusterModelCfg
 import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.PolicyMap
 import com.ktwo.cts.data.ProfileModel
-import com.ktwo.cts.ui.theme.LocalEnableBlur
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 
 /** CPU 控制面板:编辑 config.json 里选中 model 的频率/调速器/GPU/核心,写回后 daemon 热重载。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,35 +70,27 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
         )
     }
 
-    val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
-    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            BlurredBar(barBackdrop) {
-                TopAppBar(
-                    title = { Text("CPU 控制", fontWeight = FontWeight.Bold) },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                    ),
-                    actions = { PowerFreqBadge(watt = live.watt, mainMhz = mainMhz(live)) },
-                )
-            }
+            TopAppBar(
+                title = { Text("CPU 控制", fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
+                actions = { PowerFreqBadge(watt = live.watt, mainMhz = mainMhz(live)) },
+            )
         },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { inner ->
         Column(
             Modifier
                 .fillMaxSize()
-                .then(
-                    if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop)
-                    else Modifier
-                )
-                .verticalScroll(rememberScrollState())
                 .padding(inner)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {

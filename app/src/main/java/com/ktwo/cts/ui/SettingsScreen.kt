@@ -28,10 +28,8 @@ import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.ForegroundDetector
-import com.ktwo.cts.ui.theme.LocalEnableBlur
 import com.ktwo.cts.ui.theme.ThemeMode
 import kotlinx.coroutines.*
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -42,7 +40,6 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
     val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
-    val enableBlur by Prefs.enableBlurFlow(ctx).collectAsState(initial = true)
     val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx).collectAsState(initial = true)
     val enableFloatingBarBlur by Prefs.enableFloatingBottomBarBlurFlow(ctx)
         .collectAsState(initial = true)
@@ -104,23 +101,19 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
-    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(barBackdrop) {
-                LargeTopAppBar(
-                    title = { Text("设置") },
-                    scrollBehavior = scrollBehavior,
-                    colors = TopAppBarDefaults.largeTopAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                    ),
-                )
-            }
+            LargeTopAppBar(
+                title = { Text("设置") },
+                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.largeTopAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
+            )
         },
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Horizontal),
@@ -128,12 +121,8 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
         Column(
             Modifier
                 .fillMaxSize()
-                .then(
-                    if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop)
-                    else Modifier
-                )
-                .verticalScroll(rememberScrollState())
                 .padding(inner)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -175,14 +164,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
                         }) { Text("选择") }
                     }
                     HorizontalDivider()
-                    // SukiSU-Ultra 主题设置同款三开关
-                    ToggleRow(
-                        title = "模糊",
-                        desc = "启用顶栏和底栏的模糊效果",
-                        checked = enableBlur,
-                        onCheckedChange = { scope.launch { Prefs.setEnableBlur(ctx, it) } },
-                    )
-                    HorizontalDivider()
+                    // SukiSU-Ultra 主题设置同款开关
                     ToggleRow(
                         title = "悬浮底栏",
                         desc = "使用 Apple 风格的悬浮底栏",

@@ -10,8 +10,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-// 同 SukiSU-Ultra ui/theme/Theme.kt 的三个效果开关 CompositionLocal
-val LocalEnableBlur = staticCompositionLocalOf { false }
+// 同 SukiSU-Ultra ui/theme/Theme.kt 的效果开关 CompositionLocal
 val LocalEnableFloatingBottomBar = staticCompositionLocalOf { false }
 val LocalEnableFloatingBottomBarBlur = staticCompositionLocalOf { false }
 

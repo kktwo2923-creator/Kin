@@ -23,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,11 +30,9 @@ import androidx.compose.ui.unit.sp
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import top.yukonga.miuix.kmp.blur.Backdrop
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
 
 @Composable
 fun BottomBar(
-    blurBackdrop: LayerBackdrop?,
     backdrop: Backdrop,
     items: List<Pair<String, ImageVector>>,
     selectedIndex: Int,
@@ -46,19 +43,14 @@ fun BottomBar(
     val selected by rememberUpdatedState(selectedIndex)
 
     if (!enableFloatingBottomBar) {
-        BlurredBar(blurBackdrop) {
-            NavigationBar(
-                containerColor = if (blurBackdrop != null) Color.Transparent
-                                 else MaterialTheme.colorScheme.surface,
-            ) {
-                items.forEachIndexed { index, (label, icon) ->
-                    NavigationBarItem(
-                        icon = { Icon(icon, contentDescription = label) },
-                        label = { Text(label) },
-                        selected = selectedIndex == index,
-                        onClick = { onSelect(index) },
-                    )
-                }
+        NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            items.forEachIndexed { index, (label, icon) ->
+                NavigationBarItem(
+                    icon = { Icon(icon, contentDescription = label) },
+                    label = { Text(label) },
+                    selected = selectedIndex == index,
+                    onClick = { onSelect(index) },
+                )
             }
         }
     } else {

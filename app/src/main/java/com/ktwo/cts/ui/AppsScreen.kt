@@ -29,11 +29,9 @@ import androidx.core.graphics.drawable.toBitmap
 import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
-import com.ktwo.cts.ui.theme.LocalEnableBlur
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 
 private data class AppEntry(
     val pkg: String,
@@ -91,23 +89,19 @@ fun AppsScreen() {
     }
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-    val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
-    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(barBackdrop) {
-                TopAppBar(
-                    title = { Text("应用画像") },
-                    scrollBehavior = scrollBehavior,
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                    ),
-                )
-            }
+            TopAppBar(
+                title = { Text("应用画像") },
+                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
+            )
         },
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Horizontal),
@@ -115,10 +109,6 @@ fun AppsScreen() {
         Column(
             Modifier
                 .fillMaxSize()
-                .then(
-                    if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop)
-                    else Modifier
-                )
                 .padding(inner)
         ) {
             Row(

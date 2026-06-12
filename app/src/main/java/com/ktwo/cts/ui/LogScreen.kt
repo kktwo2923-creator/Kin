@@ -20,11 +20,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ktwo.cts.root.RootShell
-import com.ktwo.cts.ui.theme.LocalEnableBlur
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -74,21 +72,17 @@ fun LogScreen() {
         if (lines.isNotEmpty()) listState.scrollToItem(lines.size - 1)
     }
 
-    val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
-    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(barBackdrop) {
-                TopAppBar(
-                    title = { Text("调度") },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                    ),
-                )
-            }
+            TopAppBar(
+                title = { Text("调度") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
+            )
         },
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Horizontal),
@@ -96,10 +90,6 @@ fun LogScreen() {
         Column(
             Modifier
                 .fillMaxSize()
-                .then(
-                    if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop)
-                    else Modifier
-                )
                 .padding(inner)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

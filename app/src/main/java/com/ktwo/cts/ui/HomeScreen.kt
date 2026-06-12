@@ -20,9 +20,7 @@ import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.ScheduleService
-import com.ktwo.cts.ui.theme.LocalEnableBlur
 import kotlinx.coroutines.*
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,24 +50,19 @@ fun HomeScreen() {
 
     val working = isRoot && moduleInstalled && enabled
 
-    // SukiSU 顶栏模糊: 顶栏作为 textureBlur 消费者, 滚动内容作为 layerBackdrop 采样源
-    val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
-    val barBackdrop = rememberBarBackdrop(blurBackdrop)
 
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(barBackdrop) {
-                TopAppBar(
-                    title = {
-                        Text("OnePlus V Pro", fontWeight = FontWeight.Bold)
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                    ),
-                )
-            }
+            TopAppBar(
+                title = {
+                    Text("OnePlus V Pro", fontWeight = FontWeight.Bold)
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
+            )
         },
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Horizontal),
@@ -77,12 +70,8 @@ fun HomeScreen() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .then(
-                    if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop)
-                    else Modifier
-                )
-                .verticalScroll(rememberScrollState())
                 .padding(inner)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

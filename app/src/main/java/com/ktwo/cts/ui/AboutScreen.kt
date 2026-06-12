@@ -29,8 +29,6 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import com.ktwo.cts.BuildConfig
 import com.ktwo.cts.R
-import com.ktwo.cts.ui.theme.LocalEnableBlur
-import top.yukonga.miuix.kmp.blur.layerBackdrop
 
 private data class LinkInfo(val fullText: String, val url: String)
 
@@ -44,8 +42,6 @@ private val LINKS = listOf(
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
-    val blurBackdrop = rememberBlurBackdrop(LocalEnableBlur.current)
-    val barBackdrop = rememberBarBackdrop(blurBackdrop)
     val appIcon = remember {
         runCatching {
             ctx.packageManager.getApplicationIcon(ctx.packageName)
@@ -64,20 +60,18 @@ fun AboutScreen(onBack: () -> Unit) {
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            BlurredBar(barBackdrop) {
-                TopAppBar(
-                    title = { Text("关于") },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        scrolledContainerColor = Color.Transparent,
-                    ),
-                )
-            }
+            TopAppBar(
+                title = { Text("关于") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
+            )
         },
         contentWindowInsets = WindowInsets.safeDrawing
             .only(WindowInsetsSides.Horizontal),
@@ -85,12 +79,8 @@ fun AboutScreen(onBack: () -> Unit) {
         Column(
             Modifier
                 .fillMaxSize()
-                .then(
-                    if (blurBackdrop != null) Modifier.layerBackdrop(blurBackdrop)
-                    else Modifier
-                )
-                .verticalScroll(rememberScrollState())
                 .padding(inner)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
