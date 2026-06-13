@@ -19,7 +19,20 @@ class CtsApp : Application() {
         installCrashLogger()
         // 异步预热 shell,避免首次切换卡顿;同时识别 SoC 并缓存进程内供 CPU 面板直接用
         Shell.getShell {
-            Thread { runCatching { com.ktwo.cts.root.RootShell.detectSoc() } }.start()
+            Thread {
+                runCatching { com.ktwo.cts.root.RootShell.detectSoc() }
+                // 自动 root 授权无障碍前台推送: 未启用则用 root 写 secure settings 开启, 省去手动去系统设置。
+                runCatching {
+                    if (com.ktwo.cts.root.RootShell.isRooted()
+                        && !com.ktwo.cts.service.AppSwitchService.isEnabled(this@CtsApp)
+                    ) {
+                        com.ktwo.cts.root.RootShell.setAccessibility(true)
+                        kotlinx.coroutines.runBlocking {
+                            com.ktwo.cts.data.Prefs.setA11yWanted(this@CtsApp, true)
+                        }
+                    }
+                }
+            }.start()
         }
     }
 
