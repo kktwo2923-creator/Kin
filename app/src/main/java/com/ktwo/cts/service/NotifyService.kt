@@ -34,6 +34,7 @@ class NotifyService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var battery = -1
     private var modeKey = ""
+    private var isProfile = false   // 当前前台是否被应用画像接管(true=只读, false=可调基础模式)
     private var overlay: View? = null
 
     private val batteryRx = object : BroadcastReceiver() {
@@ -55,10 +56,16 @@ class NotifyService : Service() {
         registerReceiver(batteryRx, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         scope.launch {
             while (isActive) {
-                val m = withContext(Dispatchers.IO) {
-                    RootShell.currentMode().ifEmpty { RootShell.readGlobalMode() }
+                val active = withContext(Dispatchers.IO) {
+                    // 优先用无障碍服务进程内的前台(零 root); 未启用则 root 兜底探测
+                    val fg = AppSwitchService.foreground.ifEmpty {
+                        ForegroundDetector(this@NotifyService).currentForegroundPackage().orEmpty()
+                    }
+                    RootShell.resolveActiveMode(fg)
                 }
-                if (m != modeKey) { modeKey = m; updateNotification() }
+                if (active.key != modeKey || active.isProfile != isProfile) {
+                    modeKey = active.key; isProfile = active.isProfile; updateNotification()
+                }
                 delay(4000)
             }
         }
@@ -123,12 +130,39 @@ class NotifyService : Service() {
             isClickable = true
         }
         card.addView(TextView(this).apply {
-            text = "快速切换模式"
+            text = if (isProfile) "应用画像接管中" else "快速切换模式"
             setTextColor(titleC)
             textSize = 16f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             setPadding(px(4), 0, 0, px(14))
         })
+
+        if (isProfile) {
+            // 画像由 daemon 按当前应用自动调度,不允许手动切基础模式;只读展示画像名
+            card.addView(TextView(this).apply {
+                text = Mode.fromKey(modeKey).label
+                gravity = Gravity.CENTER
+                textSize = 16f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                setTextColor(Color.WHITE)
+                setPadding(0, px(20), 0, px(20))
+                background = GradientDrawable().apply {
+                    cornerRadius = px(18).toFloat(); setColor(accent)
+                }
+            })
+            card.addView(TextView(this).apply {
+                text = "当前应用由画像自动调度,基础模式快切已禁用"
+                setTextColor(unselTx)
+                textSize = 12f
+                setPadding(px(4), px(12), px(4), 0)
+            })
+            root.addView(card, FrameLayout.LayoutParams(
+                px(340), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER
+            ).apply { marginStart = px(16); marginEnd = px(16) })
+            addOverlayAnimated(wm, root, card, px(40))
+            return
+        }
+
         val rowLp = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val cur = modeKey
         Mode.DOWNSTREAM.forEach { m ->
@@ -166,7 +200,11 @@ class NotifyService : Service() {
         root.addView(card, FrameLayout.LayoutParams(
             px(340), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER
         ).apply { marginStart = px(16); marginEnd = px(16) })
+        addOverlayAnimated(wm, root, card, px(40))
+    }
 
+    /** 把悬浮根视图加到 WindowManager 并播放卡片入场动画(两种卡片共用)。 */
+    private fun addOverlayAnimated(wm: WindowManager, root: View, card: View, dy: Int) {
         val type = if (Build.VERSION.SDK_INT >= 26)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else
@@ -185,7 +223,7 @@ class NotifyService : Service() {
             card.alpha = 0f
             card.scaleX = 0.85f
             card.scaleY = 0.85f
-            card.translationY = px(40).toFloat()
+            card.translationY = dy.toFloat()
             card.animate()
                 .alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
                 .setDuration(300)
@@ -225,10 +263,12 @@ class NotifyService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val batteryText = if (battery in 0..100) "电量 $battery%" else "电量 --"
+        val title = if (isProfile) "应用画像: ${mode.label}" else "当前模式: ${mode.label}"
+        val hint = if (isProfile) "$batteryText · 画像自动接管" else "$batteryText · 点击悬浮切换模式"
         return NotificationCompat.Builder(this, CH_ID)
             .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle("当前模式: ${mode.label}")
-            .setContentText("$batteryText · 点击悬浮切换模式")
+            .setContentTitle(title)
+            .setContentText(hint)
             .setContentIntent(pi)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

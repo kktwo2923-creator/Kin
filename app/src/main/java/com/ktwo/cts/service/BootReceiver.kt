@@ -12,9 +12,11 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                restoreUserConfig(ctx)
-                if (Prefs.enabled(ctx) && !RootShell.daemonAlive()) ScheduleService.start(ctx)
-                if (Prefs.notifyEnabled(ctx)) NotifyService.start(ctx)
+                restoreUserConfig(ctx)   // 数据恢复与自启开关无关, 始终执行
+                if (Prefs.autostart(ctx)) {
+                    if (Prefs.enabled(ctx) && !RootShell.daemonAlive()) ScheduleService.start(ctx)
+                    if (Prefs.notifyEnabled(ctx)) NotifyService.start(ctx)
+                }
             } finally { pending.finish() }
         }
     }

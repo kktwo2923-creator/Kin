@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.*
 
 /**
  * 前台服务:替代 Scene 接管。daemon 存活时立即自停;daemon 不在时作为兜底运行。
- * 参考 Scene AppSwitchHandler:输入法/系统UI忽略,用户黑名单,STRICT 同模式重发,灭屏切省电。
+ * 参考 Scene AppSwitchHandler:输入法/系统UI忽略,用户黑名单,同模式去重,灭屏切省电。
  */
 class ScheduleService : Service() {
 
@@ -138,8 +138,7 @@ class ScheduleService : Service() {
             RootShell.readGlobalMode() else perApp
         if (target.isBlank()) return
 
-        val strict = PrefsExt.strict(ctx)
-        if (!strict && target == lastDispatched) return
+        if (target == lastDispatched) return
 
         applyAndUpdate(target, pkg)
     }

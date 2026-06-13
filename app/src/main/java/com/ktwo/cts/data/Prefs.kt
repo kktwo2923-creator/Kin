@@ -67,6 +67,16 @@ object Prefs {
         ctx.dataStore.edit { it[POLL_MS_KEY] = ms }
     }
 
+    // 开机自启动:默认开。控制 BootReceiver 是否在开机后拉起常驻服务。
+    private val AUTOSTART_KEY = booleanPreferencesKey("autostart")
+    fun autostartFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[AUTOSTART_KEY] ?: true }
+    suspend fun autostart(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[AUTOSTART_KEY] ?: true
+    suspend fun setAutostart(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[AUTOSTART_KEY] = b }
+    }
+
     // 电芯数:默认 2(一加大电池多为双芯串联)。若功耗偏高一倍,改 1(voltage_now 已是整包电压)。
     private val CELL_COUNT_KEY = intPreferencesKey("cell_count")
     fun cellCountFlow(ctx: Context): Flow<Int> =
@@ -78,18 +88,9 @@ object Prefs {
     }
 }
 
-private val STRICT_KEY      = booleanPreferencesKey("strict_mode")
 private val BLACKLIST_KEY   = stringPreferencesKey("blacklist_json")
 
 object PrefsExt {
-    fun strictFlow(ctx: Context): Flow<Boolean> =
-        ctx.dataStore.data.map { it[STRICT_KEY] ?: false }
-    suspend fun strict(ctx: Context): Boolean =
-        ctx.dataStore.data.first()[STRICT_KEY] ?: false
-    suspend fun setStrict(ctx: Context, b: Boolean) {
-        ctx.dataStore.edit { it[STRICT_KEY] = b }
-    }
-
     fun blacklistFlow(ctx: Context): Flow<Set<String>> =
         ctx.dataStore.data.map { p ->
             val raw = p[BLACKLIST_KEY] ?: return@map emptySet()

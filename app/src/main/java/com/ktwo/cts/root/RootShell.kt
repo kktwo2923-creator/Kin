@@ -189,6 +189,45 @@ object RootShell {
     fun daemonAlive(): Boolean =
         shOut("pidof CoreTurboScheduler 2>/dev/null").firstOrNull()?.isNotBlank() == true
 
+    /** 当前生效模式:isProfile=true 表示当前前台被应用画像接管(只读),false 为可调的基础模式。 */
+    data class ActiveMode(val isProfile: Boolean, val key: String)
+
+    private fun matchPkg(pattern: String, pkg: String): Boolean = when {
+        pattern.isEmpty() -> false
+        pattern.endsWith("*") -> pkg.startsWith(pattern.dropLast(1))
+        else -> pattern == pkg
+    }
+
+    /**
+     * 判定前台包名当前生效的模式,镜像 daemon 优先级:黑名单→跟随全局;perapp 覆盖优先于
+     * config 画像;都没有则基础(全局)模式。仅用于通知/悬浮窗显示,近似即可。
+     */
+    fun resolveActiveMode(fg: String): ActiveMode {
+        val global = readGlobalMode()
+        if (fg.isBlank()) return ActiveMode(false, global)
+        val raw = readConfigRaw()
+        if (raw.isNotBlank()) runCatching {
+            val o = org.json.JSONObject(raw)
+            o.optJSONArray("package_blacklist")?.let { bl ->
+                for (i in 0 until bl.length())
+                    if (matchPkg(bl.optString(i), fg)) return ActiveMode(false, global)
+            }
+            readPerApp()[fg]?.let { if (it.isNotBlank() && it != "follow") return ActiveMode(true, it) }
+            o.optJSONArray("models")?.let { models ->
+                for (i in 0 until models.length()) {
+                    val m = models.optJSONObject(i) ?: continue
+                    val pkgs = m.optJSONArray("packages") ?: continue
+                    for (j in 0 until pkgs.length())
+                        if (matchPkg(pkgs.optString(j), fg))
+                            return ActiveMode(true, m.optString("model_name"))
+                }
+            }
+        }
+        // config 读不到时仍尊重 perapp 覆盖
+        readPerApp()[fg]?.let { if (it.isNotBlank() && it != "follow") return ActiveMode(true, it) }
+        return ActiveMode(false, global)
+    }
+
     /**
      * 无障碍服务推送当前前台包名给 daemon(写 topapp.txt,daemon inotify 即时消费)。
      * 异步提交不阻塞调用线程;持久 su 会话开销极小。包名仅含 [A-Za-z0-9._:],单引号安全。

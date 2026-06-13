@@ -25,7 +25,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.data.Prefs
-import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.ForegroundDetector
 import com.ktwo.cts.ui.theme.ThemeMode
@@ -37,7 +36,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val strict by PrefsExt.strictFlow(ctx).collectAsState(initial = false)
+    val autostart by Prefs.autostartFlow(ctx).collectAsState(initial = true)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
     val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx).collectAsState(initial = true)
@@ -200,12 +199,12 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
                 )
             }
 
-            Section("接管行为") {
+            Section("通用") {
                 ToggleRow(
-                    title = "STRICT 同模式重发",
-                    desc = "切换应用时,即使目标模式与当前相同也重发一次(部分游戏需要)",
-                    checked = strict,
-                    onCheckedChange = { scope.launch { PrefsExt.setStrict(ctx, it) } }
+                    title = "开机自启动",
+                    desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
+                    checked = autostart,
+                    onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } }
                 )
             }
 

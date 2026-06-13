@@ -33,6 +33,12 @@ class AppSwitchService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // 启用后立刻推一次当前焦点窗口包名, 不必等下一次切换事件
+        runCatching {
+            rootInActiveWindow?.packageName?.toString()?.let { pkg ->
+                if (pkg.contains('.')) { lastPkg = pkg; foreground = pkg; RootShell.pushTopApp(pkg) }
+            }
+        }
         main.postDelayed(heartbeat, HEARTBEAT_MS)
     }
 
@@ -43,8 +49,12 @@ class AppSwitchService : AccessibilityService() {
         if (pkg.isEmpty() || pkg == lastPkg) return
         if (!pkg.contains('.')) return   // 滤掉非包名(部分系统浮层的 className)
         lastPkg = pkg
+        foreground = pkg
         RootShell.pushTopApp(pkg)
     }
+
+    // 服务被系统解绑时允许重新绑定(无障碍服务异常后自动恢复)
+    override fun onUnbind(intent: android.content.Intent?): Boolean = true
 
     override fun onInterrupt() {}
 
@@ -55,6 +65,10 @@ class AppSwitchService : AccessibilityService() {
 
     companion object {
         private const val HEARTBEAT_MS = 10_000L
+
+        /** 最近一次焦点包名(无障碍在进程内即时可得, 供通知服务零 root 读取); 服务未启用时为空。 */
+        @Volatile var foreground: String = ""
+            private set
 
         /** 当前无障碍服务是否已被用户启用。 */
         fun isEnabled(ctx: Context): Boolean {
