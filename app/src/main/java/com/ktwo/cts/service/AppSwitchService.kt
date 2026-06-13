@@ -51,23 +51,50 @@ class AppSwitchService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         loadImePackages()
-        // 启用后立刻推一次当前焦点窗口包名, 不必等下一次切换事件
-        runCatching {
-            rootInActiveWindow?.packageName?.toString()?.let { pkg ->
-                if (!shouldIgnore(pkg)) { lastPkg = pkg; foreground = pkg; RootShell.pushTopApp(pkg) }
-            }
-        }
+        push(mainAppFromWindows())   // 启用后立刻推一次, 不必等下次切换
         main.postDelayed(heartbeat, HEARTBEAT_MS)
     }
 
+    private var lastEvalMs = 0L
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val e = event ?: return
-        if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val pkg = e.packageName?.toString().orEmpty()
-        if (pkg == lastPkg || shouldIgnore(pkg)) return   // 系统UI/输入法/非包名 → 不覆盖真实前台
-        lastPkg = pkg
-        foreground = pkg
-        RootShell.pushTopApp(pkg)
+        if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            e.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return
+        // typeWindowsChanged 触发频繁: 节流避免主线程频繁枚举窗口造成卡顿
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastEvalMs < 400) return
+        lastEvalMs = now
+        // 多窗口/小窗: 取面积最大的应用窗口(全屏主应用), 而非被触摸/聚焦的小窗;
+        // 拿不到窗口列表时退回事件自身包名
+        push(mainAppFromWindows() ?: e.packageName?.toString())
+    }
+
+    private fun push(pkg: String?) {
+        val p = pkg.orEmpty()
+        if (p == lastPkg || shouldIgnore(p)) return
+        lastPkg = p
+        foreground = p
+        RootShell.pushTopApp(p)
+    }
+
+    /** 枚举所有窗口, 取面积最大的应用窗口的包名 = 全屏主应用(小窗面积小, 不会胜出)。 */
+    private fun mainAppFromWindows(): String? {
+        val wins = runCatching { windows }.getOrNull() ?: return null
+        val r = android.graphics.Rect()
+        var best: String? = null
+        var bestArea = 0L
+        for (w in wins) {
+            if (w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION) continue
+            w.getBoundsInScreen(r)
+            val area = r.width().toLong() * r.height().toLong()
+            if (area <= bestArea) continue
+            val pkg = runCatching { w.root?.packageName?.toString() }.getOrNull() ?: continue
+            if (pkg.isEmpty() || shouldIgnore(pkg)) continue
+            bestArea = area
+            best = pkg
+        }
+        return best
     }
 
     // 服务被系统解绑时允许重新绑定(无障碍服务异常后自动恢复)

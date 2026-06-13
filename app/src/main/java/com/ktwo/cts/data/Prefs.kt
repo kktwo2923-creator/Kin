@@ -77,6 +77,14 @@ object Prefs {
         ctx.dataStore.edit { it[AUTOSTART_KEY] = b }
     }
 
+    // 用户是否要求开启无障碍前台推送(root 授权): 开机由 BootReceiver 重新断言, 防 ROM 重启掉权限
+    private val A11Y_WANTED_KEY = booleanPreferencesKey("a11y_wanted")
+    suspend fun a11yWanted(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[A11Y_WANTED_KEY] ?: false
+    suspend fun setA11yWanted(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[A11Y_WANTED_KEY] = b }
+    }
+
     // 电芯数:默认 2(一加大电池多为双芯串联)。若功耗偏高一倍,改 1(voltage_now 已是整包电压)。
     private val CELL_COUNT_KEY = intPreferencesKey("cell_count")
     fun cellCountFlow(ctx: Context): Flow<Int> =

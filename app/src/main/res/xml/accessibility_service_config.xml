@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  仅监听窗口状态变化以获取前台应用包名,推送给调度守护进程。
-  canRetrieveWindowContent=false: 不读取屏幕内容,只拿包名,隐私最小化。
+  监听窗口状态/增删变化, 通过 getWindows() 找面积最大的应用窗口(全屏主应用),
+  把其包名推送给调度守护进程。canRetrieveWindowContent=true 仅用于读取窗口包名/边界,
+  不采集文本内容; flagRetrieveInteractiveWindows 用于枚举所有窗口判定主应用。
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagDefault"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows"
     android:notificationTimeout="100"
-    android:canRetrieveWindowContent="false"
+    android:canRetrieveWindowContent="true"
     android:description="@string/a11y_desc" />

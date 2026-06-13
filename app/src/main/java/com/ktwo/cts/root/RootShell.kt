@@ -189,6 +189,28 @@ object RootShell {
     fun daemonAlive(): Boolean =
         shOut("pidof CoreTurboScheduler 2>/dev/null").firstOrNull()?.isNotBlank() == true
 
+    private const val A11Y_COMPONENT = "com.ktwo.cts/com.ktwo.cts.service.AppSwitchService"
+
+    /**
+     * 用 root 写 secure settings 开/关本应用无障碍服务(持久, 跨重启不掉权限)。
+     * 追加而非覆盖现有已启用服务; 关闭时仅移除自己。开机由 BootReceiver 重新断言。
+     */
+    fun setAccessibility(enable: Boolean): Boolean {
+        val cur = shOut("settings get secure enabled_accessibility_services")
+            .firstOrNull()?.trim().orEmpty()
+        val items = cur.split(':')
+            .filter { it.isNotEmpty() && it != "null" && it != A11Y_COMPONENT }
+            .toMutableList()
+        if (enable) items.add(A11Y_COMPONENT)
+        val joined = items.joinToString(":")
+        val cmd = buildString {
+            if (joined.isEmpty()) append("settings delete secure enabled_accessibility_services; ")
+            else append("settings put secure enabled_accessibility_services '$joined'; ")
+            append("settings put secure accessibility_enabled ${if (items.isEmpty()) 0 else 1}")
+        }
+        return shOk(cmd)
+    }
+
     /** 当前生效模式:isProfile=true 表示当前前台被应用画像接管(只读),false 为可调的基础模式。 */
     data class ActiveMode(val isProfile: Boolean, val key: String)
 

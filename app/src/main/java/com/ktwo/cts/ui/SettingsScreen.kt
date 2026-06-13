@@ -244,11 +244,19 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
                     PermRow(
                         name = "无障碍·前台推送",
                         granted = a11yEnabled,
-                        desc = "实时把前台应用推给守护进程,替代 dumpsys 轮询(更快更省电);仅读包名不读屏幕内容。可选",
+                        desc = "识别全屏主应用推给守护进程(多窗口取最大窗口);root 一键授权、跨重启保持。可选",
                         icon = Icons.Outlined.Bolt,
                         onAction = {
-                            ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) { RootShell.setAccessibility(true) }
+                                Prefs.setA11yWanted(ctx, true)
+                                if (!ok) runCatching {
+                                    ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }
+                                kotlinx.coroutines.delay(400)
+                                a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
+                            }
                         }
                     )
                     HorizontalDivider()
