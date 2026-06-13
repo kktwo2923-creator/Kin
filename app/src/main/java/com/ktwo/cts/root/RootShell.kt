@@ -161,7 +161,6 @@ object RootShell {
     }
 
     private const val CONFIG = "$CTS_DIR/config.json"
-    private const val STATUS = "$CTS_DIR/status.json"
 
     /** 读取 config.json(免 root 优先,失败再 root 读)。 */
     fun readConfigRaw(): String {
@@ -186,26 +185,7 @@ object RootShell {
         return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $CONFIG; touch $CTS_DIR")
     }
 
-    fun readStatusRaw(): String {
-        runCatching {
-            val f = java.io.File(STATUS)
-            if (f.canRead()) {
-                val s = f.readText()
-                if (s.isNotBlank()) return s
-            }
-        }
-        return shOut("cat $STATUS 2>/dev/null").joinToString("\n")
-    }
-
-    /** daemon.alive 是秒级时间戳,15s 内更新视为存活。 */
-    fun daemonAlive(): Boolean {
-        val raw = runCatching {
-            val f = java.io.File("$CTS_DIR/daemon.alive")
-            if (f.canRead()) f.readText().trim()
-            else shOut("cat $CTS_DIR/daemon.alive 2>/dev/null").firstOrNull()?.trim()
-        }.getOrNull().orEmpty()
-        val ts = raw.toLongOrNull() ?: return false
-        val nowSec = System.currentTimeMillis() / 1000
-        return (nowSec - ts) in 0..15
-    }
+    /** 守护是否在运行：直接查进程(daemon 已不再写 daemon.alive 心跳)。 */
+    fun daemonAlive(): Boolean =
+        shOut("pidof CoreTurboScheduler 2>/dev/null").firstOrNull()?.isNotBlank() == true
 }

@@ -23,7 +23,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * CPU 面板 ViewModel。editing 是当前画像的内存副本,save() 时读-改-写回 config.json。
- * live 优先读 daemon status.json,daemon 不在则 App 自读 sysfs;WhileSubscribed 无订阅时停轮询。
+ * live 实时数据由 App 自读 sysfs(daemon 不再写 status.json);WhileSubscribed 无订阅时停轮询。
  */
 class CpuControlVm(app: Application) : AndroidViewModel(app) {
 
@@ -124,14 +124,8 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
         if (n > 0) "$n 核簇" else "簇"
     }
 
+    // daemon 已不再写 status.json，实时数据全部由 App 自读 sysfs
     private suspend fun loadLive(): LiveStatus {
-        return if (RootShell.daemonAlive()) {
-            val s = LiveStatus.parse(RootShell.readStatusRaw())
-            if (s.ts > 0) s else fallbackSnapshot()
-        } else fallbackSnapshot()
-    }
-
-    private suspend fun fallbackSnapshot(): LiveStatus {
         val cells = Prefs.cellCount(getApplication())
         return SysfsReader.snapshot(cells)
     }
