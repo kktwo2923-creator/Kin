@@ -98,12 +98,18 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
         _editing.value = deviceAligned(_cfg.value.profile(name), _cfg.value.policyMap)
     }
 
-    /** 让画像簇列表对齐设备实际 policy;cN 索引从 config Policy 映射取,无则按顺序兜底。 */
+    /**
+     * 画像簇列表 = config 拓扑定义的簇 ∪ 设备实际枚举到的 policy(并集, 按 policy 升序)。
+     * 取并集而非只用设备枚举: 省电关大核时 /sys 里 policy6 目录消失, 仍要从 config 显示大核簇供编辑。
+     * cN 索引优先从 config Policy 映射取, 无则按顺序兜底。
+     */
     private fun deviceAligned(p: ProfileModel?, pm: com.ktwo.cts.data.PolicyMap): ProfileModel? {
         p ?: return null
-        if (devicePolicies.isEmpty()) return p
-        val clusters = devicePolicies.mapIndexed { i, policy ->
-            val cIndex = pm.cToPolicy.indexOf(policy).let { if (it >= 0) it else i }
+        val configPolicies = pm.activeClusters.map { pm.policyOf(it) }
+        val policies = (configPolicies + devicePolicies).filter { it >= 0 }.distinct().sorted()
+        if (policies.isEmpty()) return p
+        val clusters = policies.map { policy ->
+            val cIndex = pm.cToPolicy.indexOf(policy).let { if (it >= 0) it else policies.indexOf(policy) }
             val existing = p.clusters.firstOrNull { it.cIndex == cIndex }
             com.ktwo.cts.data.ClusterModelCfg(
                 cIndex = cIndex,
@@ -130,11 +136,39 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
         return SysfsReader.snapshot(cells)
     }
 
-    fun availFreqsKhz(policy: Int): List<Long> =
-        freqCache.getOrPut(policy) { SysfsReader.availableFreqsKhz(policy) }
+    // 频点/调速器表持久缓存到 App 私有目录: 省电关大核时 policyN 节点读不到,
+    // 用上次在线缓存的表填充选择器, 使大核频率/调速器仍可编辑。空结果不进内存缓存以便核上线后重读。
+    private val tablesFile by lazy { java.io.File(getApplication<Application>().filesDir, "sysfs_tables.json") }
+    private val tables: org.json.JSONObject by lazy {
+        runCatching { org.json.JSONObject(tablesFile.readText()) }.getOrDefault(org.json.JSONObject())
+    }
+    private fun saveTables() { runCatching { tablesFile.writeText(tables.toString()) } }
 
-    fun availGovernors(policy: Int): List<String> =
-        govCache.getOrPut(policy) { SysfsReader.availableGovernors(policy) }
+    fun availFreqsKhz(policy: Int): List<Long> {
+        freqCache[policy]?.let { return it }
+        val key = "freq_$policy"
+        val live = runCatching { SysfsReader.availableFreqsKhz(policy) }.getOrDefault(emptyList())
+        val result = if (live.isNotEmpty()) {
+            tables.put(key, org.json.JSONArray(live)); saveTables(); live
+        } else {
+            tables.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getLong(it) } } ?: emptyList()
+        }
+        if (result.isNotEmpty()) freqCache[policy] = result
+        return result
+    }
+
+    fun availGovernors(policy: Int): List<String> {
+        govCache[policy]?.let { return it }
+        val key = "gov_$policy"
+        val live = runCatching { SysfsReader.availableGovernors(policy) }.getOrDefault(emptyList())
+        val result = if (live.isNotEmpty()) {
+            tables.put(key, org.json.JSONArray(live)); saveTables(); live
+        } else {
+            tables.optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+        }
+        if (result.isNotEmpty()) govCache[policy] = result
+        return result
+    }
 
     private var gpuFreqCache: List<Int>? = null
     fun availGpuMhz(): List<Int> =

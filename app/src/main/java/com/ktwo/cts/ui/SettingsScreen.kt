@@ -1,5 +1,6 @@
 package com.ktwo.cts.ui
 
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -46,6 +47,18 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
     var a11yEnabled by remember { mutableStateOf(false) }
+    var batteryWhitelisted by remember { mutableStateOf(false) }
+
+    // 回到前台就重查权限状态(用户去系统设置授权后返回, 红/绿即时刷新)
+    fun refreshPerms() = scope.launch {
+        a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
+        batteryWhitelisted = runCatching {
+            (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
+                .isIgnoringBatteryOptimizations(ctx.packageName)
+        }.getOrDefault(false)
+        hasUsagePerm = runCatching { ForegroundDetector(ctx).hasUsageStatsPermission() }.getOrDefault(false)
+        isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
+    }
 
     fun enableNotify() = scope.launch {
         Prefs.setNotifyEnabled(ctx, true)
@@ -95,10 +108,9 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
         }
     }
 
-    LaunchedEffect(Unit) {
-        hasUsagePerm = ForegroundDetector(ctx).hasUsageStatsPermission()
-        isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
-        a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        refreshPerms()
+        onPauseOrDispose { }
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -242,7 +254,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
                     HorizontalDivider()
                     PermRow(
                         name = "电池优化白名单",
-                        granted = false,
+                        granted = batteryWhitelisted,
                         desc = "防止后台被杀",
                         icon = Icons.Outlined.BatteryFull,
                         onAction = {
