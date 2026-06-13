@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
+import android.view.inputmethod.InputMethodManager
 import com.ktwo.cts.root.RootShell
 
 /**
@@ -15,13 +16,29 @@ import com.ktwo.cts.root.RootShell
  *
  * 定位是 daemon dumpsys 轮询的"加速器":启用后 daemon 直接用推送值(零 dumpsys popen、零延迟);
  * 未启用/被杀时推送变陈旧,daemon 自动回退自身 dumpsys 检测,不影响"不开 App 也能用"。
- * 过滤(黑名单/小窗/游戏保活)全部交给 daemon,这里只忠实上报焦点包名 + 心跳保活新鲜度。
- * 参考 Scene(helloklf/vtools)AppSwitchHandler 的事件来源。
+ * 系统UI/输入法等非应用窗口会频繁触发本事件, 必须忽略, 否则 topapp.txt 会被 systemui 等刷屏覆盖。
+ * 其余过滤(黑名单/小窗/游戏保活)交给 daemon。参考 Scene(helloklf/vtools)AppSwitchHandler 的事件来源。
  */
 class AppSwitchService : AccessibilityService() {
 
     private val main = Handler(Looper.getMainLooper())
     private var lastPkg: String = ""
+
+    // 非应用窗口忽略集: 这些包频繁触发窗口事件却不是"前台应用", 推了会盖掉真实前台
+    private val ignore = mutableSetOf(
+        "com.android.systemui", "com.oplus.systemui", "com.coloros.systemui",
+        "android", "com.android.intentresolver",
+    )
+
+    private fun loadImePackages() {
+        runCatching {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.inputMethodList.forEach { ignore.add(it.packageName) }
+        }
+    }
+
+    private fun shouldIgnore(pkg: String): Boolean =
+        pkg.isEmpty() || !pkg.contains('.') || pkg in ignore
 
     // 心跳:前台长时间不变时无障碍不再回调,定时重推让 daemon 端推送值保持新鲜(否则 daemon 回退 dumpsys)
     private val heartbeat = object : Runnable {
@@ -33,10 +50,11 @@ class AppSwitchService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        loadImePackages()
         // 启用后立刻推一次当前焦点窗口包名, 不必等下一次切换事件
         runCatching {
             rootInActiveWindow?.packageName?.toString()?.let { pkg ->
-                if (pkg.contains('.')) { lastPkg = pkg; foreground = pkg; RootShell.pushTopApp(pkg) }
+                if (!shouldIgnore(pkg)) { lastPkg = pkg; foreground = pkg; RootShell.pushTopApp(pkg) }
             }
         }
         main.postDelayed(heartbeat, HEARTBEAT_MS)
@@ -46,8 +64,7 @@ class AppSwitchService : AccessibilityService() {
         val e = event ?: return
         if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = e.packageName?.toString().orEmpty()
-        if (pkg.isEmpty() || pkg == lastPkg) return
-        if (!pkg.contains('.')) return   // 滤掉非包名(部分系统浮层的 className)
+        if (pkg == lastPkg || shouldIgnore(pkg)) return   // 系统UI/输入法/非包名 → 不覆盖真实前台
         lastPkg = pkg
         foreground = pkg
         RootShell.pushTopApp(pkg)
