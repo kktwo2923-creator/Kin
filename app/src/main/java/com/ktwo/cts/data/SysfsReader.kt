@@ -125,7 +125,6 @@ object SysfsReader {
             gpuMhz = readGpuMhz(),
             clusterFreqMhz = freq,
             clusterGov = gov,
-            ts = System.currentTimeMillis(),
         )
     }
 

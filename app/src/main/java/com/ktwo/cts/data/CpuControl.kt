@@ -166,7 +166,7 @@ data class CpuControlCfg(
     }
 }
 
-/** daemon 周期写出的实时状态(status.json),App 只读不写。 */
+/** App 自读 sysfs 得到的实时状态(功耗/电量/GPU/各簇频率与调速器)。 */
 data class LiveStatus(
     val watt: Double = 0.0,
     val charging: Boolean = false,
@@ -174,35 +174,8 @@ data class LiveStatus(
     val gpuMhz: Int = -1,
     val clusterFreqMhz: Map<Int, Int> = emptyMap(),  // policy -> 当前频率 MHz
     val clusterGov: Map<Int, String> = emptyMap(),   // policy -> 当前 governor
-    val ts: Long = 0,
 ) {
     companion object {
         val EMPTY = LiveStatus()
-
-        fun parse(raw: String): LiveStatus {
-            if (raw.isBlank()) return EMPTY
-            return runCatching {
-                val o = JSONObject(raw)
-                val freqMap = LinkedHashMap<Int, Int>()
-                val govMap = LinkedHashMap<Int, String>()
-                o.optJSONArray("clusters")?.let { arr ->
-                    for (i in 0 until arr.length()) {
-                        val c = arr.optJSONObject(i) ?: continue
-                        val p = c.optInt("policy")
-                        freqMap[p] = c.optInt("cur_mhz", -1)
-                        govMap[p] = c.optString("gov")
-                    }
-                }
-                LiveStatus(
-                    watt = o.optDouble("watt", 0.0),
-                    charging = o.optBoolean("charging", false),
-                    battPct = o.optInt("batt_pct", -1),
-                    gpuMhz = o.optInt("gpu_mhz", -1),
-                    clusterFreqMhz = freqMap,
-                    clusterGov = govMap,
-                    ts = o.optLong("ts", 0),
-                )
-            }.getOrDefault(EMPTY)
-        }
     }
 }
