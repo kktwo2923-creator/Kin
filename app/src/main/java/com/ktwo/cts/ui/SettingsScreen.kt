@@ -46,6 +46,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
     val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
+    var a11yEnabled by remember { mutableStateOf(false) }
 
     fun enableNotify() = scope.launch {
         Prefs.setNotifyEnabled(ctx, true)
@@ -98,6 +99,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
     LaunchedEffect(Unit) {
         hasUsagePerm = ForegroundDetector(ctx).hasUsageStatsPermission()
         isRoot = withContext(Dispatchers.IO) { RootShell.isRooted() }
+        a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -224,6 +226,17 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
                         icon = Icons.Outlined.Visibility,
                         onAction = {
                             ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                    )
+                    HorizontalDivider()
+                    PermRow(
+                        name = "无障碍·前台推送",
+                        granted = a11yEnabled,
+                        desc = "实时把前台应用推给守护进程,替代 dumpsys 轮询(更快更省电);仅读包名不读屏幕内容。可选",
+                        icon = Icons.Outlined.Bolt,
+                        onAction = {
+                            ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
                     )

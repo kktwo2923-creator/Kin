@@ -188,4 +188,16 @@ object RootShell {
     /** 守护是否在运行：直接查进程(daemon 已不再写 daemon.alive 心跳)。 */
     fun daemonAlive(): Boolean =
         shOut("pidof CoreTurboScheduler 2>/dev/null").firstOrNull()?.isNotBlank() == true
+
+    /**
+     * 无障碍服务推送当前前台包名给 daemon(写 topapp.txt,daemon inotify 即时消费)。
+     * 异步提交不阻塞调用线程;持久 su 会话开销极小。包名仅含 [A-Za-z0-9._:],单引号安全。
+     */
+    fun pushTopApp(pkg: String) {
+        if (pkg.isBlank() ||
+            !pkg.all { it.isLetterOrDigit() || it == '.' || it == '_' || it == ':' }) return
+        runCatching {
+            Shell.cmd("mkdir -p $CTS_DIR; printf '%s' '$pkg' > $CTS_DIR/topapp.txt").submit()
+        }
+    }
 }

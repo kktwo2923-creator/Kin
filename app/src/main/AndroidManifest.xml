@@ -55,6 +55,20 @@
                 android:value="Persistent status notification showing current power mode and battery, with a floating quick mode switcher" />
         </service>
 
+        <!-- 无障碍服务:把前台包名推给 daemon(dumpsys 轮询的加速器,可选启用) -->
+        <service
+            android:name=".service.AppSwitchService"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <!-- 无悬浮窗权限时的快切回退对话框 -->
         <activity
             android:name=".ui.QuickSwitchActivity"

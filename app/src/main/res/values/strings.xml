@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">OnePlus V Pro</string>
+    <string name="a11y_desc">把前台应用包名实时推送给调度守护进程,替代 dumpsys 轮询,切换更快、更省电。仅读取窗口包名,不读取屏幕内容。</string>
 </resources>
