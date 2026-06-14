@@ -40,13 +40,10 @@ object License {
     fun currentExpiry(): String =
         runCatching { JSONObject(readLicenseRaw()).optString("expires_at", "") }.getOrDefault("")
 
-    fun currentNote(): String =
-        runCatching { JSONObject(readLicenseRaw()).optString("note", "") }.getOrDefault("")
-
     data class Result(val ok: Boolean, val message: String)
 
-    /** 联网校验卡密并写入授权文件。务必在 IO 线程调用。 */
-    fun activate(licenseKey: String): Result {
+    /** 联网校验卡密并写入授权文件。userNote 为用户填写的备注,仅上送给服务器供后台查看。务必在 IO 线程调用。 */
+    fun activate(licenseKey: String, userNote: String = ""): Result {
         val key = licenseKey.trim()
         if (key.isEmpty()) return Result(false, "请输入卡密")
         val dev = serialNo()
@@ -55,6 +52,7 @@ object License {
             .put("license_key", key)
             .put("device_id", dev)
             .put("device_info", "${android.os.Build.BRAND} ${android.os.Build.MODEL}")
+            .put("user_note", userNote.trim())
             .toString()
         val resp = runCatching { post("$BASE_URL/api/verify", body) }
             .getOrElse { return Result(false, "连不上服务器,请开启加速器/梯子后重试") }
@@ -68,12 +66,10 @@ object License {
             .put("expires_at", if (data.isNull("expires_at")) "" else data.optString("expires_at"))
             .put("token", data.optString("token"))
             .put("product_name", data.optString("product_name"))
-            .put("note", data.optString("note"))
             .put("verified_at", nowIso())
             .toString()
         if (!writeLicense(licJson)) return Result(false, "写入授权文件失败,请确认 Root 权限")
-        val note = data.optString("note")
-        return Result(true, if (note.isNotBlank()) "激活成功 · 备注：$note" else "激活成功")
+        return Result(true, "激活成功")
     }
 
     private fun readLicenseRaw(): String {

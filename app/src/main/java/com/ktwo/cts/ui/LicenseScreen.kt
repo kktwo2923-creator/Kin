@@ -11,7 +11,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.license.License
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,9 +31,9 @@ fun LicenseGate(content: @Composable () -> Unit) {
 @Composable
 private fun LicenseScreen(onActivated: () -> Unit) {
     var key by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
-    var ok by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Scaffold { pad ->
@@ -70,15 +69,24 @@ private fun LicenseScreen(onActivated: () -> Unit) {
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth()
             )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                label = { Text("备注(选填)") },
+                placeholder = { Text("如你的联系方式,便于卖家核对") },
+                singleLine = true,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = {
-                    msg = ""; ok = false; busy = true
+                    msg = ""; busy = true
                     scope.launch {
-                        val r = withContext(Dispatchers.IO) { License.activate(key) }
+                        val r = withContext(Dispatchers.IO) { License.activate(key, note) }
                         busy = false
-                        msg = r.message; ok = r.ok
-                        if (r.ok) { delay(1800); onActivated() }   // 先回显「激活成功·备注」再进入
+                        if (r.ok) onActivated() else msg = r.message
                     }
                 },
                 enabled = !busy && key.isNotBlank(),
@@ -91,7 +99,7 @@ private fun LicenseScreen(onActivated: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     msg,
-                    color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium
                 )
