@@ -35,7 +35,8 @@ class MainActivity : ComponentActivity() {
                     LocalEnableFloatingBottomBar provides enableFloatingBar,
                     LocalEnableFloatingBottomBarBlur provides enableFloatingBarBlur,
                 ) {
-                    AppRoot()
+                    // 授权门:未激活先显示激活页,激活后进入主界面
+                    LicenseGate { AppRoot() }
                 }
             }
         }
