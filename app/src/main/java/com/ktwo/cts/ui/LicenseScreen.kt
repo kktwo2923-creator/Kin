@@ -11,6 +11,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.license.License
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -33,6 +34,7 @@ private fun LicenseScreen(onActivated: () -> Unit) {
     var key by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
+    var ok by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Scaffold { pad ->
@@ -71,11 +73,12 @@ private fun LicenseScreen(onActivated: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = {
-                    msg = ""; busy = true
+                    msg = ""; ok = false; busy = true
                     scope.launch {
                         val r = withContext(Dispatchers.IO) { License.activate(key) }
                         busy = false
-                        if (r.ok) onActivated() else msg = r.message
+                        msg = r.message; ok = r.ok
+                        if (r.ok) { delay(1800); onActivated() }   // 先回显「激活成功·备注」再进入
                     }
                 },
                 enabled = !busy && key.isNotBlank(),
@@ -88,7 +91,7 @@ private fun LicenseScreen(onActivated: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     msg,
-                    color = MaterialTheme.colorScheme.error,
+                    color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium
                 )

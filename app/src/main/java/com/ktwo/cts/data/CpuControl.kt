@@ -148,9 +148,10 @@ data class CpuControlCfg(
         p.clusters.forEach { c ->
             target.put("freq_min_c${c.cIndex}", c.minFreqKhz)
             target.put("freq_max_c${c.cIndex}", c.maxFreqKhz)
-            // 保留原 gov_cN.params,只改 governor 字段
+            // 整体保留原 gov_cN(尤其 params: up_rate_limit_us/down_rate_limit_us 等 governor 调参),
+            // 只在确有新值时覆盖 governor;留空不覆盖,避免把原调速器/参数抹掉。
             val govObj = target.optJSONObject("gov_c${c.cIndex}") ?: JSONObject()
-            govObj.put("governor", c.governor)
+            if (c.governor.isNotEmpty()) govObj.put("governor", c.governor)
             target.put("gov_c${c.cIndex}", govObj)
         }
 

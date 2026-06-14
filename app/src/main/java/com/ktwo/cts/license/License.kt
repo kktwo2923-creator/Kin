@@ -40,6 +40,9 @@ object License {
     fun currentExpiry(): String =
         runCatching { JSONObject(readLicenseRaw()).optString("expires_at", "") }.getOrDefault("")
 
+    fun currentNote(): String =
+        runCatching { JSONObject(readLicenseRaw()).optString("note", "") }.getOrDefault("")
+
     data class Result(val ok: Boolean, val message: String)
 
     /** 联网校验卡密并写入授权文件。务必在 IO 线程调用。 */
@@ -65,10 +68,12 @@ object License {
             .put("expires_at", if (data.isNull("expires_at")) "" else data.optString("expires_at"))
             .put("token", data.optString("token"))
             .put("product_name", data.optString("product_name"))
+            .put("note", data.optString("note"))
             .put("verified_at", nowIso())
             .toString()
         if (!writeLicense(licJson)) return Result(false, "写入授权文件失败,请确认 Root 权限")
-        return Result(true, "激活成功")
+        val note = data.optString("note")
+        return Result(true, if (note.isNotBlank()) "激活成功 · 备注：$note" else "激活成功")
     }
 
     private fun readLicenseRaw(): String {
