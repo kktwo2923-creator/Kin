@@ -42,8 +42,8 @@ object License {
 
     data class Result(val ok: Boolean, val message: String)
 
-    /** 联网校验卡密并写入授权文件。userNote 为用户填写的备注,仅上送给服务器供后台查看。务必在 IO 线程调用。 */
-    fun activate(licenseKey: String, userNote: String = ""): Result {
+    /** 联网校验卡密并写入授权文件。务必在 IO 线程调用。 */
+    fun activate(licenseKey: String): Result {
         val key = licenseKey.trim()
         if (key.isEmpty()) return Result(false, "请输入卡密")
         val dev = serialNo()
@@ -52,7 +52,6 @@ object License {
             .put("license_key", key)
             .put("device_id", dev)
             .put("device_info", "${android.os.Build.BRAND} ${android.os.Build.MODEL}")
-            .put("user_note", userNote.trim())
             .toString()
         val resp = runCatching { post("$BASE_URL/api/verify", body) }
             .getOrElse { return Result(false, "连不上服务器,请开启加速器/梯子后重试") }

@@ -31,7 +31,6 @@ fun LicenseGate(content: @Composable () -> Unit) {
 @Composable
 private fun LicenseScreen(onActivated: () -> Unit) {
     var key by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -69,22 +68,12 @@ private fun LicenseScreen(onActivated: () -> Unit) {
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = note,
-                onValueChange = { note = it },
-                label = { Text("备注(选填)") },
-                placeholder = { Text("如你的联系方式,便于卖家核对") },
-                singleLine = true,
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth()
-            )
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = {
                     msg = ""; busy = true
                     scope.launch {
-                        val r = withContext(Dispatchers.IO) { License.activate(key, note) }
+                        val r = withContext(Dispatchers.IO) { License.activate(key) }
                         busy = false
                         if (r.ok) onActivated() else msg = r.message
                     }
