@@ -130,7 +130,12 @@ class ScheduleService : Service() {
         val ctx = this@ScheduleService
         if (pkg in builtinIgnored || pkg in imePackages) return
         val bl = PrefsExt.blacklist(ctx)
-        if (pkg in bl) return
+        if (pkg in bl) {
+            // 黑名单=不接管:回到全局模式,而不是停留在上一个(常为灭屏/前一应用的省电)模式
+            val g = RootShell.readGlobalMode()
+            if (g.isNotBlank() && g != lastDispatched) applyAndUpdate(g, "$pkg(黑名单·跟随全局)")
+            return
+        }
 
         val profiles = RootShell.readPerApp()
         val perApp = profiles[pkg]
