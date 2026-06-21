@@ -23,8 +23,9 @@ class MainActivity : ComponentActivity() {
         runCatching {
             if (runBlocking { Prefs.notifyEnabled(this@MainActivity) }) NotifyService.start(this)
         }
-        // 登记后台续签任务:令牌短有效期,定期回服务器换新签;被吊销则续不到,守护自动停机
+        // 验证节奏:启动即验 + 每 12h + 联网恢复立刻验;离线不锁,被吊销则红屏锁定并停守护
         runCatching { LicenseRefreshWorker.schedule(this) }
+        runCatching { LicenseRefreshWorker.registerNetworkRevalidation(this) }
         enableEdgeToEdge()
         setContent {
             val ctx = LocalContext.current

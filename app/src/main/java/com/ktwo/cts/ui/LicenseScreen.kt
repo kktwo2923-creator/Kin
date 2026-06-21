@@ -17,13 +17,24 @@ import kotlinx.coroutines.withContext
 /** 授权门:合法进入 App;未激活显示激活页;检测到伪造/破解显示红色锁定页。 */
 @Composable
 fun LicenseGate(content: @Composable () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var state by remember { mutableStateOf<License.State?>(null) }
     LaunchedEffect(Unit) {
         state = withContext(Dispatchers.IO) {
-            val s = License.state()
-            // 检测到伪造授权:上报后台(供作者人工查看/拉黑),best-effort
-            if (s == License.State.TAMPERED) License.reportTamper("license.json 令牌伪造或格式非法(疑似离线绕过)")
-            s
+            when (License.state()) {
+                License.State.NOT_ACTIVATED -> License.State.NOT_ACTIVATED
+                License.State.TAMPERED -> {
+                    // 伪造授权:上报后台(供作者人工查看/拉黑),best-effort
+                    License.reportTamper("license.json 令牌伪造或格式非法(疑似离线绕过)")
+                    License.State.TAMPERED
+                }
+                License.State.VALID -> {
+                    // 看似合法 → 联网就立刻再校验一次(被吊销则锁定);离线则保持放行(不惩罚离线)
+                    if (License.isOnline(ctx) && License.revalidate() == License.Reval.REVOKED)
+                        License.State.TAMPERED
+                    else License.State.VALID
+                }
+            }
         }
     }
     when (state) {
@@ -55,11 +66,11 @@ private fun TamperScreen(onActivated: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(56.dp))
-            Text("⚠ 检测到非法授权", style = MaterialTheme.typography.headlineSmall, color = red)
+            Text("⚠ 授权未通过验证", style = MaterialTheme.typography.headlineSmall, color = red)
             Spacer(Modifier.height(12.dp))
             Text(
-                "本机的授权文件是伪造/破解的(非官方签发),所有功能已锁定。\n" +
-                    "请输入你购买的正版卡密以恢复使用;否则本软件将无法运行。",
+                "本机授权无效(伪造/破解,或卡密已被吊销/封禁),所有功能已锁定。\n" +
+                    "请输入有效的正版卡密以恢复使用;否则本软件将无法运行。",
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 color = androidx.compose.ui.graphics.Color(0xFFF2B8B5)

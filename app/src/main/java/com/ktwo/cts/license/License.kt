@@ -52,10 +52,64 @@ object License {
         if (raw.isBlank()) return State.NOT_ACTIVATED
         return runCatching {
             val o = JSONObject(raw)
+            if (o.optBoolean("revoked", false)) return State.TAMPERED   // 联网确认被吊销
             val tok = o.optString("token", "")
             val tna = o.optString("token_not_after", "")
             if (isHex128(tok) && tna.isNotBlank()) State.VALID else State.TAMPERED
         }.getOrDefault(State.TAMPERED)
+    }
+
+    /** 当前是否联网(有具备 INTERNET 能力的活动网络)。 */
+    fun isOnline(context: android.content.Context): Boolean = runCatching {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as android.net.ConnectivityManager
+        val n = cm.activeNetwork ?: return false
+        val cap = cm.getNetworkCapabilities(n) ?: return false
+        cap.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }.getOrDefault(false)
+
+    /** 联网再校验结果。 */
+    enum class Reval { OK, OFFLINE, REVOKED, NO_KEY }
+
+    /**
+     * 联网再校验(用已存卡密)。供 App 启动 / 每 12h / 联网恢复时调用。
+     * - 服务器明确拒绝(被禁用/封禁/卡密不存在/换机/过期)→ REVOKED:作废本机令牌并锁定(守护随之停机)。
+     * - 通过 → OK:刷新令牌(滚动 token_not_after)。
+     * - 连不上/解析失败/5xx → OFFLINE:不做任何处理(离线宽限,绝不因离线锁用户)。
+     * - 本机无卡密 → NO_KEY。
+     */
+    fun revalidate(): Reval {
+        val key = currentLicenseKey()
+        if (key.isBlank()) return Reval.NO_KEY
+        val dev = serialNo()
+        if (dev.isBlank()) return Reval.OFFLINE
+        val body = JSONObject()
+            .put("license_key", key)
+            .put("device_id", dev)
+            .put("device_info", "${android.os.Build.BRAND} ${android.os.Build.MODEL}")
+            .toString()
+        val resp = runCatching { post("$BASE_URL/api/verify", body) }.getOrElse { return Reval.OFFLINE }
+        val j = runCatching { JSONObject(resp) }.getOrElse { return Reval.OFFLINE }
+        if (j.optBoolean("success", false)) {
+            val data = j.optJSONObject("data") ?: return Reval.OFFLINE
+            writeLicenseFromData(data)
+            return Reval.OK
+        }
+        // 仅"明确吊销类"拒绝才锁;网络抖动 / 5xx 一律按离线处理,避免误锁正版
+        return when (j.optInt("code", 0)) {
+            403, 404, 409, 410 -> { lockRevoked(key); Reval.REVOKED }
+            else -> Reval.OFFLINE
+        }
+    }
+
+    /** 确认被吊销:作废本机令牌(守护下次复查即停机),并标记 revoked → App 显示红色锁定页。 */
+    private fun lockRevoked(key: String) {
+        val j = JSONObject()
+            .put("license_key", key)
+            .put("revoked", true)
+            .put("verified_at", nowIso())
+            .toString()
+        writeLicense(j)
     }
 
     /** 上报破解/伪造(发现 TAMPERED 时调用)。best-effort,联网失败静默。 */
@@ -99,8 +153,16 @@ object License {
             .getOrElse { return Result(false, "服务器返回异常,请稍后再试") }
         if (!j.optBoolean("success", false)) return Result(false, j.optString("message", "验证失败"))
         val data = j.optJSONObject("data") ?: return Result(false, "返回数据缺失")
-        // token_not_after 是令牌自身的短有效期,守护按它判定是否需联网续签/是否被吊销。
-        // 必须原样写入(守护验签内容含它),缺失则视为旧版服务器,守护会拒绝。
+        if (!writeLicenseFromData(data)) return Result(false, "写入授权文件失败,请确认 Root 权限")
+        return Result(true, "激活成功")
+    }
+
+    /**
+     * 按服务器返回的 data 组装并写入 license.json。
+     * token_not_after 是令牌自身短有效期,守护按它判定是否需续签/被吊销;
+     * 必须原样写入(守护验签内容含它),缺失则守护会拒绝。
+     */
+    private fun writeLicenseFromData(data: JSONObject): Boolean {
         val licJson = JSONObject()
             .put("license_key", data.optString("license_key"))
             .put("device_id", data.optString("device_id"))
@@ -110,33 +172,7 @@ object License {
             .put("product_name", data.optString("product_name"))
             .put("verified_at", nowIso())
             .toString()
-        if (!writeLicense(licJson)) return Result(false, "写入授权文件失败,请确认 Root 权限")
-        return Result(true, "激活成功")
-    }
-
-    /**
-     * 静默续签:用已存的卡密回服务器换一张新令牌(刷新 token_not_after)。
-     * 供后台周期任务/App 启动时调用 —— 卡密被后台禁用会在此失败,令牌随之过期,守护停机。
-     * 无已存卡密(从未激活)时直接返回成功,不打扰用户。
-     */
-    fun refresh(): Result {
-        val key = currentLicenseKey()
-        if (key.isBlank()) return Result(true, "未激活,跳过续签")
-        return activate(key)
-    }
-
-    /** 令牌是否临近到期(默认剩余 < 3 天即应续签),用于后台任务判断。 */
-    fun needsRefresh(thresholdDays: Int = 3): Boolean {
-        val raw = readLicenseRaw()
-        if (raw.isBlank()) return false
-        return runCatching {
-            val tna = JSONObject(raw).optString("token_not_after", "")
-            if (tna.isBlank()) return true
-            val notAfter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-                .apply { timeZone = TimeZone.getTimeZone("UTC") }
-                .parse(tna.take(19))?.time ?: return true
-            (notAfter - System.currentTimeMillis()) < thresholdDays * 86400000L
-        }.getOrDefault(true)
+        return writeLicense(licJson)
     }
 
     private fun readLicenseRaw(): String {
