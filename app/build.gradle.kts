@@ -82,8 +82,5 @@ dependencies {
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
     implementation("com.github.topjohnwu.libsu:service:6.0.0")
 
-    // 后台定期续签授权令牌(令牌短有效期 + 远程吊销)
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
-
     implementation("org.json:json:20240303")
 }

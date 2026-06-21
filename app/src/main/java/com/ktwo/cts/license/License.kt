@@ -59,6 +59,29 @@ object License {
         }.getOrDefault(State.TAMPERED)
     }
 
+    @Volatile private var autoRevalInstalled = false
+
+    /**
+     * 安装"联网即校验"(不依赖 WorkManager,避免其启动期自动初始化导致的崩溃)。
+     * 每当网络恢复,后台线程跑一次 revalidate():被吊销则作废本机授权并让 App 下次进入红屏锁定。
+     * App 每次打开时的校验由 LicenseGate 负责;二者合起来 = 打开即验 + 联网即验。
+     * 整进程登记一次即可,全程异常静默,绝不影响 App 启动。
+     */
+    fun installAutoRevalidation(context: android.content.Context) {
+        if (autoRevalInstalled) return
+        runCatching {
+            val app = context.applicationContext
+            val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as android.net.ConnectivityManager
+            cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    Thread { runCatching { revalidate() } }.apply { isDaemon = true }.start()
+                }
+            })
+            autoRevalInstalled = true
+        }
+    }
+
     /** 当前是否联网(有具备 INTERNET 能力的活动网络)。 */
     fun isOnline(context: android.content.Context): Boolean = runCatching {
         val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)

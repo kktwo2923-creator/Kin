@@ -9,7 +9,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import com.ktwo.cts.data.Prefs
-import com.ktwo.cts.license.LicenseRefreshWorker
+import com.ktwo.cts.license.License
 import com.ktwo.cts.service.NotifyService
 import com.ktwo.cts.ui.theme.AppTheme
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
@@ -23,9 +23,9 @@ class MainActivity : ComponentActivity() {
         runCatching {
             if (runBlocking { Prefs.notifyEnabled(this@MainActivity) }) NotifyService.start(this)
         }
-        // 验证节奏:启动即验 + 每 12h + 联网恢复立刻验;离线不锁,被吊销则红屏锁定并停守护
-        runCatching { LicenseRefreshWorker.schedule(this) }
-        runCatching { LicenseRefreshWorker.registerNetworkRevalidation(this) }
+        // 验证节奏:打开即验(LicenseGate 负责)+ 联网恢复立刻验(下面登记)。
+        // 离线不锁;被吊销则作废本机授权 → 红屏锁定并停守护。
+        runCatching { License.installAutoRevalidation(this) }
         enableEdgeToEdge()
         setContent {
             val ctx = LocalContext.current
