@@ -7,23 +7,53 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.ktwo.cts.license.Integrity
 import com.ktwo.cts.license.License
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 授权门:已激活直接进入 App,否则显示激活页。 */
+/** 授权门:先做重签名检测,再判激活。已激活直接进入 App,否则显示激活页。 */
 @Composable
 fun LicenseGate(content: @Composable () -> Unit) {
+    val ctx = LocalContext.current
     var activated by remember { mutableStateOf<Boolean?>(null) }
-    LaunchedEffect(Unit) { activated = withContext(Dispatchers.IO) { License.isActivated() } }
-    when (activated) {
-        true -> content()
-        false -> LicenseScreen(onActivated = { activated = true })
+    var tampered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        // 未配置签名指纹时 Integrity.verify 直接放行(fail-open),不影响 debug/未配置构建
+        tampered = withContext(Dispatchers.IO) { !Integrity.verify(ctx) }
+        activated = withContext(Dispatchers.IO) { License.isActivated() }
+    }
+    when {
+        tampered -> TamperScreen()
+        activated == true -> content()
+        activated == false -> LicenseScreen(onActivated = { activated = true })
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
+        }
+    }
+}
+
+/** 检测到重签名/重打包时显示,拒绝进入主界面。 */
+@Composable
+private fun TamperScreen() {
+    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "⚠️ 安装包校验未通过",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.error
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "本应用签名与官方发布不一致,可能被重新打包或篡改。\n请从官方渠道重新下载安装正版。",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
