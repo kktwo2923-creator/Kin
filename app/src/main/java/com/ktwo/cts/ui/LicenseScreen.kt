@@ -7,21 +7,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.ktwo.cts.license.Integrity
 import com.ktwo.cts.license.License
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 授权门:合法进入 App;未激活显示激活页;检测到伪造/破解显示红色锁定页。 */
+/** 授权门:先做重签名/重打包检测,再判授权状态(伪造/吊销→红色锁定页;未激活→激活页)。 */
 @Composable
 fun LicenseGate(content: @Composable () -> Unit) {
-    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val ctx = LocalContext.current
+    var repacked by remember { mutableStateOf(false) }
     var state by remember { mutableStateOf<License.State?>(null) }
     LaunchedEffect(Unit) {
-        // 整段兜底:任何异常(Root 未就绪/IO/网络等)都不得让 App 闪退;
-        // 出错时回落到"未激活"引导页,而不是崩溃退桌面。
+        // 1) 重签名/重打包检测(未配置签名指纹时 fail-open,不影响 debug/未配置构建)
+        repacked = withContext(Dispatchers.IO) { !Integrity.verify(ctx) }
+        // 2) 授权状态:整段兜底,任何异常(Root 未就绪/IO/网络等)都回落到"未激活"而非闪退
         state = withContext(Dispatchers.IO) {
             runCatching {
                 when (License.state()) {
@@ -41,11 +45,12 @@ fun LicenseGate(content: @Composable () -> Unit) {
             }.getOrDefault(License.State.NOT_ACTIVATED)
         }
     }
-    when (state) {
-        License.State.VALID -> content()
-        License.State.NOT_ACTIVATED -> LicenseScreen(onActivated = { state = License.State.VALID })
-        License.State.TAMPERED -> TamperScreen(onActivated = { state = License.State.VALID })
-        null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    when {
+        repacked -> RepackScreen()
+        state == License.State.VALID -> content()
+        state == License.State.NOT_ACTIVATED -> LicenseScreen(onActivated = { state = License.State.VALID })
+        state == License.State.TAMPERED -> TamperScreen(onActivated = { state = License.State.VALID })
+        else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
     }
@@ -123,6 +128,27 @@ private fun TamperScreen(onActivated: () -> Unit) {
                 color = androidx.compose.ui.graphics.Color(0xFFF2B8B5)
             )
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** 检测到重签名/重打包时显示,拒绝进入主界面(必须从官方渠道重新安装)。 */
+@Composable
+private fun RepackScreen() {
+    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "⚠️ 安装包校验未通过",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.error
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "本应用签名与官方发布不一致,可能被重新打包或篡改。\n请从官方渠道重新下载安装正版。",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

@@ -13,6 +13,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # secret 不能直接用于步骤 if:,先映射到 job 级 env 再判断
+    env:
+      CTS_KEYSTORE_BASE64: ${{ secrets.CTS_KEYSTORE_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,11 +31,28 @@ jobs:
         with:
           gradle-version: '9.5.1'
 
+      # 可选:有配置发布密钥库的 secret 才解码;没有则跳过,release 自动回退 debug 签名。
+      # 需要的仓库 secrets(Settings → Secrets and variables → Actions):
+      #   CTS_KEYSTORE_BASE64     —  base64(你的 .jks)   生成: base64 -w0 release.jks
+      #   CTS_KEYSTORE_PASSWORD   —  密钥库口令
+      #   CTS_KEY_ALIAS           —  密钥别名
+      #   CTS_KEY_PASSWORD        —  密钥口令
+      #   CTS_CERT_SHA256         —  发布证书 SHA-256(小写 hex,可带冒号),启用重签名检测
+      - name: Decode release keystore (optional)
+        if: ${{ env.CTS_KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "$CTS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "CTS_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
       - name: Build Debug APK
         run: gradle :app:assembleDebug --no-daemon
 
       - name: Build Release APK
-        run: gradle :app:assembleRelease --no-daemon
+        env:
+          CTS_KEYSTORE_PASSWORD: ${{ secrets.CTS_KEYSTORE_PASSWORD }}
+          CTS_KEY_ALIAS: ${{ secrets.CTS_KEY_ALIAS }}
+          CTS_KEY_PASSWORD: ${{ secrets.CTS_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --no-daemon -PctsCertSha256="${{ secrets.CTS_CERT_SHA256 }}"
 
       - name: Rename APKs
         run: |
