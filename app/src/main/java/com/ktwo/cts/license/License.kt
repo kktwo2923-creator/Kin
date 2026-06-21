@@ -43,26 +43,24 @@ object License {
     /** 授权门状态。 */
     enum class State { VALID, NOT_ACTIVATED, TAMPERED }
 
-    private fun isHex128(s: String): Boolean =
-        s.length == 128 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
-
     /**
      * 本机授权状态判定(供授权门用):
-     * - 无授权文件 → NOT_ACTIVATED(全新未激活,正常引导输入卡密)。
-     * - 有授权文件但令牌明显伪造(非 128 位 hex 的 Ed25519 签名 / 缺 token_not_after)→ TAMPERED。
-     *   合法激活一定写入 128 位 hex 签名 + token_not_after;只有手工伪造的 license.json 才会落到这。
-     * - 否则 → VALID(看似合法;真伪最终由守护端内嵌公钥验签裁定)。
+     * - 无授权文件 / 解析失败 / 令牌为空 / 已过期 → NOT_ACTIVATED(引导输入卡密)。
+     * - 本地被标记 revoked(联网确认吊销)→ TAMPERED(红色锁定页)。
+     * - 有令牌且未过期 → VALID。
+     * 注意:令牌真伪(签名)由守护端内嵌公钥离线验签裁定,App 不再做签名格式硬校验,
+     * 以免不同服务端令牌格式 / 历史令牌把正版误判为"伪造"而锁红屏。
      */
     fun state(): State {
         val raw = readLicenseRaw()
         if (raw.isBlank()) return State.NOT_ACTIVATED
         return runCatching {
             val o = JSONObject(raw)
-            if (o.optBoolean("revoked", false)) return State.TAMPERED   // 联网确认被吊销
+            if (o.optBoolean("revoked", false)) return State.TAMPERED   // 联网确认被吊销(本地标记)
             val tok = o.optString("token", "")
-            val tna = o.optString("token_not_after", "")
-            if (isHex128(tok) && tna.isNotBlank()) State.VALID else State.TAMPERED
-        }.getOrDefault(State.TAMPERED)
+            val exp = o.optString("expires_at", "")
+            if (tok.isNotEmpty() && (exp.isBlank() || exp > nowIso())) State.VALID else State.NOT_ACTIVATED
+        }.getOrDefault(State.NOT_ACTIVATED)
     }
 
     @Volatile private var autoRevalInstalled = false
