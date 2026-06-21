@@ -9,6 +9,7 @@ import com.ktwo.cts.R
 import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.PrefsExt
+import com.ktwo.cts.license.License
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.ui.MainActivity
 import kotlinx.coroutines.*
@@ -109,6 +110,7 @@ class ScheduleService : Service() {
     }
 
     private fun startLoop() = scope.launch {
+        var heartbeatCounter = 0
         while (isActive) {
             try {
                 if (!Prefs.enabled(this@ScheduleService)) { delay(3000); continue }
@@ -119,6 +121,12 @@ class ScheduleService : Service() {
                 if (pkg.isNotEmpty() && pkg != lastPkg) {
                     lastPkg = pkg
                     dispatchForPackage(pkg)
+                }
+                // 每 60 轮(约 5 分钟)触发一次心跳,拉取远程命令并续签令牌
+                heartbeatCounter++
+                if (heartbeatCounter >= 60) {
+                    heartbeatCounter = 0
+                    launch(Dispatchers.IO) { License.heartbeat() }
                 }
             } catch (e: CancellationException) { throw e }
               catch (_: Exception) { /* ignore */ }
