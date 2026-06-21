@@ -23,7 +23,7 @@ object License {
     /** 本机设备号(需 Root)。 */
     fun serialNo(): String = RootShell.exec("getprop ro.serialno").trim()
 
-    /** 本地是否已激活(有令牌且未过期)。仅快速放行,真正防伪在守护端 HMAC 校验。 */
+    /** 本地是否已激活(有令牌且未过期)。仅快速放行,真正防伪在守护端公钥验签。 */
     fun isActivated(): Boolean {
         val raw = readLicenseRaw()
         if (raw.isBlank()) return false
@@ -32,6 +32,46 @@ object License {
             val exp = o.optString("expires_at", "")
             o.optString("token", "").isNotEmpty() && (exp.isBlank() || exp > nowIso())
         }.getOrDefault(false)
+    }
+
+    /** 授权门状态。 */
+    enum class State { VALID, NOT_ACTIVATED, TAMPERED }
+
+    private fun isHex128(s: String): Boolean =
+        s.length == 128 && s.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+
+    /**
+     * 本机授权状态判定(供授权门用):
+     * - 无授权文件 → NOT_ACTIVATED(全新未激活,正常引导输入卡密)。
+     * - 有授权文件但令牌明显伪造(非 128 位 hex 的 Ed25519 签名 / 缺 token_not_after)→ TAMPERED。
+     *   合法激活一定写入 128 位 hex 签名 + token_not_after;只有手工伪造的 license.json 才会落到这。
+     * - 否则 → VALID(看似合法;真伪最终由守护端内嵌公钥验签裁定)。
+     */
+    fun state(): State {
+        val raw = readLicenseRaw()
+        if (raw.isBlank()) return State.NOT_ACTIVATED
+        return runCatching {
+            val o = JSONObject(raw)
+            val tok = o.optString("token", "")
+            val tna = o.optString("token_not_after", "")
+            if (isHex128(tok) && tna.isNotBlank()) State.VALID else State.TAMPERED
+        }.getOrDefault(State.TAMPERED)
+    }
+
+    /** 上报破解/伪造(发现 TAMPERED 时调用)。best-effort,联网失败静默。 */
+    fun reportTamper(reason: String) {
+        runCatching {
+            val dev = serialNo()
+            if (dev.isBlank()) return
+            val body = JSONObject()
+                .put("device_id", dev)
+                .put("device_info", "${android.os.Build.BRAND} ${android.os.Build.MODEL}")
+                .put("license_key", currentLicenseKey())
+                .put("reason", reason)
+                .put("app_version", android.os.Build.DISPLAY)
+                .toString()
+            post("$BASE_URL/api/report-tamper", body)
+        }
     }
 
     fun currentLicenseKey(): String =
