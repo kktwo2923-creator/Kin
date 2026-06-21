@@ -20,21 +20,25 @@ fun LicenseGate(content: @Composable () -> Unit) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var state by remember { mutableStateOf<License.State?>(null) }
     LaunchedEffect(Unit) {
+        // 整段兜底:任何异常(Root 未就绪/IO/网络等)都不得让 App 闪退;
+        // 出错时回落到"未激活"引导页,而不是崩溃退桌面。
         state = withContext(Dispatchers.IO) {
-            when (License.state()) {
-                License.State.NOT_ACTIVATED -> License.State.NOT_ACTIVATED
-                License.State.TAMPERED -> {
-                    // 伪造授权:上报后台(供作者人工查看/拉黑),best-effort
-                    License.reportTamper("license.json 令牌伪造或格式非法(疑似离线绕过)")
-                    License.State.TAMPERED
-                }
-                License.State.VALID -> {
-                    // 看似合法 → 联网就立刻再校验一次(被吊销则锁定);离线则保持放行(不惩罚离线)
-                    if (License.isOnline(ctx) && License.revalidate() == License.Reval.REVOKED)
+            runCatching {
+                when (License.state()) {
+                    License.State.NOT_ACTIVATED -> License.State.NOT_ACTIVATED
+                    License.State.TAMPERED -> {
+                        // 伪造授权:上报后台(供作者人工查看/拉黑),best-effort
+                        License.reportTamper("license.json 令牌伪造或格式非法(疑似离线绕过)")
                         License.State.TAMPERED
-                    else License.State.VALID
+                    }
+                    License.State.VALID -> {
+                        // 看似合法 → 联网就立刻再校验一次(被吊销则锁定);离线则保持放行(不惩罚离线)
+                        if (License.isOnline(ctx) && License.revalidate() == License.Reval.REVOKED)
+                            License.State.TAMPERED
+                        else License.State.VALID
+                    }
                 }
-            }
+            }.getOrDefault(License.State.NOT_ACTIVATED)
         }
     }
     when (state) {
