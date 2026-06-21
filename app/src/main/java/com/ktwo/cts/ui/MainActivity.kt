@@ -9,6 +9,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import com.ktwo.cts.data.Prefs
+import com.ktwo.cts.license.LicenseRefreshWorker
 import com.ktwo.cts.service.NotifyService
 import com.ktwo.cts.ui.theme.AppTheme
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
@@ -22,6 +23,8 @@ class MainActivity : ComponentActivity() {
         runCatching {
             if (runBlocking { Prefs.notifyEnabled(this@MainActivity) }) NotifyService.start(this)
         }
+        // 登记后台续签任务:令牌短有效期,定期回服务器换新签;被吊销则续不到,守护自动停机
+        runCatching { LicenseRefreshWorker.schedule(this) }
         enableEdgeToEdge()
         setContent {
             val ctx = LocalContext.current
