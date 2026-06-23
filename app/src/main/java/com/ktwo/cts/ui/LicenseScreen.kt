@@ -25,8 +25,8 @@ fun LicenseGate(content: @Composable () -> Unit) {
     LaunchedEffect(Unit) {
         // 1) 重签名/重打包检测(未配置签名指纹时 fail-open,不影响 debug/未配置构建)
         repacked = withContext(Dispatchers.IO) { !Integrity.verify(ctx) }
-        // 2) 授权状态:整段兜底,任何异常(Root 未就绪/IO/网络等)都回落到"未激活"而非闪退
-        state = withContext(Dispatchers.IO) {
+        // 2) 本地授权状态(读 license.json,瞬时,无网络)→ 立刻放行/引导/锁,绝不在此等联网
+        val local = withContext(Dispatchers.IO) {
             runCatching {
                 when (License.state()) {
                     License.State.NOT_ACTIVATED -> License.State.NOT_ACTIVATED
@@ -35,14 +35,21 @@ fun LicenseGate(content: @Composable () -> Unit) {
                         License.reportTamper("license.json 令牌伪造或格式非法(疑似离线绕过)")
                         License.State.TAMPERED
                     }
-                    License.State.VALID -> {
-                        // 看似合法 → 联网就立刻再校验一次(被吊销则锁定);离线则保持放行(不惩罚离线)
-                        if (License.isOnline(ctx) && License.revalidate() == License.Reval.REVOKED)
-                            License.State.TAMPERED
-                        else License.State.VALID
-                    }
+                    License.State.VALID -> License.State.VALID
                 }
             }.getOrDefault(License.State.NOT_ACTIVATED)
+        }
+        state = local
+        // 3) 联网再校验放后台:仅当服务器"明确吊销"才事后锁红屏;离线/服务器不可达 → 静默放行,
+        //    绝不阻塞授权门(修复:网络不通/连不上服务器时 App 一直卡在加载圈)。
+        if (local == License.State.VALID) {
+            launch {
+                val revoked = withContext(Dispatchers.IO) {
+                    runCatching { License.isOnline(ctx) && License.revalidate() == License.Reval.REVOKED }
+                        .getOrDefault(false)
+                }
+                if (revoked) state = License.State.TAMPERED
+            }
         }
     }
     when {
