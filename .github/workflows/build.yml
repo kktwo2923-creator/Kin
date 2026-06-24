@@ -32,60 +32,68 @@ jobs:
           gradle-version: '9.5.1'
 
       # 可选:有配置发布密钥库的 secret 才解码;没有则跳过,release 自动回退 debug 签名。
-      # 需要的仓库 secrets(Settings → Secrets and variables → Actions):
-      #   CTS_KEYSTORE_BASE64     —  base64(你的 .jks)   生成: base64 -w0 release.jks
-      #   CTS_KEYSTORE_PASSWORD   —  密钥库口令
-      #   CTS_KEY_ALIAS           —  密钥别名
-      #   CTS_KEY_PASSWORD        —  密钥口令
-      #   CTS_CERT_SHA256         —  发布证书 SHA-256(小写 hex,可带冒号),启用重签名检测
       - name: Decode release keystore (optional)
         if: ${{ env.CTS_KEYSTORE_BASE64 != '' }}
         run: |
           echo "$CTS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "CTS_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
-      - name: Build Debug APK
+      # assembleDebug / assembleRelease 是 meta 任务:一次性构建 gongyi(公益版) 与 juanzeng(捐赠版) 两个 flavor。
+      - name: Build Debug APKs (both editions)
         run: gradle :app:assembleDebug --no-daemon
 
-      - name: Build Release APK
+      - name: Build Release APKs (both editions)
         env:
           CTS_KEYSTORE_PASSWORD: ${{ secrets.CTS_KEYSTORE_PASSWORD }}
           CTS_KEY_ALIAS: ${{ secrets.CTS_KEY_ALIAS }}
           CTS_KEY_PASSWORD: ${{ secrets.CTS_KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon -PctsCertSha256="${{ secrets.CTS_CERT_SHA256 }}"
 
-      - name: Rename APKs
+      - name: Collect & rename APKs
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk     dist/CTS-debug.apk
-          cp app/build/outputs/apk/release/app-release.apk dist/CTS-release.apk
+          cp app/build/outputs/apk/gongyi/release/app-gongyi-release.apk       dist/CTS-gongyi-release.apk
+          cp app/build/outputs/apk/juanzeng/release/app-juanzeng-release.apk   dist/CTS-juanzeng-release.apk
+          cp app/build/outputs/apk/gongyi/debug/app-gongyi-debug.apk           dist/CTS-gongyi-debug.apk
+          cp app/build/outputs/apk/juanzeng/debug/app-juanzeng-debug.apk       dist/CTS-juanzeng-debug.apk
+          ls -la dist/
 
-      - name: Upload Debug APK (artifact)
+      # 公益版(gongyi):免授权,安装即用
+      - name: Upload 公益版 APKs (gongyi)
         uses: actions/upload-artifact@v4
         with:
-          name: CTS-debug
-          path: dist/CTS-debug.apk
+          name: CTS-gongyi
+          path: |
+            dist/CTS-gongyi-release.apk
+            dist/CTS-gongyi-debug.apk
 
-      - name: Upload Release APK (artifact)
+      # 捐赠版(juanzeng):卡密授权
+      - name: Upload 捐赠版 APKs (juanzeng)
         uses: actions/upload-artifact@v4
         with:
-          name: CTS-release
-          path: dist/CTS-release.apk
+          name: CTS-juanzeng
+          path: |
+            dist/CTS-juanzeng-release.apk
+            dist/CTS-juanzeng-debug.apk
 
-      # 把 APK 发布到 Releases,可在仓库 Releases 页面直接下载(无需登录)
+      # 双版本上线期间:推送只产内部 artifact(上面两步);公开 "latest" 发布改为「仅手动触发」,
+      # 避免覆盖现有对外发售的正版 APK。需要对外发布时在 Actions 页手动 Run workflow 即可。
       - name: Publish to rolling "latest" Release
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: "最新构建 (latest)"
           body: |
-            自动构建的 APK，直接下载安装：
-            - **CTS-release.apk** — 发布版(debug 签名,可直接安装)
-            - **CTS-debug.apk** — 调试版
+            自动构建的 APK，直接下载安装:
+            - **CTS-juanzeng-release.apk** — 捐赠版(卡密授权)
+            - **CTS-gongyi-release.apk** — 公益版(免授权，安装即用)
+            - 同名 -debug.apk 为各自调试版
 
             提交: ${{ github.sha }}
           prerelease: true
           files: |
-            dist/CTS-debug.apk
-            dist/CTS-release.apk
+            dist/CTS-juanzeng-release.apk
+            dist/CTS-gongyi-release.apk
+            dist/CTS-juanzeng-debug.apk
+            dist/CTS-gongyi-debug.apk

@@ -42,6 +42,26 @@ android {
         buildConfigField("boolean", "NATIVE_GUARD", ctsNative.toString())
     }
 
+    // ---- 版本变体:捐赠版(卡密授权) / 公益版(免授权,安装即用) ----
+    // NO_LICENSE=true 的 gongyi flavor 彻底跳过授权门;juanzeng 保留完整卡密授权。
+    flavorDimensions += "edition"
+    productFlavors {
+        // 捐赠版(默认):Ed25519 卡密授权 + 联网续签 + 重打包检测
+        create("juanzeng") {
+            dimension = "edition"
+            buildConfigField("boolean", "NO_LICENSE", "false")
+            buildConfigField("String", "EDITION", "\"捐赠版\"")
+            versionNameSuffix = "-juanzeng"
+        }
+        // 公益版:免授权,打开即用,无任何卡密/联网/校验
+        create("gongyi") {
+            dimension = "edition"
+            buildConfigField("boolean", "NO_LICENSE", "true")
+            buildConfigField("String", "EDITION", "\"公益版\"")
+            versionNameSuffix = "-gongyi"
+        }
+    }
+
     signingConfigs {
         // 仅当通过 CI secret/属性提供了密钥库才生效;否则 release 回退用 debug 签名。
         create("release") {

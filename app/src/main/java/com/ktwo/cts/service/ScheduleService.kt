@@ -5,6 +5,7 @@ import android.content.*
 import android.os.*
 import android.view.inputmethod.InputMethodManager
 import androidx.core.app.NotificationCompat
+import com.ktwo.cts.BuildConfig
 import com.ktwo.cts.R
 import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.Prefs
@@ -122,11 +123,13 @@ class ScheduleService : Service() {
                     lastPkg = pkg
                     dispatchForPackage(pkg)
                 }
-                // 每 60 轮(约 5 分钟)触发一次心跳,拉取远程命令并续签令牌
-                heartbeatCounter++
-                if (heartbeatCounter >= 60) {
-                    heartbeatCounter = 0
-                    launch(Dispatchers.IO) { License.heartbeat() }
+                // 捐赠版:每 60 轮(约 5 分钟)触发一次心跳,拉取远程命令并续签令牌。公益版跳过。
+                if (!BuildConfig.NO_LICENSE) {
+                    heartbeatCounter++
+                    if (heartbeatCounter >= 60) {
+                        heartbeatCounter = 0
+                        launch(Dispatchers.IO) { License.heartbeat() }
+                    }
                 }
             } catch (e: CancellationException) { throw e }
               catch (_: Exception) { /* ignore */ }
