@@ -197,8 +197,8 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                 ) { vm.update { c -> c.copy(fsmSustainedExit = it) } }
             }
 
-            // ── 系统优化 (ASB:WiFi/网络/内存,所有模式生效) ──
-            AmSection("系统优化 (ASB · WiFi/网络/内存)") {
+            // ── 系统优化 (WiFi/网络/内存,所有模式生效) ──
+            AmSection("系统优化 (WiFi / 网络 / 内存)") {
                 AmToggle(
                     "WiFi / 网络 / 内存调优",
                     "按当前档位调 WiFi 省电、网络发送队列、TCP 缓冲与内存回收倾向(低风险,建议开)",

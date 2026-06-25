@@ -199,6 +199,15 @@ object RootShell {
     fun daemonAlive(): Boolean =
         shOut("pidof CoreTurboScheduler 2>/dev/null").firstOrNull()?.isNotBlank() == true
 
+    /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
+    fun readAutoStatus(): String {
+        runCatching {
+            val f = java.io.File("$CTS_DIR/auto_status.txt")
+            if (f.canRead()) return f.readText()
+        }
+        return shOut("cat $CTS_DIR/auto_status.txt 2>/dev/null").joinToString("\n")
+    }
+
     private const val A11Y_COMPONENT = "com.ktwo.cts/com.ktwo.cts.service.AppSwitchService"
 
     /**

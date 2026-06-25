@@ -8,8 +8,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.runtime.*
+import com.ktwo.cts.root.RootShell
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,10 +36,19 @@ private data class TopDest(
     val icon: ImageVector,
 )
 
-private val TABS = listOf(
+// 关闭智能调度时的常规 tab(含 CPU / 应用)
+private val TABS_NORMAL = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
     TopDest("cpu",      "CPU", Icons.Outlined.Memory),
     TopDest("apps",     "应用", CtsIcons.Apps),
+    TopDest("logs",     "日志", CtsIcons.Logs),
+    TopDest("settings", "设置", CtsIcons.Settings),
+)
+
+// 开启智能调度时:隐藏 CPU / 应用,改为「监控」面板(手动档无意义)
+private val TABS_SMART = listOf(
+    TopDest("home",     "首页", CtsIcons.Speed),
+    TopDest("monitor",  "监控", Icons.Outlined.Insights),
     TopDest("logs",     "日志", CtsIcons.Logs),
     TopDest("settings", "设置", CtsIcons.Settings),
 )
@@ -58,21 +72,39 @@ fun AppRoot() {
         drawContent()
     }
 
+    // 智能调度是否开启:开启时换成监控面板的 tab 集(隐藏 CPU/应用)。每 3s 轮询一次。
+    var smartOn by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            smartOn = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
+            delay(3000)
+        }
+    }
+    val tabs = if (smartOn) TABS_SMART else TABS_NORMAL
+
     CompositionLocalProvider(LocalHazeState provides hazeState) {
-        val selectedIndex = TABS.indexOfFirst { d ->
+        val selectedIndex = tabs.indexOfFirst { d ->
             curRoute?.any { it.route == d.route } == true
         }.coerceAtLeast(0)
         val curDestRoute = entry?.destination?.route
+        // 切换智能调度后,若正停在已隐藏的页面,自动跳到合适页,避免卡在不可见 tab。
+        LaunchedEffect(smartOn, curDestRoute) {
+            if (smartOn && (curDestRoute == "cpu" || curDestRoute == "apps")) {
+                nav.navigate("monitor") { launchSingleTop = true }
+            } else if (!smartOn && curDestRoute == "monitor") {
+                nav.navigate("home") { launchSingleTop = true }
+            }
+        }
         val hideBottomBar = curDestRoute == "about" || curDestRoute == "automode"
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
                 if (!hideBottomBar) BottomBar(
                     backdrop = backdrop,
-                    items = TABS.map { it.label to it.icon },
+                    items = tabs.map { it.label to it.icon },
                     selectedIndex = selectedIndex,
                 ) { idx ->
-                    val d = TABS[idx]
+                    val d = tabs[idx]
                     if (d.route != entry?.destination?.route) {
                         view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                     }
@@ -108,6 +140,7 @@ fun AppRoot() {
                     composable("home")     { HomeScreen() }
                     composable("cpu")      { CpuControlScreen() }
                     composable("apps")     { AppsScreen() }
+                    composable("monitor")  { AutoMonitorScreen() }
                     composable("logs")     { LogScreen() }
                     composable("settings") {
                         SettingsScreen(
