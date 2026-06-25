@@ -102,6 +102,12 @@ object RootShell {
         return writePerApp(cur, globalMode)
     }
 
+    /**
+     * 只改全局默认模式(perapp 的 * 行),保留所有已配置的应用画像。
+     * 用于"智能档"总开关: 切到 auto / 切回 balance 时持久化全局默认,跨重启保持。
+     */
+    fun setGlobalMode(globalMode: String): Boolean = writePerApp(readPerApp(), globalMode)
+
     private const val MODULE_CONFIG_DIR = "/data/adb/modules/CoreTurboScheduler/config"
 
     /** SoC 识别结果;chip 为空表示未识别,configName 是对应的默认配置文件名。 */

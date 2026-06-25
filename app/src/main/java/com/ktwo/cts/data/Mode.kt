@@ -2,6 +2,7 @@ package com.ktwo.cts.data
 
 enum class Mode(val key: String, val label: String) {
     FOLLOW     ("follow",      "跟随全局"),
+    AUTO       ("auto",        "智能"),
     POWERSAVE  ("powersave",   "省电"),
     BALANCE    ("balance",     "均衡"),
     PERFORMANCE("performance", "性能"),

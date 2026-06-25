@@ -62,11 +62,12 @@ fun AppRoot() {
         val selectedIndex = TABS.indexOfFirst { d ->
             curRoute?.any { it.route == d.route } == true
         }.coerceAtLeast(0)
-        val onAboutPage = entry?.destination?.route == "about"
+        val curDestRoute = entry?.destination?.route
+        val hideBottomBar = curDestRoute == "about" || curDestRoute == "automode"
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
-                if (!onAboutPage) BottomBar(
+                if (!hideBottomBar) BottomBar(
                     backdrop = backdrop,
                     items = TABS.map { it.label to it.icon },
                     selectedIndex = selectedIndex,
@@ -109,10 +110,16 @@ fun AppRoot() {
                     composable("apps")     { AppsScreen() }
                     composable("logs")     { LogScreen() }
                     composable("settings") {
-                        SettingsScreen(onOpenAbout = { nav.navigate("about") })
+                        SettingsScreen(
+                            onOpenAbout = { nav.navigate("about") },
+                            onOpenAutoMode = { nav.navigate("automode") },
+                        )
                     }
                     composable("about") {
                         AboutScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("automode") {
+                        AutoModeScreen(onBack = { nav.popBackStack() })
                     }
                 }
             }

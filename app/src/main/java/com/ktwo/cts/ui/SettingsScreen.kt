@@ -33,7 +33,7 @@ import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
+fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -139,6 +139,38 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 智能调度入口:打开自动模式(智能档)的全部开关/阈值
+            SectionTitle("调度")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenAutoMode)
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Tune,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("智能调度", fontWeight = FontWeight.Medium)
+                        Text(
+                            "自动模式开关 · 省电/夜间/温控阈值",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
             Section("外观") {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("主题", fontWeight = FontWeight.Medium)
