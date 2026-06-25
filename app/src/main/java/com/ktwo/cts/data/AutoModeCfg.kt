@@ -44,6 +44,8 @@ data class AutoModeCfg(
     val vetoTemp: Int = 65,
     val fsmSustainedEnter: Int = 57,
     val fsmSustainedExit: Int = 49,
+    // Smart Battery Bias(ASB):手动把智能模式往省电推,直接加到有效 alpha。0=关,越大越省电、略掉跟手。仅影响智能档。
+    val batteryBias: Int = 0,
     // ── 系统优化 (ASB,移植自 AutoSystemBoost,与档位无关,所有模式生效) ──
     // 对应 daemon 的 Function.SysTune / BootTrim / BgTrim(详见 SysTweaks.hpp)。
     //  sysTuneEnable    每档 VM/网络/WiFi(power_save、txqueuelen)/TCP 调优(低风险,默认开)
@@ -109,6 +111,7 @@ data class AutoModeCfg(
                     vetoTemp          = a.intOf("veto_temp", d.vetoTemp),
                     fsmSustainedEnter = a.intOf("fsm_sustained_enter", d.fsmSustainedEnter),
                     fsmSustainedExit  = a.intOf("fsm_sustained_exit", d.fsmSustainedExit),
+                    batteryBias       = a.intOf("battery_bias", d.batteryBias),
                     sysTuneEnable     = sysTune.boolOf("enable", d.sysTuneEnable),
                     bootTrimEnable    = bootTrim.boolOf("enable", d.bootTrimEnable),
                     bgTrimEnable      = bgTrim.boolOf("enable", d.bgTrimEnable),
@@ -149,6 +152,7 @@ data class AutoModeCfg(
         a.put("veto_temp", vetoTemp.coerceIn(40, 110).toString())
         a.put("fsm_sustained_enter", enter.coerceIn(40, 100).toString())
         a.put("fsm_sustained_exit", exit.coerceIn(35, 99).toString())
+        a.put("battery_bias", batteryBias.coerceIn(0, 300).toString())
 
         // ── 系统优化 (ASB):写 Function.SysTune / BootTrim / BgTrim(与 AutoMode 同级) ──
         val sysTune = f.optJSONObject("SysTune") ?: JSONObject().also { f.put("SysTune", it) }

@@ -108,6 +108,11 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
 
             // ── 智能/自适应 ──
             AmSection("智能 / 自适应") {
+                AmSlider(
+                    "智能省电偏向", "把智能模式整体往省电推(0=关,越大越省电、略掉跟手);仅影响智能档",
+                    cfg.batteryBias, 0, 300, unit = "",
+                ) { vm.update { c -> c.copy(batteryBias = it) } }
+                HorizontalDivider()
                 AmToggle(
                     "主动调频", "实时按负载/GPU/温度调 CPU 频率上下限(更跟手);关掉则只在省电/均衡/性能间整档切换",
                     cfg.fsmEnable,
