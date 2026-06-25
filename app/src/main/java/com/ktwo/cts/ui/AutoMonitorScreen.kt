@@ -21,6 +21,8 @@ import kotlinx.coroutines.withContext
 private data class AutoStatus(
     val resolved: String = "",
     val fsm: String = "",
+    val bucket: Int = -1,
+    val daypart: Int = -1,
     val alpha: Int = -1,
     val conf: Int = -1,
     val temp: Int = -1,
@@ -47,6 +49,7 @@ private data class AutoStatus(
             return AutoStatus(
                 resolved = m["resolved"] ?: "",
                 fsm = m["fsm"] ?: "",
+                bucket = gi("bucket"), daypart = gi("daypart"),
                 alpha = gi("alpha"), conf = gi("conf"), temp = gi("temp"), batt = gi("batt"),
                 gpu = gi("gpu"), load1 = gf("load1"),
                 cpuMaxLittle = gi("cpu_max_little", 0), cpuMaxBig = gi("cpu_max_big", 0),
@@ -157,8 +160,12 @@ fun AutoMonitorScreen() {
         SectionTitle("AI 学习")
         TonalCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (st.daypart in 0..5) {
+                    val weekend = st.bucket >= 0 && (st.bucket % 2 == 1)
+                    MonRow("学习时段", "${periodName(st.daypart)} · ${if (weekend) "周末" else "工作日"}")
+                }
                 MonBar("省电倾向", st.alpha, 1000, "越高越省电")
-                MonBar("学习置信度", st.conf, 1000, "学得越久越准")
+                MonBar("学习置信度", st.conf, 1000, "学得越久越准 · 当前时段")
             }
         }
 
@@ -202,6 +209,17 @@ private fun MonBar(title: String, value: Int, max: Int, desc: String) {
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+// 学习时段(原 bucket 的 daypart):一天分 6 段,配合工作日/周末构成学习分组。
+private fun periodName(daypart: Int): String = when (daypart) {
+    0 -> "凌晨"   // 0–5 点
+    1 -> "清晨"   // 6–8 点
+    2 -> "上午"   // 9–11 点
+    3 -> "下午"   // 12–16 点
+    4 -> "傍晚"   // 17–20 点
+    5 -> "夜间"   // 21–23 点
+    else -> "—"
 }
 
 @Composable
