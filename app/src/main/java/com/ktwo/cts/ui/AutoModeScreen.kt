@@ -5,10 +5,13 @@ package com.ktwo.cts.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
@@ -110,7 +114,7 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
             AmSection("智能 / 自适应") {
                 AmSlider(
                     "智能省电偏向", "把智能模式整体往省电推(0=关,越大越省电、略掉跟手);仅影响智能档",
-                    cfg.batteryBias, 0, 300, unit = "",
+                    cfg.batteryBias, 0, 300, unit = "", step = 10,
                 ) { vm.update { c -> c.copy(batteryBias = it) } }
                 HorizontalDivider()
                 AmToggle(
@@ -125,7 +129,7 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                 HorizontalDivider()
                 AmSlider(
                     "学习强度", "越大越快适应你的习惯;太大易受偶发情况影响",
-                    cfg.learnRate, 10, 300, unit = "",
+                    cfg.learnRate, 10, 300, unit = "", step = 5,
                 ) { vm.update { c -> c.copy(learnRate = it) } }
                 HorizontalDivider()
                 AmSlider(
@@ -311,8 +315,10 @@ private fun AmToggle(
 private fun AmSlider(
     title: String, desc: String,
     value: Int, min: Int, max: Int, unit: String,
+    step: Int = 1,
     onChange: (Int) -> Unit,
 ) {
+    val v = value.coerceIn(min, max)
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -323,18 +329,41 @@ private fun AmSlider(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                "$value$unit",
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            // 当前值做成小药丸,醒目些
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Text(
+                    "$v$unit",
+                    Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
         }
-        val steps = (max - min - 1).coerceAtLeast(0)
-        Slider(
-            value = value.coerceIn(min, max).toFloat(),
-            onValueChange = { onChange(it.toInt()) },
-            valueRange = min.toFloat()..max.toFloat(),
-            steps = steps,
-        )
+        // −/+ 微调(点按 ±step,精确落值)+ 中间滑块(连续拖动,粗调)。
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            FilledTonalIconButton(
+                onClick = { onChange((v - step).coerceIn(min, max)) },
+                enabled = v > min,
+                modifier = Modifier.size(40.dp),
+            ) { Icon(Icons.Rounded.Remove, "减小") }
+            Slider(
+                value = v.toFloat(),
+                onValueChange = { onChange(it.roundToInt().coerceIn(min, max)) },
+                valueRange = min.toFloat()..max.toFloat(),
+                modifier = Modifier.weight(1f),
+            )
+            FilledTonalIconButton(
+                onClick = { onChange((v + step).coerceIn(min, max)) },
+                enabled = v < max,
+                modifier = Modifier.size(40.dp),
+            ) { Icon(Icons.Rounded.Add, "增大") }
+        }
     }
 }
