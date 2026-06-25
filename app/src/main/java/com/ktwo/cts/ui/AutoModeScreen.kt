@@ -112,11 +112,6 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
 
             // ── 智能/自适应 ──
             AmSection("智能 / 自适应") {
-                AmSlider(
-                    "智能省电偏向", "把智能模式整体往省电推(0=关,越大越省电、略掉跟手);仅影响智能档",
-                    cfg.batteryBias, 0, 300, unit = "", step = 10,
-                ) { vm.update { c -> c.copy(batteryBias = it) } }
-                HorizontalDivider()
                 AmToggle(
                     "主动调频", "实时按负载/GPU/温度调 CPU 频率上下限(更跟手);关掉则只在省电/均衡/性能间整档切换",
                     cfg.fsmEnable,
@@ -136,6 +131,11 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                     "决策周期", "多久重新判断一次(秒);越小越灵敏但略多耗电",
                     cfg.tickSec, 3, 60, unit = "s",
                 ) { vm.update { c -> c.copy(tickSec = it) } }
+                HorizontalDivider()
+                AmSlider(
+                    "智能省电偏向", "把智能模式整体往省电推(0=关,越大越省电、略掉跟手);仅影响智能档",
+                    cfg.batteryBias, 0, 300, unit = "", step = 10,
+                ) { vm.update { c -> c.copy(batteryBias = it) } }
             }
 
             // ── 自动省电 / 夜间安静 ──
@@ -230,19 +230,19 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
             // ── 触控加速 ──
             AmSection("触控加速") {
                 AmToggle(
-                    "触控加速", "触摸时立即拉高 CPU 最低频更跟手,停手后回落(CTS 自研,不用内核加速)",
+                    "触控加速", "触摸/滑动时由内核 input boost 瞬间拉高频率更跟手(关闭则交互也省电)",
                     cfg.touchBoostEnable,
                 ) { vm.update { c -> c.copy(touchBoostEnable = it) } }
                 AnimatedVisibility(visible = cfg.touchBoostEnable) {
                     Column {
                         HorizontalDivider()
                         AmSlider(
-                            "提频强度", "触摸时把最低频顶到最高频的百分比(越高越跟手、越耗电)",
+                            "提频强度", "触摸时各簇提到最高频的百分比(越高越跟手、越耗电)",
                             cfg.touchBoostLevelPct, 20, 100, unit = "%", step = 5,
                         ) { vm.update { c -> c.copy(touchBoostLevelPct = it) } }
                         HorizontalDivider()
                         AmSlider(
-                            "保持时长", "停手后维持提频多久再回落(毫秒)",
+                            "保持时长", "每次触摸后维持提频多久(毫秒)",
                             cfg.touchBoostDurationMs, 300, 3000, unit = "ms", step = 100,
                         ) { vm.update { c -> c.copy(touchBoostDurationMs = it) } }
                     }
