@@ -118,7 +118,7 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                 ) { vm.update { c -> c.copy(fsmEnable = it) } }
                 HorizontalDivider()
                 AmToggle(
-                    "低温性能", "温度低且在充电/凉爽时,允许冲到性能档(默认最高只到均衡,更省电)",
+                    "低温性能", "智能档默认最高只到均衡档(更省电);开启后,机身凉爽或充电时允许冲到性能档——更流畅但更耗电、更热",
                     cfg.coolLeanPerf,
                 ) { vm.update { c -> c.copy(coolLeanPerf = it) } }
                 HorizontalDivider()
