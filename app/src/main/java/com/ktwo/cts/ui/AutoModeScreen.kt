@@ -10,15 +10,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -329,41 +329,50 @@ private fun AmSlider(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            // 当前值做成小药丸,醒目些
+            Spacer(Modifier.width(8.dp))
+            // 紧凑步进胶囊 [ − 值 + ]:小巧、贴合液态玻璃语言,精调 ±step。
             Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
             ) {
-                Text(
-                    "$v$unit",
-                    Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StepGlyph("−", v > min) { onChange((v - step).coerceIn(min, max)) }
+                    Text(
+                        "$v$unit",
+                        Modifier.widthIn(min = 32.dp),
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    StepGlyph("+", v < max) { onChange((v + step).coerceIn(min, max)) }
+                }
             }
         }
-        // −/+ 微调(点按 ±step,精确落值)+ 中间滑块(连续拖动,粗调)。
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            FilledTonalIconButton(
-                onClick = { onChange((v - step).coerceIn(min, max)) },
-                enabled = v > min,
-                modifier = Modifier.size(40.dp),
-            ) { Icon(Icons.Rounded.Remove, "减小") }
-            Slider(
-                value = v.toFloat(),
-                onValueChange = { onChange(it.roundToInt().coerceIn(min, max)) },
-                valueRange = min.toFloat()..max.toFloat(),
-                modifier = Modifier.weight(1f),
-            )
-            FilledTonalIconButton(
-                onClick = { onChange((v + step).coerceIn(min, max)) },
-                enabled = v < max,
-                modifier = Modifier.size(40.dp),
-            ) { Icon(Icons.Rounded.Add, "增大") }
-        }
+        Slider(
+            value = v.toFloat(),
+            onValueChange = { onChange(it.roundToInt().coerceIn(min, max)) },
+            valueRange = min.toFloat()..max.toFloat(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+// 小号 −/+ 字形,28dp 触点,用 App 自带 pressClickable(液态高亮),不喧宾夺主。
+@Composable
+private fun StepGlyph(glyph: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(28.dp)
+            .then(if (enabled) Modifier.pressClickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            glyph,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (enabled) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+        )
     }
 }
