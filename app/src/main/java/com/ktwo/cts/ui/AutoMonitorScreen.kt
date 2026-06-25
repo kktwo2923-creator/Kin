@@ -61,8 +61,8 @@ private data class AutoStatus(
 }
 
 private val FSM_STATES = listOf(
-    "DEEP_IDLE" to "深度空闲",
-    "LIGHT_IDLE" to "轻度空闲",
+    "DEEP_IDLE" to "空闲",
+    "LIGHT_IDLE" to "低负载",
     "MODERATE" to "中负载",
     "HEAVY" to "重负载",
     "SUSTAINED" to "持续高负载",
@@ -124,9 +124,9 @@ fun AutoMonitorScreen() {
             }
         }
 
-        // FSM 六状态机
+        // FSM 六状态
         if (isFsm) {
-            SectionTitle("状态机")
+            SectionTitle("状态")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FSM_STATES.chunked(3).forEach { row ->
@@ -165,7 +165,7 @@ fun AutoMonitorScreen() {
                     MonRow("学习时段", "${periodName(st.daypart)} · ${if (weekend) "周末" else "工作日"}")
                 }
                 MonBar("省电倾向", st.alpha, 1000, "越高越省电")
-                MonBar("学习置信度", st.conf, 1000, "学得越久越准 · 当前时段")
+                MonBar("学习程度", st.conf, 1000, "学得越久越准 · 当前时段")
             }
         }
 

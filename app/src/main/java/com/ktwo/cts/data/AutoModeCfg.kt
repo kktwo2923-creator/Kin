@@ -35,7 +35,7 @@ data class AutoModeCfg(
     val lowBatt: Int = 20,
     val critBatt: Int = 10,
     val nightQuietEnable: Boolean = true,
-    val nightStart: Int = 0,
+    val nightStart: Int = 23,
     val nightEnd: Int = 6,
     val warmTemp: Int = 50,
     val coolTemp: Int = 55,

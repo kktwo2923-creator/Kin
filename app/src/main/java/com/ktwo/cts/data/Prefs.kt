@@ -25,6 +25,14 @@ object Prefs {
         ctx.dataStore.edit { it[NOTIFY_KEY] = b }
     }
 
+    // 日志页默认只显示 log.txt / mode.txt / topapp.txt;开启「更多日志」才显示其余文件。
+    private val MORE_LOGS_KEY = booleanPreferencesKey("more_logs")
+    fun moreLogsFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[MORE_LOGS_KEY] ?: false }
+    suspend fun setMoreLogs(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[MORE_LOGS_KEY] = b }
+    }
+
     // SukiSU-Ultra 同款外观开关: 悬浮底栏 / 液态玻璃(悬浮底栏的玻璃效果)
     private val ENABLE_FLOATING_BAR_KEY      = booleanPreferencesKey("enable_floating_bottom_bar")
     private val ENABLE_FLOATING_BAR_BLUR_KEY = booleanPreferencesKey("enable_floating_bottom_bar_blur")

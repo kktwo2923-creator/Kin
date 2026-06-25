@@ -308,6 +308,16 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
             // 同 SukiSU 设置页: 关于作为入口行, 点开展示图标/版本/GitHub 链接
             SectionTitle("其他")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    val moreLogs by Prefs.moreLogsFlow(ctx).collectAsState(initial = false)
+                    ToggleRow(
+                        "更多日志",
+                        "日志页默认只显示 运行/模式/前台 三个日志;开启后显示全部日志文件",
+                        moreLogs,
+                    ) { scope.launch { Prefs.setMoreLogs(ctx, it) } }
+                }
+            }
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     Modifier
                         .fillMaxWidth()

@@ -19,10 +19,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+// 日志页默认显示的常用文件;其余靠「设置 → 更多日志」开启后展示。
+private val DEFAULT_LOG_FILES = setOf("log.txt", "mode.txt", "topapp.txt")
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -38,6 +42,8 @@ fun LogScreen() {
 
     var globalMode by remember { mutableStateOf("balance") }
     var smartOn by remember { mutableStateOf(false) }
+    // 默认只显示这三个常用日志;「设置 → 更多日志」开启后才显示全部。
+    val moreLogs by Prefs.moreLogsFlow(ctx).collectAsState(initial = false)
     LaunchedEffect(Unit) {
         globalMode = withContext(Dispatchers.IO) { RootShell.readGlobalMode() }
         smartOn = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
@@ -45,8 +51,9 @@ fun LogScreen() {
 
     suspend fun loadFiles() {
         val fs = withContext(Dispatchers.IO) { RootShell.listLogFiles() }
-        files = fs
-        if (selected == null || selected !in fs) selected = fs.firstOrNull()
+        files = if (moreLogs) fs
+                else fs.filter { it.substringAfterLast('/') in DEFAULT_LOG_FILES }
+        if (selected == null || selected !in files) selected = files.firstOrNull()
     }
 
     suspend fun loadLines() {
@@ -57,6 +64,7 @@ fun LogScreen() {
     }
 
     LaunchedEffect(Unit) { loadFiles() }
+    LaunchedEffect(moreLogs) { loadFiles() }   // 切换「更多日志」后刷新文件列表
     LaunchedEffect(selected) { loadLines() }
     LaunchedEffect(selected) {
         while (true) {
