@@ -227,6 +227,28 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                 }
             }
 
+            // ── 触控加速 ──
+            AmSection("触控加速") {
+                AmToggle(
+                    "触控加速", "触摸时立即拉高 CPU 最低频更跟手,停手后回落(CTS 自研,不用内核加速)",
+                    cfg.touchBoostEnable,
+                ) { vm.update { c -> c.copy(touchBoostEnable = it) } }
+                AnimatedVisibility(visible = cfg.touchBoostEnable) {
+                    Column {
+                        HorizontalDivider()
+                        AmSlider(
+                            "提频强度", "触摸时把最低频顶到最高频的百分比(越高越跟手、越耗电)",
+                            cfg.touchBoostLevelPct, 20, 100, unit = "%", step = 5,
+                        ) { vm.update { c -> c.copy(touchBoostLevelPct = it) } }
+                        HorizontalDivider()
+                        AmSlider(
+                            "保持时长", "停手后维持提频多久再回落(毫秒)",
+                            cfg.touchBoostDurationMs, 300, 3000, unit = "ms", step = 100,
+                        ) { vm.update { c -> c.copy(touchBoostDurationMs = it) } }
+                    }
+                }
+            }
+
             // ── 高级(默认折叠) ──
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {

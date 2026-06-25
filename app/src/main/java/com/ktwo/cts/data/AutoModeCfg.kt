@@ -56,6 +56,11 @@ data class AutoModeCfg(
     val bootTrimEnable: Boolean = false,
     val bgTrimEnable: Boolean = false,
     val bgTrimIntervalS: Int = 90,
+    // 触控加速(Function.TouchBoost):触摸时把各簇 scaling_min 顶到 cpuinfo_max 的 level_pct%,
+    // 停手 duration_ms 后回落。CTS 自研、不依赖内核 input_boost。
+    val touchBoostEnable: Boolean = false,
+    val touchBoostDurationMs: Int = 1200,
+    val touchBoostLevelPct: Int = 55,
     val rawJson: String = "",
 ) {
     companion object {
@@ -90,6 +95,7 @@ data class AutoModeCfg(
                 val sysTune = fn.optJSONObject("SysTune") ?: JSONObject()
                 val bootTrim = fn.optJSONObject("BootTrim") ?: JSONObject()
                 val bgTrim = fn.optJSONObject("BgTrim") ?: JSONObject()
+                val touchBoost = fn.optJSONObject("TouchBoost") ?: JSONObject()
                 val d = EMPTY
                 AutoModeCfg(
                     enable            = a.boolOf("enable", d.enable),
@@ -116,6 +122,9 @@ data class AutoModeCfg(
                     bootTrimEnable    = bootTrim.boolOf("enable", d.bootTrimEnable),
                     bgTrimEnable      = bgTrim.boolOf("enable", d.bgTrimEnable),
                     bgTrimIntervalS   = bgTrim.intOf("interval_s", d.bgTrimIntervalS),
+                    touchBoostEnable      = touchBoost.boolOf("enable", d.touchBoostEnable),
+                    touchBoostDurationMs  = touchBoost.intOf("duration_ms", d.touchBoostDurationMs),
+                    touchBoostLevelPct    = touchBoost.intOf("level_pct", d.touchBoostLevelPct),
                     rawJson           = raw,
                 )
             }.getOrDefault(EMPTY.copy(rawJson = raw))
@@ -162,6 +171,10 @@ data class AutoModeCfg(
         val bgTrim = f.optJSONObject("BgTrim") ?: JSONObject().also { f.put("BgTrim", it) }
         bgTrim.put("enable", bgTrimEnable.toString())
         bgTrim.put("interval_s", bgTrimIntervalS.coerceIn(30, 600).toString())
+        val touchBoost = f.optJSONObject("TouchBoost") ?: JSONObject().also { f.put("TouchBoost", it) }
+        touchBoost.put("enable", touchBoostEnable.toString())
+        touchBoost.put("duration_ms", touchBoostDurationMs.coerceIn(300, 5000).toString())
+        touchBoost.put("level_pct", touchBoostLevelPct.coerceIn(10, 100).toString())
 
         return o.toString(2)
     }
