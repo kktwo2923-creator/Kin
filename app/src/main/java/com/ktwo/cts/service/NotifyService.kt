@@ -165,6 +165,8 @@ class NotifyService : Service() {
 
         val rowLp = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val cur = modeKey
+        // 智能档开启(全局为 auto)时锁手动切档:按钮置灰,点按只提示不切换。
+        val smartOn = cur == "auto"
         Mode.DOWNSTREAM.forEach { m ->
             val selected = m.key == cur
             val btn = TextView(this).apply {
@@ -174,11 +176,21 @@ class NotifyService : Service() {
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
                 setTextColor(if (selected) Color.WHITE else unselTx)
                 setPadding(0, px(20), 0, px(20))
+                if (smartOn) alpha = 0.5f
                 background = GradientDrawable().apply {
                     cornerRadius = px(18).toFloat()
                     setColor(if (selected) accent else unselBg)
                 }
                 setOnClickListener {
+                    if (smartOn) {
+                        android.widget.Toast.makeText(
+                            this@NotifyService,
+                            "智能调度开启中,请先在 App 设置 → 智能调度 关闭智能模式",
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                        removeOverlay()
+                        return@setOnClickListener
+                    }
                     scope.launch {
                         withContext(Dispatchers.IO) {
                             RootShell.writePerApp(RootShell.readPerApp(), m.key)

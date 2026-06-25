@@ -33,6 +33,10 @@ object RootShell {
     fun currentMode(): String =
         shOut("cat /data/coreturbo_powermode 2>/dev/null").firstOrNull()?.trim().orEmpty()
 
+    /** 智能档(自动模式)是否开启:全局默认或当前生效模式为 auto。开启时锁手动切档。 */
+    fun isSmartOn(): Boolean =
+        currentMode().ifBlank { readGlobalMode() } == "auto"
+
     fun moduleInstalled(): Boolean =
         shOk("[ -d /data/adb/modules/CoreTurboScheduler ] || [ -d /data/adb/ksu/modules/CoreTurboScheduler ]")
 

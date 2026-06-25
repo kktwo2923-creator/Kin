@@ -44,11 +44,13 @@ private fun QuickSwitchDialog(onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var current by remember { mutableStateOf("") }
+    var smartOn by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         current = withContext(Dispatchers.IO) {
             RootShell.currentMode().ifEmpty { RootShell.readGlobalMode() }
         }
+        smartOn = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
     }
 
     Box(
@@ -76,9 +78,16 @@ private fun QuickSwitchDialog(onDismiss: () -> Unit) {
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("快速切换模式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (smartOn) {
+                    Text(
+                        "智能调度开启中,正在自动选档,无法手动切换。\n请到 App 设置 → 智能调度 关闭智能模式后再手动切档。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Mode.DOWNSTREAM.forEach { m ->
-                        QuickModeButton(m, m.key == current, Modifier.weight(1f)) {
+                        QuickModeButton(m, m.key == current, !smartOn, Modifier.weight(1f)) {
                             current = m.key
                             scope.launch {
                                 withContext(Dispatchers.IO) {
@@ -96,14 +105,20 @@ private fun QuickSwitchDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun QuickModeButton(mode: Mode, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val accent = if (selected) MaterialTheme.colorScheme.primary
-                 else MaterialTheme.colorScheme.onSurfaceVariant
+private fun QuickModeButton(
+    mode: Mode, selected: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit,
+) {
+    val accent = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        selected -> MaterialTheme.colorScheme.primary
+        else     -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Surface(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.height(80.dp),
         shape = RoundedCornerShape(18.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer
+        color = if (selected && enabled) MaterialTheme.colorScheme.primaryContainer
                 else MaterialTheme.colorScheme.surfaceContainerHighest,
     ) {
         Column(

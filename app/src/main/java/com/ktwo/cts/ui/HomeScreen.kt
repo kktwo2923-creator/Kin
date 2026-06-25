@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -141,24 +142,30 @@ fun HomeScreen() {
 }
 
 @Composable
-fun ModeGrid(selectedKey: String, onSelect: (Mode) -> Unit) {
+fun ModeGrid(selectedKey: String, enabled: Boolean = true, onSelect: (Mode) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         Mode.DOWNSTREAM.forEach { m ->
-            ModeButton(m, m.key == selectedKey, Modifier.weight(1f)) { onSelect(m) }
+            ModeButton(m, m.key == selectedKey, enabled, Modifier.weight(1f)) { onSelect(m) }
         }
     }
 }
 
 @Composable
-private fun ModeButton(mode: Mode, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val accent = if (selected) MaterialTheme.colorScheme.primary
-                 else MaterialTheme.colorScheme.onSurfaceVariant
+private fun ModeButton(
+    mode: Mode, selected: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit,
+) {
+    val accent = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+        selected -> MaterialTheme.colorScheme.primary
+        else     -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     GlassSurface(
+        // 智能档开启时禁用:去掉点击 + 降透明度提示不可用
         modifier = modifier
             .height(72.dp)
-            .pressClickable(onClick = onClick),
+            .then(if (enabled) Modifier.pressClickable(onClick = onClick) else Modifier.alpha(0.5f)),
         shape = RoundedCornerShape(18.dp),
-        tint = if (selected) MaterialTheme.colorScheme.primaryContainer
+        tint = if (selected && enabled) MaterialTheme.colorScheme.primaryContainer
                else MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(

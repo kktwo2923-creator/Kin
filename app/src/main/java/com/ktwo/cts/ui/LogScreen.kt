@@ -37,8 +37,10 @@ fun LogScreen() {
     val listState = rememberLazyListState()
 
     var globalMode by remember { mutableStateOf("balance") }
+    var smartOn by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         globalMode = withContext(Dispatchers.IO) { RootShell.readGlobalMode() }
+        smartOn = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
     }
 
     suspend fun loadFiles() {
@@ -98,8 +100,8 @@ fun LogScreen() {
                 Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SectionTitle("全局模式")
-                ModeGrid(selectedKey = globalMode) { sel ->
+                SectionTitle(if (smartOn) "全局模式 · 智能调度中" else "全局模式")
+                ModeGrid(selectedKey = globalMode, enabled = !smartOn) { sel ->
                     globalMode = sel.key
                     scope.launch {
                         withContext(Dispatchers.IO) {
@@ -107,6 +109,13 @@ fun LogScreen() {
                             RootShell.applyMode(sel.key)
                         }
                     }
+                }
+                if (smartOn) {
+                    Text(
+                        "智能调度已开启,自动选档中。如需手动切档,请到 设置 → 智能调度 关闭智能模式。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
