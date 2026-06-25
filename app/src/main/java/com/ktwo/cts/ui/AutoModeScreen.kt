@@ -188,6 +188,36 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                 ) { vm.update { c -> c.copy(fsmSustainedExit = it) } }
             }
 
+            // ── 系统优化 (ASB:WiFi/网络/内存,所有模式生效) ──
+            AmSection("系统优化 (ASB · WiFi/网络/内存)") {
+                AmToggle(
+                    "WiFi / 网络 / 内存调优",
+                    "按当前档位调 WiFi 省电、网络发送队列、TCP 缓冲与内存回收倾向(低风险,建议开)",
+                    cfg.sysTuneEnable,
+                ) { vm.update { c -> c.copy(sysTuneEnable = it) } }
+                HorizontalDivider()
+                AmToggle(
+                    "开机精简",
+                    "开机停用 4 个调试/遥测服务并关闭 WiFi 后台扫描省电(系统级,卸载模块前持久生效)",
+                    cfg.bootTrimEnable,
+                ) { vm.update { c -> c.copy(bootTrimEnable = it) } }
+                HorizontalDivider()
+                AmToggle(
+                    "后台内存回收",
+                    "周期性回收常驻后台的重应用内存(只回收不杀进程,绝不动前台)",
+                    cfg.bgTrimEnable,
+                ) { vm.update { c -> c.copy(bgTrimEnable = it) } }
+                AnimatedVisibility(visible = cfg.bgTrimEnable) {
+                    Column {
+                        HorizontalDivider()
+                        AmSlider(
+                            "回收周期", "多久回收一次后台内存(秒)",
+                            cfg.bgTrimIntervalS, 30, 600, unit = "s",
+                        ) { vm.update { c -> c.copy(bgTrimIntervalS = it) } }
+                    }
+                }
+            }
+
             // ── 高级(默认折叠) ──
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
