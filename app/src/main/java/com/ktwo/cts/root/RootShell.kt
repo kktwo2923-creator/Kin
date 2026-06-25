@@ -236,6 +236,8 @@ object RootShell {
      */
     fun resolveActiveMode(fg: String): ActiveMode {
         val global = readGlobalMode()
+        // auto 模式「智能/FSM 独占」: 不套 App 画像/perapp,一律显示智能档(与 daemon 行为一致)。
+        if (global == "auto") return ActiveMode(false, "auto")
         if (fg.isBlank()) return ActiveMode(false, global)
         val raw = readConfigRaw()
         if (raw.isNotBlank()) runCatching {
