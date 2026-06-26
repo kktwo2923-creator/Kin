@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">Oxygen V Pro</string>
+    <string name="app_name">OnePlus V Pro</string>
     <string name="a11y_desc">实时识别全屏主应用(多窗口/小窗下取面积最大的应用窗口)并推送给调度守护进程,替代 dumpsys 轮询,切换更快更省电。仅读取窗口包名与边界,不采集屏幕文本内容。</string>
 </resources>
