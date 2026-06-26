@@ -208,7 +208,10 @@ object RootShell {
         return shOut("cat $CTS_DIR/auto_status.txt 2>/dev/null").joinToString("\n")
     }
 
-    private const val A11Y_COMPONENT = "com.ktwo.cts/com.ktwo.cts.service.AppSwitchService"
+    // 组件名 = 实际安装包名(applicationId)/ 服务类全名。包名随版本可变(如 com.ktwo.kin),
+    // 故从 BuildConfig.APPLICATION_ID 动态拼,避免写死旧包名导致开关无效(写错组件→服务永远起不来)。
+    private val A11Y_COMPONENT =
+        "${com.ktwo.cts.BuildConfig.APPLICATION_ID}/com.ktwo.cts.service.AppSwitchService"
 
     /**
      * 用 root 写 secure settings 开/关本应用无障碍服务(持久, 跨重启不掉权限)。
