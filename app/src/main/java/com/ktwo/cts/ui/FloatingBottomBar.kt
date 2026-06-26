@@ -53,7 +53,6 @@ import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import com.ktwo.cts.ui.liquid.InnerShadow
 import com.ktwo.cts.ui.liquid.innerShadow
@@ -211,7 +210,7 @@ fun FloatingBottomBar(
         }
     }
 
-    var currentIndex by remember(selectedIndex) { mutableIntStateOf(selectedIndex()) }
+    var currentIndex by remember { mutableIntStateOf(selectedIndex().coerceAtLeast(0)) }
 
     class DampedDragAnimationHolder {
         var instance: DampedDragAnimation? = null
@@ -246,6 +245,7 @@ fun FloatingBottomBar(
                 val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
                 currentIndex = targetIndex
                 animateToValue(targetIndex.toFloat())
+                onSelected(targetIndex)   // 拖拽选页 → 导航(点击走 item onClick, 不再经选中态回环)
                 animationScope.launch {
                     offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
                 }
@@ -264,13 +264,15 @@ fun FloatingBottomBar(
         ).also { holder.instance = it }
     }
 
-    LaunchedEffect(selectedIndex) {
-        snapshotFlow { selectedIndex() }.collectLatest { currentIndex = it }
-    }
+    // 外部选中态(导航真值)【单向】驱动指示器动画 —— 绝不回调 onSelected。
+    // 导航只由 item 的 onClick(点击)与 onDragStopped(拖拽)触发, 不再让"选中态变化"
+    // 反过来命令导航(那个回环会在 tab 集/选中态抖动时把刚点的页签弹回首页)。
     LaunchedEffect(dampedDragAnimation) {
-        snapshotFlow { currentIndex }.drop(1).collectLatest { index ->
-            dampedDragAnimation.animateToValue(index.toFloat())
-            onSelected(index)
+        snapshotFlow { selectedIndex().coerceAtLeast(0) }.collectLatest { ext ->
+            if (ext != currentIndex) {
+                currentIndex = ext
+                dampedDragAnimation.animateToValue(ext.toFloat())
+            }
         }
     }
 
