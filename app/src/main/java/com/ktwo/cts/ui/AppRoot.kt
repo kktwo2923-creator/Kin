@@ -74,14 +74,15 @@ fun AppRoot() {
         drawContent()
     }
 
-    // 智能调度是否开启:开启时换成监控面板的 tab 集(隐藏 CPU/应用)。每 3s 轮询一次。
-    // null = 首次状态尚未读到(此期间不做任何跳转, 避免启动瞬间误踢页面)。
-    var smartOn by remember { mutableStateOf<Boolean?>(null) }
+    // 智能调度是否开启 → 决定底栏 tab 集(开:监控/记录;关:CPU/应用)。
+    // 唯一可信来源是持久化的 Prefs(开关时写入), 启动时从 root 探测一次同步进 Prefs。
+    // 【不再每 3s 轮询 root shell】—— shell 偶发失败会让值在 true/false 抖动, tab 集随之乱切,
+    // 把用户正点开的「监控/记录(或 CPU/应用)」反复弹回首页。
+    val smartOn by Prefs.smartEnabledFlow(ctx).collectAsState(initial = null)
     LaunchedEffect(Unit) {
-        while (true) {
-            smartOn = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
-            delay(3000)
-        }
+        // 启动同步一次: 把 root 实际状态写回 Prefs(兼顾外部/旧版本已开启智能的情况)。
+        val probed = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
+        if (probed != smartOn) Prefs.setSmartEnabled(ctx, probed)
     }
     val smart = smartOn == true
     val tabs = if (smart) TABS_SMART else TABS_NORMAL

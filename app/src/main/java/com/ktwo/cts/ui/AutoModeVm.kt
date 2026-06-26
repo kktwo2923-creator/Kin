@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ktwo.cts.data.AutoModeCfg
+import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -120,6 +121,8 @@ class AutoModeVm(app: Application) : AndroidViewModel(app) {
                     RootShell.applyMode(target)        // 即时切换(写 mode.txt)
                     RootShell.setGlobalMode(target)    // 持久化全局默认,跨重启保持
                 }
+                // 持久化给底栏用: tab 集只信这个值, 不再热路径读 root shell(避免抖动弹页)。
+                Prefs.setSmartEnabled(getApplication<Application>(), on)
                 true
             }.getOrDefault(false)
             _smartEnabled.value = if (ok) on else _smartEnabled.value

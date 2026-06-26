@@ -17,6 +17,17 @@ object Prefs {
     private val WALLPAPER_KEY    = stringPreferencesKey("wallpaper_uri")
     private val NOTIFY_KEY       = booleanPreferencesKey("notify_enabled")
 
+    // 智能调度(auto)是否开启。【底栏 tab 集的唯一可信来源】——
+    // 由 App 开关时写入 + 启动时从 root 探测一次同步。不在 UI 热路径里反复读 root shell:
+    // shell 偶发失败会让判定在 true/false 间抖动, 导致 tab 集乱切、页面被弹回。
+    // 返回 null = 尚未写入(启动探测前), 此时调用方不应据此跳转。
+    private val SMART_KEY = booleanPreferencesKey("smart_enabled")
+    fun smartEnabledFlow(ctx: Context): Flow<Boolean?> =
+        ctx.dataStore.data.map { it[SMART_KEY] }
+    suspend fun setSmartEnabled(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[SMART_KEY] = b }
+    }
+
     fun notifyEnabledFlow(ctx: Context): Flow<Boolean> =
         ctx.dataStore.data.map { it[NOTIFY_KEY] ?: false }
     suspend fun notifyEnabled(ctx: Context): Boolean =
