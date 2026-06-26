@@ -75,26 +75,37 @@ fun AppRoot() {
     }
 
     // 智能调度是否开启:开启时换成监控面板的 tab 集(隐藏 CPU/应用)。每 3s 轮询一次。
-    var smartOn by remember { mutableStateOf(false) }
+    // null = 首次状态尚未读到(此期间不做任何跳转, 避免启动瞬间误踢页面)。
+    var smartOn by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
         while (true) {
             smartOn = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
             delay(3000)
         }
     }
-    val tabs = if (smartOn) TABS_SMART else TABS_NORMAL
+    val smart = smartOn == true
+    val tabs = if (smart) TABS_SMART else TABS_NORMAL
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
         val selectedIndex = tabs.indexOfFirst { d ->
             curRoute?.any { it.route == d.route } == true
         }.coerceAtLeast(0)
         val curDestRoute = entry?.destination?.route
-        // 切换智能调度后,若正停在已隐藏的页面,自动跳到合适页,避免卡在不可见 tab。
+        // 当前 tab 集(随智能调度切换)允许的路由 + 两个详情页。
+        val validRoutes = remember(tabs) {
+            (tabs.map { it.route } + listOf("about", "automode")).toSet()
+        }
+        // 切换智能调度后, 若正停在【当前 tab 集里已不存在】的页面(如智能开后停在"应用",
+        // 或智能关后停在"记录"), 统一回首页。只在状态已确定(smartOn!=null)且路由确实越界时跳,
+        // 不再无条件踢到"监控" —— 之前那版会因 smartOn 抖动把"记录/应用"也弹回监控。
         LaunchedEffect(smartOn, curDestRoute) {
-            if (smartOn && (curDestRoute == "cpu" || curDestRoute == "apps")) {
-                nav.navigate("monitor") { launchSingleTop = true }
-            } else if (!smartOn && (curDestRoute == "monitor" || curDestRoute == "records")) {
-                nav.navigate("home") { launchSingleTop = true }
+            if (smartOn == null) return@LaunchedEffect
+            val r = curDestRoute ?: return@LaunchedEffect
+            if (r !in validRoutes) {
+                nav.navigate("home") {
+                    popUpTo(nav.graph.findStartDestination().id) { saveState = false }
+                    launchSingleTop = true
+                }
             }
         }
         val hideBottomBar = curDestRoute == "about" || curDestRoute == "automode"

@@ -33,9 +33,14 @@ object RootShell {
     fun currentMode(): String =
         shOut("cat /data/coreturbo_powermode 2>/dev/null").firstOrNull()?.trim().orEmpty()
 
-    /** 智能档(自动模式)是否开启:全局默认或当前生效模式为 auto。开启时锁手动切档。 */
+    /**
+     * 智能档(自动模式)是否开启。【以持久化的全局默认(perapp 的 * 行)为准】——
+     * 它只在开关智能调度时写入, 稳定不抖。不优先读 /data/coreturbo_powermode:
+     * 那是"当前生效档", auto 下会被解析出的基础档/外部电源 App/用户脚本改写,
+     * 据此判断会让 smartOn 反复抖动, 进而误触发底栏 tab 切换与「记录/应用」页跳转。
+     */
     fun isSmartOn(): Boolean =
-        currentMode().ifBlank { readGlobalMode() } == "auto"
+        readGlobalMode() == "auto" || currentMode() == "auto"
 
     fun moduleInstalled(): Boolean =
         shOk("[ -d /data/adb/modules/Kin ] || [ -d /data/adb/ksu/modules/Kin ]")
