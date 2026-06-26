@@ -24,7 +24,7 @@ object RootShell {
         if (shOk("[ -s /data/powercfg.sh ] && sh /data/powercfg.sh $mode")) return true
         // libsu 持久 shell 里 exit 会终止会话,用变量记结果代替 exit
         return shOk(
-            "ok=1; for d in /data/adb/modules/CoreTurboScheduler /data/adb/ksu/modules/CoreTurboScheduler; do" +
+            "ok=1; for d in /data/adb/modules/Kin /data/adb/ksu/modules/Kin; do" +
             "  [ -s \"\$d/switch.sh\" ] && sh \"\$d/switch.sh\" $mode && ok=0 && break;" +
             " done; [ \"\$ok\" = 0 ]"
         )
@@ -38,7 +38,7 @@ object RootShell {
         currentMode().ifBlank { readGlobalMode() } == "auto"
 
     fun moduleInstalled(): Boolean =
-        shOk("[ -d /data/adb/modules/CoreTurboScheduler ] || [ -d /data/adb/ksu/modules/CoreTurboScheduler ]")
+        shOk("[ -d /data/adb/modules/Kin ] || [ -d /data/adb/ksu/modules/Kin ]")
 
     // perapp_powermode.txt 格式: 每行 "包名 模式"; # 开头注释; * 开头全局默认行。
     private const val PERAPP = "/sdcard/Android/Kin/perapp_powermode.txt"
@@ -112,7 +112,7 @@ object RootShell {
      */
     fun setGlobalMode(globalMode: String): Boolean = writePerApp(readPerApp(), globalMode)
 
-    private const val MODULE_CONFIG_DIR = "/data/adb/modules/CoreTurboScheduler/config"
+    private const val MODULE_CONFIG_DIR = "/data/adb/modules/Kin/config"
 
     /** SoC 识别结果;chip 为空表示未识别,configName 是对应的默认配置文件名。 */
     data class SocInfo(
@@ -197,7 +197,7 @@ object RootShell {
 
     /** 守护是否在运行：直接查进程(daemon 已不再写 daemon.alive 心跳)。 */
     fun daemonAlive(): Boolean =
-        shOut("pidof CoreTurboScheduler 2>/dev/null").firstOrNull()?.isNotBlank() == true
+        shOut("pidof Kinetic 2>/dev/null").firstOrNull()?.isNotBlank() == true
 
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
     fun readAutoStatus(): String {
