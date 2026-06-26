@@ -53,8 +53,8 @@ class CtsApp : Application() {
                         text.toByteArray(), android.util.Base64.NO_WRAP,
                     )
                     Shell.cmd(
-                        "mkdir -p /sdcard/Android/Kinetic; " +
-                            "echo '$b64' | base64 -d >> /sdcard/Android/Kinetic/app_crash.log",
+                        "mkdir -p /sdcard/Android/Oxygen; " +
+                            "echo '$b64' | base64 -d >> /sdcard/Android/Oxygen/app_crash.log",
                     ).exec()
                 } else {
                     java.io.File(filesDir, "app_crash.log").appendText(text)

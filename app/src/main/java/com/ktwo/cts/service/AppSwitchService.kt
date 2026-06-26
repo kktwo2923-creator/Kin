@@ -12,7 +12,7 @@ import com.ktwo.cts.root.RootShell
 
 /**
  * 无障碍服务:监听窗口焦点变化(TYPE_WINDOW_STATE_CHANGED),把前台包名推给 daemon
- * (写 /sdcard/Android/Kinetic/topapp.txt,daemon inotify 即时消费)。
+ * (写 /sdcard/Android/Oxygen/topapp.txt,daemon inotify 即时消费)。
  *
  * 定位是 daemon dumpsys 轮询的"加速器":启用后 daemon 直接用推送值(零 dumpsys popen、零延迟);
  * 未启用/被杀时推送变陈旧,daemon 自动回退自身 dumpsys 检测,不影响"不开 App 也能用"。

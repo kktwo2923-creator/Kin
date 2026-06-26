@@ -29,7 +29,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.ktwo.kinetic"
+        applicationId = "com.ktwo.oxygen"
         // iOS26 液态玻璃依赖 AGSL RuntimeShader(Android 13+), 不再适配低版本
         minSdk = 33
         targetSdk = 35
