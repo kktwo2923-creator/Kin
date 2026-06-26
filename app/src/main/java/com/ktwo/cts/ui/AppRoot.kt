@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Memory
-import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.runtime.*
 import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +50,7 @@ private val TABS_NORMAL = listOf(
 private val TABS_SMART = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
     TopDest("monitor",  "监控", Icons.Outlined.Insights),
-    TopDest("records",  "记录", Icons.Outlined.Timeline),
+    TopDest("records",  "记录", Icons.Outlined.History),
     TopDest("logs",     "日志", CtsIcons.Logs),
     TopDest("settings", "设置", CtsIcons.Settings),
 )

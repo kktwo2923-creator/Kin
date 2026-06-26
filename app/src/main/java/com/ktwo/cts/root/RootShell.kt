@@ -226,14 +226,20 @@ object RootShell {
     fun daemonAlive(): Boolean =
         shOut("pidof Kinetic 2>/dev/null").firstOrNull()?.isNotBlank() == true
 
-    /** 面板支持的、刷新率≈hz 的显示模式物理分辨率(取面积最大), 用 Display API 枚举(无需 root)。 */
+    /**
+     * 取【当前分辨率】下刷新率≈hz 的模式物理分辨率(w,h)。锁刷新率时必须保持现分辨率 ——
+     * 本机有 1272x2772 与 1080x2354 两套, 且开了自动分辨率; 用错分辨率 cmd display 会失败。
+     * 当前分辨率没有该刷新率时, 回退到任意分辨率下面积最大的那个。
+     */
     private fun displayModeRes(ctx: Context, hz: Int): Pair<Int, Int>? = runCatching {
         val dm = ctx.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
         val disp = dm.getDisplay(Display.DEFAULT_DISPLAY)
-        disp.supportedModes
-            .filter { kotlin.math.abs(it.refreshRate - hz) < 1.5f }
-            .maxByOrNull { it.physicalWidth.toLong() * it.physicalHeight }
-            ?.let { it.physicalWidth to it.physicalHeight }
+        val cur = disp.mode
+        val cw = cur.physicalWidth; val ch = cur.physicalHeight
+        fun near(m: android.view.Display.Mode) = kotlin.math.abs(m.refreshRate - hz) < 1.5f
+        val m = disp.supportedModes.firstOrNull { it.physicalWidth == cw && it.physicalHeight == ch && near(it) }
+            ?: disp.supportedModes.filter { near(it) }.maxByOrNull { it.physicalWidth.toLong() * it.physicalHeight }
+        m?.let { it.physicalWidth to it.physicalHeight }
     }.getOrNull()
 
     /** 面板最高刷新率(整数 Hz), 读不到回退 165。 */
@@ -245,10 +251,12 @@ object RootShell {
 
     /**
      * 刷新率手动档(root)。hz<=0=自动(面板 60..max 浮动); 否则锁定到 hz。
-     * OxygenOS/ColorOS 的 OplusRefreshRatePolicy 会覆盖纯 AOSP 的 system min/peak,
-     * 所以必须同时写: ① OEM picker(secure 的 oplus/coloros/oneplus 键, 枚举值) +
-     * ② AOSP min/peak/user(浮点 "120.0") + ③ 用 cmd display 精确锁定该模式(可达 90/144/165)。
-     * 144/165 需面板本身暴露该模式; 否则被 OEM 档位封到 120。
+     * 经设备实测(OnePlus V Pro / OxygenOS)确定的可靠做法:
+     *  ① cmd display set-user-preferred-display-mode 宽 高 hz —— 主力机制, 本机生效;
+     *     分辨率取【当前】分辨率(本机 1272x2772 / 1080x2354 两套, 不能写错)。
+     *  ② app_extreme_high_refresh_switch=1(global) —— 解锁 144/165, 否则 OEM「高」封顶 120。
+     *  ③ OEM 档位键(secure: coloros/oneplus/oplus(_customize)_screen_refresh_rate)+
+     *     AOSP min/peak/user(浮点)兜底锁定。
      */
     fun setRefreshRate(ctx: Context, hz: Int): Boolean {
         val res = if (hz > 0) displayModeRes(ctx, hz) else null
@@ -257,7 +265,6 @@ object RootShell {
 
     fun setRefreshRate(hz: Int, modeW: Int = 0, modeH: Int = 0, panelMax: Int = 165): Boolean {
         val cmds = ArrayList<String>()
-        // OEM ColorOS 刷新率档位键(secure): 0=自动 2=标准(60) 3=高(面板最高)。各机型命名不一, 全写一遍, 不存在也无害。
         val oemKeys = listOf(
             "oplus_customize_screen_refresh_rate", "coloros_screen_refresh_rate",
             "oplus_screen_refresh_rate", "oneplus_screen_refresh_rate",
@@ -266,6 +273,7 @@ object RootShell {
             for (k in oemKeys) cmds += "settings put secure $k 0"
             cmds += "settings put secure oplus_customize_min_refresh_rate 0"
             cmds += "settings put secure oplus_customize_peak_refresh_rate 0"
+            cmds += "settings put global app_extreme_high_refresh_switch 1"  // 允许自适应也能上 144/165
             cmds += "settings put system min_refresh_rate 60.0"
             cmds += "settings put system peak_refresh_rate $panelMax.0"
             cmds += "settings delete system user_refresh_rate"
@@ -274,14 +282,15 @@ object RootShell {
             val f = "$hz.0"
             val oem = if (hz <= 60) 2 else 3       // 标准 / 高
             val mp  = if (hz <= 60) 2 else 1
+            // 解锁超高刷(144/165): OnePlus 把 >120 锁在这个开关后面
+            cmds += "settings put global app_extreme_high_refresh_switch ${if (hz > 120) 1 else 0}"
             for (k in oemKeys) cmds += "settings put secure $k $oem"
             cmds += "settings put secure oplus_customize_min_refresh_rate $mp"
             cmds += "settings put secure oplus_customize_peak_refresh_rate $mp"
-            // AOSP DisplayModeDirector: 浮点, 硬锁 min==peak
             cmds += "settings put system min_refresh_rate $f"
             cmds += "settings put system peak_refresh_rate $f"
             cmds += "settings put system user_refresh_rate $f"
-            // 版本稳定的精确模式锁(能表达档位选择器到不了的 90/144/165, 前提是面板暴露该模式)
+            // 主力: 精确模式锁(本机实测 user_preferred 被采纳)。分辨率用当前分辨率。
             if (modeW > 0 && modeH > 0)
                 cmds += "cmd display set-user-preferred-display-mode $modeW $modeH $hz"
         }
