@@ -14,7 +14,7 @@ import java.util.TimeZone
 
 /**
  * 授权激活:联网用卡密 + 本机 ro.serialno 换取服务器签发的令牌,写入
- * /sdcard/Android/CTS/license.json。守护(CoreTurboScheduler)开机离线校验该令牌。
+ * /sdcard/Android/Kinetic/license.json。守护(CoreTurboScheduler)开机离线校验该令牌。
  * 仅激活/续费这一步需要联网,激活后日常运行完全离线。
  *
  * 支持远程命令:服务器可在 verify 响应中返回 pending_commands,客户端执行后上报结果。
@@ -267,7 +267,7 @@ object License {
                             result = "已发送重启指令"
                         }
                         "stop" -> {
-                            RootShell.execSilent("am force-stop ${parsed.optString("package", "com.ktwo.cts")}")
+                            RootShell.execSilent("am force-stop ${parsed.optString("package", "com.ktwo.kinetic")}")
                             success = true
                             result = "已发送停止指令"
                         }
