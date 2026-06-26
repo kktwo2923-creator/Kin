@@ -199,6 +199,16 @@ object RootShell {
     fun daemonAlive(): Boolean =
         shOut("pidof Kinetic 2>/dev/null").firstOrNull()?.isNotBlank() == true
 
+    /**
+     * 刷新率手动档(root 写 system settings, 持久跨重启)。
+     * hz<=0=自动(min 60 / peak 144, 系统按面板封顶); 否则锁定 min=peak=hz。
+     */
+    fun setRefreshRate(hz: Int): Boolean =
+        if (hz <= 0)
+            shOk("settings put system min_refresh_rate 60; settings put system peak_refresh_rate 144")
+        else
+            shOk("settings put system min_refresh_rate $hz; settings put system peak_refresh_rate $hz")
+
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
     fun readAutoStatus(): String {
         runCatching {

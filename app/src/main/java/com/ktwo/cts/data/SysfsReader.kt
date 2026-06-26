@@ -128,6 +128,44 @@ object SysfsReader {
         )
     }
 
+    // ── 功耗概览(参考 BatteryRecorder / OpenMonitor 的实时功率+续航)──
+    fun batteryTempC(): Double {
+        val t = readFileOrRoot("$BATT/temp")?.toDoubleOrNull() ?: return -999.0
+        return if (abs(t) > 200) t / 10.0 else t   // deci-℃ → ℃
+    }
+    private fun chargeFullMah(): Double {
+        val f = (readFileOrRoot("$BATT/charge_full")
+            ?: readFileOrRoot("$BATT/charge_full_design"))?.toDoubleOrNull() ?: return 0.0
+        return if (f > 100_000) f / 1000.0 else f   // µAh → mAh
+    }
+    fun currentMa(): Double {
+        val i = rawCurrent() ?: return 0.0
+        val a = abs(i)
+        return if (a > 100_000) a / 1000.0 else a.toDouble()
+    }
+    fun voltageV(): Double {
+        val v = rawVoltage() ?: return 0.0
+        val a = abs(v)
+        val mv = if (a > 100_000) a / 1000.0 else a.toDouble()
+        return mv / 1000.0
+    }
+
+    data class PowerInfo(
+        val watt: Double, val currentMa: Double, val voltageV: Double,
+        val battTempC: Double, val battPct: Int, val charging: Boolean,
+        val drainPph: Double,   // 放电速率 %/h(瞬时估算; 充电时 0)
+        val etaMin: Int,        // 预计续航分钟(放电且可估时 >0, 否则 -1)
+    )
+    fun powerInfo(cellCount: Int): PowerInfo {
+        val pct = battPct()
+        val chg = isCharging()
+        val ma = currentMa()
+        val cap = chargeFullMah()
+        val drain = if (!chg && cap > 0) ma / cap * 100.0 else 0.0
+        val eta = if (drain > 0.5 && pct > 0) (pct / drain * 60.0).toInt() else -1
+        return PowerInfo(computeWatt(cellCount), ma, voltageV(), batteryTempC(), pct, chg, drain, eta)
+    }
+
     private val GPU_CUR_PATHS = listOf(
         "/sys/class/kgsl/kgsl-3d0/gpuclk",           // 部分高通,Hz
         "/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq", // devfreq,Hz

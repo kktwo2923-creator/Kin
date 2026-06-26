@@ -35,6 +35,15 @@ fun HomeScreen() {
     var isRoot by remember { mutableStateOf(true) }
     var currentMode by remember { mutableStateOf("") }
 
+    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 2)
+    var power by remember { mutableStateOf<com.ktwo.cts.data.SysfsReader.PowerInfo?>(null) }
+    LaunchedEffect(cellCount) {
+        while (isActive) {
+            power = withContext(Dispatchers.IO) { com.ktwo.cts.data.SysfsReader.powerInfo(cellCount) }
+            delay(2500)
+        }
+    }
+
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             isRoot = RootShell.isRooted()
@@ -127,6 +136,25 @@ fun HomeScreen() {
                 )
             }
 
+            power?.let { p ->
+                InfoCard(
+                    title = "功耗概览",
+                    rows = buildList {
+                        add("实时功率" to if (p.watt > 0.0) "%.2f W".format(p.watt) else "—")
+                        add("放电电流" to when {
+                            p.charging -> "充电中"
+                            p.currentMa > 0 -> "%.0f mA".format(p.currentMa)
+                            else -> "—"
+                        })
+                        add("电池电压" to if (p.voltageV > 0.0) "%.2f V".format(p.voltageV) else "—")
+                        add("电池温度" to if (p.battTempC > -100.0) "%.1f℃".format(p.battTempC) else "—")
+                        add("当前电量" to if (p.battPct >= 0) "${p.battPct}%" else "—")
+                        if (!p.charging && p.drainPph > 0.0) add("掉电速率" to "%.1f %%/h".format(p.drainPph))
+                        if (!p.charging && p.etaMin > 0) add("预计续航" to fmtEta(p.etaMin))
+                    }
+                )
+            }
+
             InfoCard(
                 title = "调度状态",
                 rows = listOf(
@@ -140,6 +168,9 @@ fun HomeScreen() {
         }
     }
 }
+
+private fun fmtEta(min: Int): String =
+    if (min >= 60) "${min / 60}小时${(min % 60).toString().padStart(2, '0')}分" else "${min}分钟"
 
 @Composable
 fun ModeGrid(selectedKey: String, enabled: Boolean = true, onSelect: (Mode) -> Unit) {

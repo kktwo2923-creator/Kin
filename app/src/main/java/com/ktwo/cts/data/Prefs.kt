@@ -93,6 +93,16 @@ object Prefs {
         ctx.dataStore.edit { it[A11Y_WANTED_KEY] = b }
     }
 
+    // 刷新率手动档:0=自动(系统决定), 60/90/120=锁定该刷新率。开机由 BootReceiver 重应用。
+    private val REFRESH_RATE_KEY = intPreferencesKey("refresh_rate_hz")
+    fun refreshRateFlow(ctx: Context): Flow<Int> =
+        ctx.dataStore.data.map { it[REFRESH_RATE_KEY] ?: 0 }
+    suspend fun refreshRate(ctx: Context): Int =
+        ctx.dataStore.data.first()[REFRESH_RATE_KEY] ?: 0
+    suspend fun setRefreshRate(ctx: Context, hz: Int) {
+        ctx.dataStore.edit { it[REFRESH_RATE_KEY] = hz }
+    }
+
     // 电芯数:默认 2(一加大电池多为双芯串联)。若功耗偏高一倍,改 1(voltage_now 已是整包电压)。
     private val CELL_COUNT_KEY = intPreferencesKey("cell_count")
     fun cellCountFlow(ctx: Context): Flow<Int> =

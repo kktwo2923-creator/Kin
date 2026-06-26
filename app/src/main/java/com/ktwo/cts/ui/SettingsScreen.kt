@@ -44,6 +44,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
     val enableFloatingBarBlur by Prefs.enableFloatingBottomBarBlurFlow(ctx)
         .collectAsState(initial = true)
     val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
+    val refreshRate by Prefs.refreshRateFlow(ctx).collectAsState(initial = 0)
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
     var a11yEnabled by remember { mutableStateOf(false) }
@@ -168,6 +169,32 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+
+            Section("刷新率") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("屏幕刷新率", fontWeight = FontWeight.Medium)
+                    Text(
+                        "锁定后跨重启保持(root 写系统设置)。自动 = 交还系统自适应。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(0 to "自动", 60 to "60Hz", 90 to "90Hz", 120 to "120Hz").forEach { (hz, label) ->
+                            FilterChip(
+                                selected = hz == refreshRate,
+                                onClick = {
+                                    scope.launch {
+                                        Prefs.setRefreshRate(ctx, hz)
+                                        withContext(Dispatchers.IO) { RootShell.setRefreshRate(hz) }
+                                    }
+                                },
+                                label = { Text(label) },
+                                shape = RoundedCornerShape(12.dp),
+                            )
+                        }
+                    }
                 }
             }
 

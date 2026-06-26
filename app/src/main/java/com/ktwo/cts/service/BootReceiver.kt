@@ -15,6 +15,9 @@ class BootReceiver : BroadcastReceiver() {
                 restoreUserConfig(ctx)   // 数据恢复与自启开关无关, 始终执行
                 // 重新断言无障碍授权: 部分 ROM 重启会掉 sideload 应用的无障碍, root 写回 secure settings
                 if (Prefs.a11yWanted(ctx) && RootShell.isRooted()) RootShell.setAccessibility(true)
+                // 刷新率手动锁定重应用(部分 ROM 重启会复位 min/peak_refresh_rate)
+                val rr = Prefs.refreshRate(ctx)
+                if (rr > 0 && RootShell.isRooted()) RootShell.setRefreshRate(rr)
                 if (Prefs.autostart(ctx)) {
                     if (Prefs.enabled(ctx) && !RootShell.daemonAlive()) ScheduleService.start(ctx)
                     if (Prefs.notifyEnabled(ctx)) NotifyService.start(ctx)
