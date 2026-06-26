@@ -181,7 +181,8 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(0 to "自动", 60 to "60Hz", 90 to "90Hz", 120 to "120Hz").forEach { (hz, label) ->
+                        listOf(0 to "自动", 60 to "60Hz", 90 to "90Hz", 120 to "120Hz",
+                               144 to "144Hz", 165 to "165Hz").forEach { (hz, label) ->
                             FilterChip(
                                 selected = hz == refreshRate,
                                 onClick = {

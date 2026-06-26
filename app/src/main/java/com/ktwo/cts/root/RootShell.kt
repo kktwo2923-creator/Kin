@@ -205,7 +205,7 @@ object RootShell {
      */
     fun setRefreshRate(hz: Int): Boolean =
         if (hz <= 0)
-            shOk("settings put system min_refresh_rate 60; settings put system peak_refresh_rate 144")
+            shOk("settings put system min_refresh_rate 60; settings put system peak_refresh_rate 165")
         else
             shOk("settings put system min_refresh_rate $hz; settings put system peak_refresh_rate $hz")
 
