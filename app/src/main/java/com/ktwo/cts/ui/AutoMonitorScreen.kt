@@ -31,6 +31,9 @@ private data class AutoStatus(
     val load1: Float = -1f,
     val cpuBusy: Int = -1,
     val curMa: Int = -1,
+    val nightSleep: Int = -1,
+    val nightWake: Int = -1,
+    val nightSamples: Int = 0,
     val cpuMaxLittle: Int = 0,
     val cpuMaxBig: Int = 0,
     val charging: Boolean = false,
@@ -54,6 +57,7 @@ private data class AutoStatus(
                 bucket = gi("bucket"), daypart = gi("daypart"),
                 alpha = gi("alpha"), conf = gi("conf"), temp = gi("temp"), batt = gi("batt"),
                 gpu = gi("gpu"), load1 = gf("load1"), cpuBusy = gi("cpu_busy"), curMa = gi("cur_ma"),
+                nightSleep = gi("night_sleep"), nightWake = gi("night_wake"), nightSamples = gi("night_samples", 0),
                 cpuMaxLittle = gi("cpu_max_little", 0), cpuMaxBig = gi("cpu_max_big", 0),
                 charging = gi("charging", 0) == 1, screen = gi("screen", 1),
                 lowbat = gi("lowbat", 0) == 1, valid = true,
@@ -168,6 +172,12 @@ fun AutoMonitorScreen() {
                 }
                 MonBar("省电倾向", st.alpha, 1000, "越高越省电")
                 MonBar("学习程度", st.conf, 1000, "学得越久越准 · 当前时段")
+                MonRow("睡眠时段", when {
+                    st.nightSleep >= 0 && st.nightWake >= 0 && st.nightSamples >= 3 ->
+                        "${hhmm(st.nightSleep)}–${hhmm(st.nightWake)} · 已自学"
+                    st.nightSamples in 1..2 -> "学习中 (${st.nightSamples}/3 晚)"
+                    else -> "学习中 · 暂用固定时段"
+                })
             }
         }
 
@@ -216,6 +226,9 @@ private fun MonBar(title: String, value: Int, max: Int, desc: String) {
 }
 
 // 学习时段(原 bucket 的 daypart):一天分 6 段,配合工作日/周末构成学习分组。
+private fun hhmm(min: Int): String =
+    if (min in 0..1439) "%02d:%02d".format(min / 60, min % 60) else "—"
+
 private fun periodName(daypart: Int): String = when (daypart) {
     0 -> "凌晨"   // 0–5 点
     1 -> "清晨"   // 6–8 点
