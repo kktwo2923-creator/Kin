@@ -41,10 +41,10 @@ object RootShell {
         shOk("[ -d /data/adb/modules/CoreTurboScheduler ] || [ -d /data/adb/ksu/modules/CoreTurboScheduler ]")
 
     // perapp_powermode.txt 格式: 每行 "包名 模式"; # 开头注释; * 开头全局默认行。
-    private const val PERAPP = "/sdcard/Android/Oxygen/perapp_powermode.txt"
+    private const val PERAPP = "/sdcard/Android/Kin/perapp_powermode.txt"
 
     /** CTS 数据/日志目录 */
-    const val CTS_DIR = "/sdcard/Android/Oxygen"
+    const val CTS_DIR = "/sdcard/Android/Kin"
 
     /** 受保护文件(禁止清空):perapp_powermode.txt */
     private val PROTECTED_FILES = setOf(PERAPP.substringAfterLast('/'))
@@ -97,7 +97,7 @@ object RootShell {
         val b64 = android.util.Base64.encodeToString(
             sb.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
         )
-        return shOk("mkdir -p /sdcard/Android/Oxygen; echo '$b64' | base64 -d > $PERAPP")
+        return shOk("mkdir -p /sdcard/Android/Kin; echo '$b64' | base64 -d > $PERAPP")
     }
 
     fun setPerApp(pkg: String, mode: String, globalMode: String): Boolean {
