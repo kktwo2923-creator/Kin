@@ -30,6 +30,7 @@ private data class AutoStatus(
     val gpu: Int = -1,
     val load1: Float = -1f,
     val cpuBusy: Int = -1,
+    val curMa: Int = -1,
     val cpuMaxLittle: Int = 0,
     val cpuMaxBig: Int = 0,
     val charging: Boolean = false,
@@ -52,7 +53,7 @@ private data class AutoStatus(
                 fsm = m["fsm"] ?: "",
                 bucket = gi("bucket"), daypart = gi("daypart"),
                 alpha = gi("alpha"), conf = gi("conf"), temp = gi("temp"), batt = gi("batt"),
-                gpu = gi("gpu"), load1 = gf("load1"), cpuBusy = gi("cpu_busy"),
+                gpu = gi("gpu"), load1 = gf("load1"), cpuBusy = gi("cpu_busy"), curMa = gi("cur_ma"),
                 cpuMaxLittle = gi("cpu_max_little", 0), cpuMaxBig = gi("cpu_max_big", 0),
                 charging = gi("charging", 0) == 1, screen = gi("screen", 1),
                 lowbat = gi("lowbat", 0) == 1, valid = true,
@@ -179,6 +180,7 @@ fun AutoMonitorScreen() {
                 MonRow("GPU 占用", if (st.gpu >= 0) "${st.gpu}%" else "—")
                 MonRow("CPU 占用", if (st.cpuBusy >= 0) "${st.cpuBusy}%" else "—")
                 MonRow("系统负载", if (st.load1 >= 0) String.format("%.2f", st.load1) else "—")
+                MonRow("放电电流", if (st.curMa >= 0) "${st.curMa} mA" else if (st.charging) "充电中" else "—")
                 MonRow("屏幕", if (st.screen == 0) "息屏" else "亮屏")
                 if (st.lowbat) MonRow("低电省电", "已触发")
             }
