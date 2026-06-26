@@ -15,7 +15,7 @@ import org.json.JSONObject
  *  fsmEnable        主动调频(FSM):true=六状态实时调频率界;false=仅按学习 alpha 选整档
  *  coolLeanPerf     凉爽且低负载时是否允许冲性能档(对应 cool_lean="performance")
  *  learnRate        学习强度(/1000,1..1000)
- *  tickSec          决策周期(秒,亮屏;3..120)
+ *  tickSec          决策周期(秒,亮屏;2..120,默认2)
  *  drainHigh        高耗电判定(亮屏掉电率 %/h)
  *  autoBatteryEnable 低电自动省电开关
  *  lowBatt/critBatt 低电 / 极低电触发电量(%)
@@ -29,7 +29,7 @@ data class AutoModeCfg(
     val fsmEnable: Boolean = true,
     val coolLeanPerf: Boolean = false,
     val learnRate: Int = 80,
-    val tickSec: Int = 12,
+    val tickSec: Int = 2,
     val drainHigh: Int = 14,
     val autoBatteryEnable: Boolean = true,
     val lowBatt: Int = 20,
@@ -146,7 +146,7 @@ data class AutoModeCfg(
         a.put("fsm_enable", fsmEnable.toString())
         a.put("cool_lean", if (coolLeanPerf) "performance" else "")
         a.put("learn_rate", learnRate.coerceIn(1, 1000).toString())
-        a.put("tick_sec", tickSec.coerceIn(3, 120).toString())
+        a.put("tick_sec", tickSec.coerceIn(2, 120).toString())
         a.put("drain_high", drainHigh.coerceIn(1, 100).toString())
         a.put("auto_battery_enable", autoBatteryEnable.toString())
         a.put("low_batt", lowBatt.coerceIn(1, 100).toString())

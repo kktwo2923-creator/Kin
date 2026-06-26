@@ -128,11 +128,6 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                 ) { vm.update { c -> c.copy(learnRate = it) } }
                 HorizontalDivider()
                 AmSlider(
-                    "决策周期", "多久重新判断一次(秒);越小越灵敏但略多耗电",
-                    cfg.tickSec, 3, 60, unit = "s",
-                ) { vm.update { c -> c.copy(tickSec = it) } }
-                HorizontalDivider()
-                AmSlider(
                     "智能省电偏向", "把智能模式整体往省电推(0=关,越大越省电、略掉跟手);仅影响智能档",
                     cfg.batteryBias, 0, 300, unit = "", step = 10,
                 ) { vm.update { c -> c.copy(batteryBias = it) } }
