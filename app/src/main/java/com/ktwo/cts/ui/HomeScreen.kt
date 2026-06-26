@@ -163,7 +163,7 @@ fun HomeScreen() {
     }
 
     if (showPowerDetail && session.valid) {
-        PowerDetailDialog(session) { showPowerDetail = false }
+        PowerDetailDialog(session, cellCount) { showPowerDetail = false }
     }
 }
 

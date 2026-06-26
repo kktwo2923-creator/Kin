@@ -3,6 +3,8 @@ package com.ktwo.cts.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -108,21 +110,70 @@ fun PowerCard(s: PowerSession, onClick: () -> Unit) {
     }
 }
 
+/** 多线时间图: 功耗(W,主轴) + 电量/温度/电压(各自归一化叠加)。 */
 @Composable
-fun PowerDetailDialog(s: PowerSession, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
-        TonalCard(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("功耗详情 · ${if (s.charging) "充电" else "放电"}",
+fun MultiSeriesChart(samples: List<com.ktwo.cts.data.PwrSample>, cellCount: Int, modifier: Modifier) {
+    if (samples.size < 2) { Spacer(modifier); return }
+    val cBlue = Color(0xFF2563EB); val cGreen = Color(0xFF22C55E)
+    val cTemp = Color(0xFFFB7185); val cVolt = Color(0xFFF59E0B)
+    val watts = samples.map { com.ktwo.cts.data.PowerHistory.watt(it.curMa, it.voltMv, cellCount) }
+    val maxW = (watts.max().coerceAtLeast(1.0))
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        fun line(vals: List<Double>, mn: Double, mx: Double, color: Color, fill: Boolean) {
+            val rng = (mx - mn).let { if (it > 1e-6) it else 1.0 }
+            val n = vals.size; val dx = w / (n - 1)
+            val path = Path()
+            vals.forEachIndexed { i, v ->
+                val x = i * dx
+                val y = h - ((v - mn) / rng * h).toFloat()
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, color, style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+        // 网格
+        for (g in 0..4) {
+            val y = h * g / 4
+            drawLine(Color(0x22000000), Offset(0f, y), Offset(w, y), 1f)
+        }
+        line(watts, 0.0, maxW, cBlue, true)
+        line(samples.map { it.level.toDouble() }, 0.0, 100.0, cGreen, false)
+        line(samples.map { it.tempDc / 10.0 }, 20.0, 60.0, cTemp, false)
+        line(samples.map { it.voltMv / 1000.0 }, 3.2, 4.5, cVolt, false)
+    }
+}
+
+@Composable
+private fun legendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Canvas(Modifier.size(10.dp)) { drawCircle(color) }
+        Text(label, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+fun PowerDetailDialog(s: PowerSession, cellCount: Int, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        val scroll = rememberScrollState()
+        TonalCard(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(Modifier.padding(20.dp).verticalScroll(scroll),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("功耗 / 电量曲线 · ${if (s.charging) "充电" else "放电"}",
                     style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Sparkline(s.fullCurve.ifEmpty { s.curve },
-                    Modifier.fillMaxWidth().height(120.dp), MaterialTheme.colorScheme.primary)
-                Text("近 ${fmtDur(s.durationSec)} · 共 ${s.fullCurve.size} 采样点(每 30s)",
+                Text("时间点详细数据", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                MultiSeriesChart(s.samples, cellCount, Modifier.fillMaxWidth().height(220.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    legendDot(Color(0xFF2563EB), "功耗")
+                    legendDot(Color(0xFF22C55E), "电量")
+                    legendDot(Color(0xFFFB7185), "温度")
+                    legendDot(Color(0xFFF59E0B), "电压")
+                }
+                Text("${fmtClock(s.startTs)} → 现在 · ${fmtDur(s.durationSec)} · ${s.samples.size} 点(每30s)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    kv("开始时间", fmtClock(s.startTs))
-                    kv("时长", fmtDur(s.durationSec))
                     kv("当前功耗", "%.2f W".format(s.curWatt))
                     kv("平均功耗", "%.2f W".format(s.avgWatt))
                     kv("最高功耗", "%.2f W".format(s.maxWatt))

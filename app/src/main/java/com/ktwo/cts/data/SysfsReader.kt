@@ -133,11 +133,12 @@ object SysfsReader {
         val t = readFileOrRoot("$BATT/temp")?.toDoubleOrNull() ?: return -999.0
         return if (abs(t) > 200) t / 10.0 else t   // deci-℃ → ℃
     }
-    private fun chargeFullMah(): Double {
+    fun capacityMah(): Double {
         val f = (readFileOrRoot("$BATT/charge_full")
             ?: readFileOrRoot("$BATT/charge_full_design"))?.toDoubleOrNull() ?: return 0.0
         return if (f > 100_000) f / 1000.0 else f   // µAh → mAh
     }
+    private fun chargeFullMah(): Double = capacityMah()
     fun currentMa(): Double {
         val i = rawCurrent() ?: return 0.0
         val a = abs(i)

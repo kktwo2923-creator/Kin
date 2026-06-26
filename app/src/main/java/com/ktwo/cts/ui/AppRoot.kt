@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.runtime.*
 import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +50,7 @@ private val TABS_NORMAL = listOf(
 private val TABS_SMART = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
     TopDest("monitor",  "监控", Icons.Outlined.Insights),
+    TopDest("records",  "记录", Icons.Outlined.Timeline),
     TopDest("logs",     "日志", CtsIcons.Logs),
     TopDest("settings", "设置", CtsIcons.Settings),
 )
@@ -91,7 +93,7 @@ fun AppRoot() {
         LaunchedEffect(smartOn, curDestRoute) {
             if (smartOn && (curDestRoute == "cpu" || curDestRoute == "apps")) {
                 nav.navigate("monitor") { launchSingleTop = true }
-            } else if (!smartOn && curDestRoute == "monitor") {
+            } else if (!smartOn && (curDestRoute == "monitor" || curDestRoute == "records")) {
                 nav.navigate("home") { launchSingleTop = true }
             }
         }
@@ -141,6 +143,7 @@ fun AppRoot() {
                     composable("cpu")      { CpuControlScreen() }
                     composable("apps")     { AppsScreen() }
                     composable("monitor")  { AutoMonitorScreen() }
+                    composable("records")  { RecordsScreen() }
                     composable("logs")     { LogScreen() }
                     composable("settings") {
                         SettingsScreen(

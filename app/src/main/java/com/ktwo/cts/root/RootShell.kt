@@ -218,6 +218,15 @@ object RootShell {
         return shOut("cat $CTS_DIR/power_log.txt 2>/dev/null").joinToString("\n")
     }
 
+    /** 读充放电会话汇总(daemon power_sessions.txt: type,startTs,endTs,startLv,endLv,avgMw,avgVolt)。 */
+    fun readPowerSessions(): String {
+        runCatching {
+            val f = java.io.File("$CTS_DIR/power_sessions.txt")
+            if (f.canRead()) { val s = f.readText(); if (s.isNotBlank()) return s }
+        }
+        return shOut("cat $CTS_DIR/power_sessions.txt 2>/dev/null").joinToString("\n")
+    }
+
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
     fun readAutoStatus(): String {
         runCatching {
