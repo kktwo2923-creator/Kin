@@ -209,6 +209,15 @@ object RootShell {
         else
             shOk("settings put system min_refresh_rate $hz; settings put system peak_refresh_rate $hz")
 
+    /** 读功耗记录(daemon 每 30s 追加的 power_log.txt: ts,level,curMa,voltMv,tempDc,chg)。 */
+    fun readPowerLog(): String {
+        runCatching {
+            val f = java.io.File("$CTS_DIR/power_log.txt")
+            if (f.canRead()) { val s = f.readText(); if (s.isNotBlank()) return s }
+        }
+        return shOut("cat $CTS_DIR/power_log.txt 2>/dev/null").joinToString("\n")
+    }
+
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
     fun readAutoStatus(): String {
         runCatching {

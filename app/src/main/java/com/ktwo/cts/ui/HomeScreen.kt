@@ -36,11 +36,22 @@ fun HomeScreen() {
     var currentMode by remember { mutableStateOf("") }
 
     val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 2)
-    var power by remember { mutableStateOf<com.ktwo.cts.data.SysfsReader.PowerInfo?>(null) }
+    var session by remember { mutableStateOf(com.ktwo.cts.data.PowerSession.EMPTY) }
+    var showPowerDetail by remember { mutableStateOf(false) }
     LaunchedEffect(cellCount) {
         while (isActive) {
-            power = withContext(Dispatchers.IO) { com.ktwo.cts.data.SysfsReader.powerInfo(cellCount) }
-            delay(2500)
+            val s = withContext(Dispatchers.IO) {
+                val raw = RootShell.readPowerLog()
+                val parsed = com.ktwo.cts.data.PowerHistory.parse(raw, cellCount)
+                // 头部数值用实时读数, 减少日志最多 30s 的延迟(会话/曲线/平均仍来自日志)
+                if (parsed.valid) {
+                    val live = com.ktwo.cts.data.SysfsReader.powerInfo(cellCount)
+                    parsed.copy(curWatt = live.watt, level = live.battPct,
+                        voltageV = live.voltageV, tempC = live.battTempC)
+                } else parsed
+            }
+            session = s
+            delay(6000)
         }
     }
 
@@ -136,24 +147,7 @@ fun HomeScreen() {
                 )
             }
 
-            power?.let { p ->
-                InfoCard(
-                    title = "功耗概览",
-                    rows = buildList {
-                        add("实时功率" to if (p.watt > 0.0) "%.2f W".format(p.watt) else "—")
-                        add("电流" to when {
-                            p.currentMa <= 0 -> "—"
-                            p.charging -> "充电 %.0f mA".format(p.currentMa)
-                            else -> "放电 %.0f mA".format(p.currentMa)
-                        })
-                        add("电池电压" to if (p.voltageV > 0.0) "%.2f V".format(p.voltageV) else "—")
-                        add("电池温度" to if (p.battTempC > -100.0) "%.1f℃".format(p.battTempC) else "—")
-                        add("当前电量" to if (p.battPct >= 0) "${p.battPct}%" else "—")
-                        if (!p.charging && p.drainPph > 0.0) add("掉电速率" to "%.1f %%/h".format(p.drainPph))
-                        if (!p.charging && p.etaMin > 0) add("预计续航" to fmtEta(p.etaMin))
-                    }
-                )
-            }
+            PowerCard(session) { showPowerDetail = true }
 
             InfoCard(
                 title = "调度状态",
@@ -167,10 +161,11 @@ fun HomeScreen() {
             Spacer(Modifier.height(96.dp))
         }
     }
-}
 
-private fun fmtEta(min: Int): String =
-    if (min >= 60) "${min / 60}小时${(min % 60).toString().padStart(2, '0')}分" else "${min}分钟"
+    if (showPowerDetail && session.valid) {
+        PowerDetailDialog(session) { showPowerDetail = false }
+    }
+}
 
 @Composable
 fun ModeGrid(selectedKey: String, enabled: Boolean = true, onSelect: (Mode) -> Unit) {
