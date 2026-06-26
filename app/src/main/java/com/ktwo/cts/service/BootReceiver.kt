@@ -15,9 +15,14 @@ class BootReceiver : BroadcastReceiver() {
                 restoreUserConfig(ctx)   // 数据恢复与自启开关无关, 始终执行
                 // 重新断言无障碍授权: 部分 ROM 重启会掉 sideload 应用的无障碍, root 写回 secure settings
                 if (Prefs.a11yWanted(ctx) && RootShell.isRooted()) RootShell.setAccessibility(true)
-                // 刷新率手动锁定重应用(部分 ROM 重启会复位 min/peak_refresh_rate)
+                // 刷新率手动锁定重应用(ColorOS 重启会复位刷新率档位)。OEM 显示服务在 BOOT_COMPLETED
+                // 后才起, 一次写常被它覆盖 → 立即写一次, 晚 9s 再写一次。
                 val rr = Prefs.refreshRate(ctx)
-                if (rr > 0 && RootShell.isRooted()) RootShell.setRefreshRate(rr)
+                if (rr > 0 && RootShell.isRooted()) {
+                    RootShell.setRefreshRate(ctx, rr)
+                    delay(9000)
+                    RootShell.setRefreshRate(ctx, rr)
+                }
                 if (Prefs.autostart(ctx)) {
                     if (Prefs.enabled(ctx) && !RootShell.daemonAlive()) ScheduleService.start(ctx)
                     if (Prefs.notifyEnabled(ctx)) NotifyService.start(ctx)

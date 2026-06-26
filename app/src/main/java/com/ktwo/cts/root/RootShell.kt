@@ -1,5 +1,8 @@
 package com.ktwo.cts.root
 
+import android.content.Context
+import android.hardware.display.DisplayManager
+import android.view.Display
 import com.topjohnwu.superuser.Shell
 
 object RootShell {
@@ -223,15 +226,67 @@ object RootShell {
     fun daemonAlive(): Boolean =
         shOut("pidof Kinetic 2>/dev/null").firstOrNull()?.isNotBlank() == true
 
+    /** 面板支持的、刷新率≈hz 的显示模式物理分辨率(取面积最大), 用 Display API 枚举(无需 root)。 */
+    private fun displayModeRes(ctx: Context, hz: Int): Pair<Int, Int>? = runCatching {
+        val dm = ctx.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val disp = dm.getDisplay(Display.DEFAULT_DISPLAY)
+        disp.supportedModes
+            .filter { kotlin.math.abs(it.refreshRate - hz) < 1.5f }
+            .maxByOrNull { it.physicalWidth.toLong() * it.physicalHeight }
+            ?.let { it.physicalWidth to it.physicalHeight }
+    }.getOrNull()
+
+    /** 面板最高刷新率(整数 Hz), 读不到回退 165。 */
+    private fun panelMaxHz(ctx: Context): Int = runCatching {
+        val dm = ctx.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        dm.getDisplay(Display.DEFAULT_DISPLAY).supportedModes.maxOf { it.refreshRate }
+            .toInt().coerceIn(60, 240)
+    }.getOrDefault(165)
+
     /**
-     * 刷新率手动档(root 写 system settings, 持久跨重启)。
-     * hz<=0=自动(min 60 / peak 144, 系统按面板封顶); 否则锁定 min=peak=hz。
+     * 刷新率手动档(root)。hz<=0=自动(面板 60..max 浮动); 否则锁定到 hz。
+     * OxygenOS/ColorOS 的 OplusRefreshRatePolicy 会覆盖纯 AOSP 的 system min/peak,
+     * 所以必须同时写: ① OEM picker(secure 的 oplus/coloros/oneplus 键, 枚举值) +
+     * ② AOSP min/peak/user(浮点 "120.0") + ③ 用 cmd display 精确锁定该模式(可达 90/144/165)。
+     * 144/165 需面板本身暴露该模式; 否则被 OEM 档位封到 120。
      */
-    fun setRefreshRate(hz: Int): Boolean =
-        if (hz <= 0)
-            shOk("settings put system min_refresh_rate 60; settings put system peak_refresh_rate 165")
-        else
-            shOk("settings put system min_refresh_rate $hz; settings put system peak_refresh_rate $hz")
+    fun setRefreshRate(ctx: Context, hz: Int): Boolean {
+        val res = if (hz > 0) displayModeRes(ctx, hz) else null
+        return setRefreshRate(hz, res?.first ?: 0, res?.second ?: 0, panelMaxHz(ctx))
+    }
+
+    fun setRefreshRate(hz: Int, modeW: Int = 0, modeH: Int = 0, panelMax: Int = 165): Boolean {
+        val cmds = ArrayList<String>()
+        // OEM ColorOS 刷新率档位键(secure): 0=自动 2=标准(60) 3=高(面板最高)。各机型命名不一, 全写一遍, 不存在也无害。
+        val oemKeys = listOf(
+            "oplus_customize_screen_refresh_rate", "coloros_screen_refresh_rate",
+            "oplus_screen_refresh_rate", "oneplus_screen_refresh_rate",
+        )
+        if (hz <= 0) {
+            for (k in oemKeys) cmds += "settings put secure $k 0"
+            cmds += "settings put secure oplus_customize_min_refresh_rate 0"
+            cmds += "settings put secure oplus_customize_peak_refresh_rate 0"
+            cmds += "settings put system min_refresh_rate 60.0"
+            cmds += "settings put system peak_refresh_rate $panelMax.0"
+            cmds += "settings delete system user_refresh_rate"
+            cmds += "cmd display clear-user-preferred-display-mode"
+        } else {
+            val f = "$hz.0"
+            val oem = if (hz <= 60) 2 else 3       // 标准 / 高
+            val mp  = if (hz <= 60) 2 else 1
+            for (k in oemKeys) cmds += "settings put secure $k $oem"
+            cmds += "settings put secure oplus_customize_min_refresh_rate $mp"
+            cmds += "settings put secure oplus_customize_peak_refresh_rate $mp"
+            // AOSP DisplayModeDirector: 浮点, 硬锁 min==peak
+            cmds += "settings put system min_refresh_rate $f"
+            cmds += "settings put system peak_refresh_rate $f"
+            cmds += "settings put system user_refresh_rate $f"
+            // 版本稳定的精确模式锁(能表达档位选择器到不了的 90/144/165, 前提是面板暴露该模式)
+            if (modeW > 0 && modeH > 0)
+                cmds += "cmd display set-user-preferred-display-mode $modeW $modeH $hz"
+        }
+        return shOk(cmds.joinToString("; "))
+    }
 
     /** 读功耗记录(daemon 每 30s 追加的 power_log.txt: ts,level,curMa,voltMv,tempDc,chg)。 */
     fun readPowerLog(): String {

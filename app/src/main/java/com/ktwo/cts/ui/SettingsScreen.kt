@@ -188,7 +188,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
                                 onClick = {
                                     scope.launch {
                                         Prefs.setRefreshRate(ctx, hz)
-                                        withContext(Dispatchers.IO) { RootShell.setRefreshRate(hz) }
+                                        withContext(Dispatchers.IO) { RootShell.setRefreshRate(ctx, hz) }
                                     }
                                 },
                                 label = { Text(label) },
