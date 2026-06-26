@@ -39,8 +39,7 @@ object RootShell {
      * 那是"当前生效档", auto 下会被解析出的基础档/外部电源 App/用户脚本改写,
      * 据此判断会让 smartOn 反复抖动, 进而误触发底栏 tab 切换与「记录/应用」页跳转。
      */
-    fun isSmartOn(): Boolean =
-        readGlobalMode() == "auto" || currentMode() == "auto"
+    fun isSmartOn(): Boolean = readGlobalMode() == "auto"
 
     fun moduleInstalled(): Boolean =
         shOk("[ -d /data/adb/modules/Kin ] || [ -d /data/adb/ksu/modules/Kin ]")
@@ -87,6 +86,26 @@ object RootShell {
         val line = shOut("grep '^\\*' $PERAPP 2>/dev/null | head -1").firstOrNull()?.trim().orEmpty()
         val sp = line.split(Regex("\\s+"))
         return if (sp.size >= 2) sp[1] else "balance"
+    }
+
+    /**
+     * 探测「智能档是否开启」, 区分"读到了"与"没读到":
+     *   true  = 全局默认是 auto;  false = 读到了其它有效模式;  null = 读不到(root 未就绪/文件不可读)。
+     * 供底栏冷启动判定: null 时调用方应忽略本次, 而不是误判成"关"。
+     * 优先直读文件(部分设备 App 有存储读权限), 失败再走 root；都拿不到 * 行即返回 null。
+     */
+    fun probeSmartOn(): Boolean? {
+        val raw = runCatching {
+            val f = java.io.File(PERAPP)
+            if (f.canRead()) f.readText() else null
+        }.getOrNull()
+            ?: shOut("cat $PERAPP 2>/dev/null").joinToString("\n").ifBlank { null }
+            ?: return null
+        val star = raw.lineSequence().map { it.trim() }.firstOrNull { it.startsWith("*") }
+            ?: return null
+        val mode = star.split(Regex("\\s+")).getOrNull(1)?.trim()?.ifBlank { null }
+            ?: return null
+        return mode == "auto"
     }
 
     /** 写回整个画像表 + 全局默认;base64 落地避免特殊字符破坏 shell。 */

@@ -75,15 +75,31 @@ fun AppRoot() {
     }
 
     // 智能调度是否开启 → 决定底栏 tab 集(开:监控/记录;关:CPU/应用)。
-    // 唯一可信来源是持久化的 Prefs(开关时写入), 启动时从 root 探测一次同步进 Prefs。
-    // 【不再每 3s 轮询 root shell】—— shell 偶发失败会让值在 true/false 抖动, tab 集随之乱切,
-    // 把用户正点开的「监控/记录(或 CPU/应用)」反复弹回首页。
-    val smartOn by Prefs.smartEnabledFlow(ctx).collectAsState(initial = null)
+    // 先用上次落盘的 Prefs 值即时显示(避免冷启动空窗), 后台持续探测 root 状态,
+    // 【连续两次读到一致的新值时才更新】—— 单次 shell 偶发失败(冷启动 root 未就绪/读空)
+    // 不会改变结果, 既防抖动乱切 tab, 又能在 root 就绪后可靠收敛到真实状态。
+    val persistedSmart by Prefs.smartEnabledFlow(ctx).collectAsState(initial = null)
+    var liveSmart by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
-        // 启动同步一次: 把 root 实际状态写回 Prefs(兼顾外部/旧版本已开启智能的情况)。
-        val probed = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
-        if (probed != smartOn) Prefs.setSmartEnabled(ctx, probed)
+        var prev: Boolean? = null
+        while (true) {
+            // null = 这次没读到(root 未就绪/文件不可读): 直接忽略, 不污染判定, 下次再试。
+            val now = withContext(Dispatchers.IO) { RootShell.probeSmartOn() }
+            if (now != null) {
+                // 首次判定(还没有任何已落盘的值): 直接采纳, tab 集尽快到位;
+                // 之后的【变化】必须连续两次一致才认账 —— 单次误读不改结果, 防抖动乱切 tab。
+                val firstEver = liveSmart == null && persistedSmart == null
+                val accept = if (firstEver) true else (now == prev)
+                if (accept && now != liveSmart) {
+                    liveSmart = now
+                    Prefs.setSmartEnabled(ctx, now)
+                }
+                prev = now
+            }
+            delay(1500)
+        }
     }
+    val smartOn: Boolean? = liveSmart ?: persistedSmart
     val smart = smartOn == true
     val tabs = if (smart) TABS_SMART else TABS_NORMAL
 
@@ -92,19 +108,18 @@ fun AppRoot() {
             curRoute?.any { it.route == d.route } == true
         }.coerceAtLeast(0)
         val curDestRoute = entry?.destination?.route
-        // 当前 tab 集(随智能调度切换)允许的路由 + 两个详情页。
-        val validRoutes = remember(tabs) {
-            (tabs.map { it.route } + listOf("about", "automode")).toSet()
-        }
-        // 切换智能调度后, 若正停在【当前 tab 集里已不存在】的页面(如智能开后停在"应用",
-        // 或智能关后停在"记录"), 统一回首页。只在状态已确定(smartOn!=null)且路由确实越界时跳,
-        // 不再无条件踢到"监控" —— 之前那版会因 smartOn 抖动把"记录/应用"也弹回监控。
+        // 切换智能调度后, 若正停在【另一套 tab 才有】的页面(智能开却停在 CPU/应用,
+        // 或智能关却停在 监控/记录), 回首页。其余一律不动 ——
+        // 显式只针对这 4 个"跨集"路由, 直接读 smartOn(本效应的 key, 不会取到旧值),
+        // 所以智能开时点"监控/记录"永远不会被它误踢(它们不在被踢名单里)。
         LaunchedEffect(smartOn, curDestRoute) {
-            if (smartOn == null) return@LaunchedEffect
+            val s = smartOn ?: return@LaunchedEffect          // 状态未定前不跳转
             val r = curDestRoute ?: return@LaunchedEffect
-            if (r !in validRoutes) {
+            val stranded = if (s) (r == "cpu" || r == "apps")
+                           else   (r == "monitor" || r == "records")
+            if (stranded) {
                 nav.navigate("home") {
-                    popUpTo(nav.graph.findStartDestination().id) { saveState = false }
+                    popUpTo(nav.graph.findStartDestination().id)
                     launchSingleTop = true
                 }
             }
