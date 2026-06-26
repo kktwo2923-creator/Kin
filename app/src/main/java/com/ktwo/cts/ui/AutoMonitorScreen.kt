@@ -190,7 +190,11 @@ fun AutoMonitorScreen() {
                 MonRow("GPU 占用", if (st.gpu >= 0) "${st.gpu}%" else "—")
                 MonRow("CPU 占用", if (st.cpuBusy >= 0) "${st.cpuBusy}%" else "—")
                 MonRow("系统负载", if (st.load1 >= 0) String.format("%.2f", st.load1) else "—")
-                MonRow("放电电流", if (st.curMa >= 0) "${st.curMa} mA" else if (st.charging) "充电中" else "—")
+                MonRow("电流", when {
+                    st.curMa < 0 -> "—"
+                    st.charging  -> "充电 ${st.curMa} mA"
+                    else         -> "放电 ${st.curMa} mA"
+                })
                 MonRow("屏幕", if (st.screen == 0) "息屏" else "亮屏")
                 if (st.lowbat) MonRow("低电省电", "已触发")
             }

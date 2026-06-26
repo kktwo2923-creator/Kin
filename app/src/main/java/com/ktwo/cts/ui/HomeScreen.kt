@@ -141,10 +141,10 @@ fun HomeScreen() {
                     title = "功耗概览",
                     rows = buildList {
                         add("实时功率" to if (p.watt > 0.0) "%.2f W".format(p.watt) else "—")
-                        add("放电电流" to when {
-                            p.charging -> "充电中"
-                            p.currentMa > 0 -> "%.0f mA".format(p.currentMa)
-                            else -> "—"
+                        add("电流" to when {
+                            p.currentMa <= 0 -> "—"
+                            p.charging -> "充电 %.0f mA".format(p.currentMa)
+                            else -> "放电 %.0f mA".format(p.currentMa)
                         })
                         add("电池电压" to if (p.voltageV > 0.0) "%.2f V".format(p.voltageV) else "—")
                         add("电池温度" to if (p.battTempC > -100.0) "%.1f℃".format(p.battTempC) else "—")
