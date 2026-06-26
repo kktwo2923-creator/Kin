@@ -35,26 +35,6 @@ fun HomeScreen() {
     var isRoot by remember { mutableStateOf(true) }
     var currentMode by remember { mutableStateOf("") }
 
-    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 2)
-    var session by remember { mutableStateOf(com.ktwo.cts.data.PowerSession.EMPTY) }
-    var showPowerDetail by remember { mutableStateOf(false) }
-    LaunchedEffect(cellCount) {
-        while (isActive) {
-            val s = withContext(Dispatchers.IO) {
-                val raw = RootShell.readPowerLog()
-                val parsed = com.ktwo.cts.data.PowerHistory.parse(raw, cellCount)
-                // 头部数值用实时读数, 减少日志最多 30s 的延迟(会话/曲线/平均仍来自日志)
-                if (parsed.valid) {
-                    val live = com.ktwo.cts.data.SysfsReader.powerInfo(cellCount)
-                    parsed.copy(curWatt = live.watt, level = live.battPct,
-                        voltageV = live.voltageV, tempC = live.battTempC)
-                } else parsed
-            }
-            session = s
-            delay(6000)
-        }
-    }
-
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             isRoot = RootShell.isRooted()
@@ -147,8 +127,6 @@ fun HomeScreen() {
                 )
             }
 
-            PowerCard(session) { showPowerDetail = true }
-
             InfoCard(
                 title = "调度状态",
                 rows = listOf(
@@ -160,10 +138,6 @@ fun HomeScreen() {
 
             Spacer(Modifier.height(96.dp))
         }
-    }
-
-    if (showPowerDetail && session.valid) {
-        PowerDetailDialog(session, cellCount) { showPowerDetail = false }
     }
 }
 

@@ -32,18 +32,22 @@ fun RecordsScreen() {
 
     LaunchedEffect(cellCount) {
         while (isActive) {
+            // 整段读取/聚合包在 runCatching 内: 任何 sysfs/解析异常都退回上次数据,
+            // 不让协程未捕获异常把「记录」页直接崩掉。
             data = withContext(Dispatchers.IO) {
-                val log = RootShell.readPowerLog()
-                val sess = RootShell.readPowerSessions()
-                val cap = SysfsReader.capacityMah()
-                var d = PowerHistory.records(log, sess, cellCount, cap)
-                if (d.valid) {
-                    val live = SysfsReader.powerInfo(cellCount)
-                    d = d.copy(session = d.session.copy(
-                        curWatt = live.watt, level = live.battPct,
-                        voltageV = live.voltageV, tempC = live.battTempC))
-                }
-                d
+                runCatching {
+                    val log = RootShell.readPowerLog()
+                    val sess = RootShell.readPowerSessions()
+                    val cap = SysfsReader.capacityMah()
+                    var d = PowerHistory.records(log, sess, cellCount, cap)
+                    if (d.valid) {
+                        val live = SysfsReader.powerInfo(cellCount)
+                        d = d.copy(session = d.session.copy(
+                            curWatt = live.watt, level = live.battPct,
+                            voltageV = live.voltageV, tempC = live.battTempC))
+                    }
+                    d
+                }.getOrDefault(data)
             }
             delay(6000)
         }
