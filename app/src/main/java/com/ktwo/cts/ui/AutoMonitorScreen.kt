@@ -91,6 +91,7 @@ fun AutoMonitorScreen() {
     Column(
         Modifier
             .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.statusBars)   // 标题下移, 不再压系统状态栏
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

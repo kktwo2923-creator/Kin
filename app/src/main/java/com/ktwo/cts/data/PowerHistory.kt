@@ -30,6 +30,17 @@ data class PowerSession(
 data class TypeSummary(val count: Int, val avgW: Double)
 data class EtaPair(val remainMin: Int, val fullMin: Int)   // 当前电量剩余 / 满电(0→100)
 
+/** 一条充电/放电会话(供"充电/放电总结"点开后逐条查看, 对齐 BatteryRecorder)。 */
+data class SessionRow(
+    val charging: Boolean,
+    val startTs: Long, val endTs: Long,
+    val startLv: Int, val endLv: Int,
+    val avgW: Double,
+) {
+    val durationSec: Long get() = (endTs - startTs).coerceAtLeast(0)
+    val deltaLv: Int get() = endLv - startLv   // 充电为正, 放电为负
+}
+
 /** "记录"页所需的完整聚合数据。 */
 data class RecordsData(
     val valid: Boolean,
@@ -40,10 +51,12 @@ data class RecordsData(
     val sceneOffW: Double,   // 息屏放电平均功率
     val etaOff: EtaPair?,    // 息屏续航
     val etaOn: EtaPair?,     // 亮屏续航
+    val chargeRows: List<SessionRow>,     // 每次充电(新→旧)
+    val dischargeRows: List<SessionRow>,  // 每次放电(新→旧)
 ) {
     companion object {
         val EMPTY = RecordsData(false, PowerSession.EMPTY, TypeSummary(0, 0.0), TypeSummary(0, 0.0),
-            0.0, 0.0, null, null)
+            0.0, 0.0, null, null, emptyList(), emptyList())
     }
 }
 
@@ -114,23 +127,33 @@ object PowerHistory {
             return EtaPair((fullH * level / 100.0 * 60).toInt(), (fullH * 60).toInt())
         }
 
-        // 充放电总结(来自 sessions 文件): type,startTs,endTs,startLv,endLv,avgMw,avgVolt
-        var cCnt = 0; var cSum = 0.0; var dCnt = 0; var dSum = 0.0
+        // 充放电总结 + 逐条记录(来自 sessions 文件): type,startTs,endTs,startLv,endLv,avgMw,avgVolt
+        val chargeRows = ArrayList<SessionRow>(); val dischargeRows = ArrayList<SessionRow>()
         sessionsRaw.lineSequence().forEach { line ->
             val p = line.split(','); if (p.size < 7) return@forEach
             runCatching {
-                val type = p[0].trim().toInt(); val avgMw = p[5].trim().toInt(); val avgVolt = p[6].trim().toInt()
+                val type = p[0].trim().toInt()
+                val sTs = p[1].trim().toLong(); val eTs = p[2].trim().toLong()
+                val sLv = p[3].trim().toInt(); val eLv = p[4].trim().toInt()
+                val avgMw = p[5].trim().toInt(); val avgVolt = p[6].trim().toInt()
                 val mul = if (cellCount >= 2 && avgVolt in 1 until 6000) 2.0 else 1.0
                 val w = avgMw / 1000.0 * mul
-                if (type == 1) { cCnt++; cSum += w } else { dCnt++; dSum += w }
+                val row = SessionRow(type == 1, sTs, eTs, sLv, eLv, w)
+                if (type == 1) chargeRows.add(row) else dischargeRows.add(row)
             }
+        }
+        chargeRows.reverse(); dischargeRows.reverse()   // 新→旧
+        fun avgOf(rows: List<SessionRow>): Double {
+            val w = rows.map { it.avgW }.filter { it > 0.0 }
+            return if (w.isNotEmpty()) w.average() else 0.0
         }
         return RecordsData(
             valid = true, session = session,
-            charge = TypeSummary(cCnt, if (cCnt > 0) cSum / cCnt else 0.0),
-            discharge = TypeSummary(dCnt, if (dCnt > 0) dSum / dCnt else 0.0),
+            charge = TypeSummary(chargeRows.size, avgOf(chargeRows)),
+            discharge = TypeSummary(dischargeRows.size, avgOf(dischargeRows)),
             sceneOnW = onW, sceneOffW = offW,
             etaOff = eta(offW), etaOn = eta(onW),
+            chargeRows = chargeRows, dischargeRows = dischargeRows,
         )
     }
 }

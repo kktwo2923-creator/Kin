@@ -1,19 +1,24 @@
 package com.ktwo.cts.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.ktwo.cts.data.EtaPair
 import com.ktwo.cts.data.PowerHistory
 import com.ktwo.cts.data.RecordsData
+import com.ktwo.cts.data.SessionRow
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.SysfsReader
 import com.ktwo.cts.data.TypeSummary
@@ -29,6 +34,8 @@ fun RecordsScreen() {
     val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 2)
     var data by remember { mutableStateOf(RecordsData.EMPTY) }
     var showDetail by remember { mutableStateOf(false) }
+    // null=不显示;true=充电逐条;false=放电逐条
+    var listType by remember { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(cellCount) {
         while (isActive) {
@@ -54,7 +61,9 @@ fun RecordsScreen() {
     }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize()
+            .windowInsetsPadding(WindowInsets.statusBars)   // 标题下移, 不再压系统状态栏
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -70,8 +79,8 @@ fun RecordsScreen() {
             PowerCard(data.session) { showDetail = true }
 
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                SummaryCard("充电总结", data.charge, Modifier.weight(1f))
-                SummaryCard("放电总结", data.discharge, Modifier.weight(1f))
+                SummaryCard("充电总结", data.charge, Modifier.weight(1f)) { listType = true }
+                SummaryCard("放电总结", data.discharge, Modifier.weight(1f)) { listType = false }
             }
 
             if (data.etaOff != null || data.etaOn != null) {
@@ -101,17 +110,95 @@ fun RecordsScreen() {
     if (showDetail && data.session.valid) {
         PowerDetailDialog(data.session, cellCount) { showDetail = false }
     }
+    listType?.let { charge ->
+        val rows = if (charge) data.chargeRows else data.dischargeRows
+        SessionListDialog(if (charge) "充电记录" else "放电记录", charge, rows) { listType = null }
+    }
 }
 
 @Composable
-private fun SummaryCard(title: String, s: TypeSummary, modifier: Modifier) {
-    TonalCard(modifier) {
+private fun SummaryCard(title: String, s: TypeSummary, modifier: Modifier, onClick: () -> Unit) {
+    TonalCard(modifier.clickable(onClick = onClick)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text("逐条 ›", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             statRow("记录数", "${s.count} 次")
             statRow("平均功率", if (s.avgW > 0) "%.2f W".format(s.avgW) else "—")
         }
     }
+}
+
+/** 逐条充/放电记录(对齐 BatteryRecorder: 每回都能点开看)。 */
+@Composable
+private fun SessionListDialog(title: String, charging: Boolean, rows: List<SessionRow>, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        TonalCard(Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (rows.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                        Text("暂无记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(
+                        Modifier.heightIn(max = 460.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(rows) { r -> SessionRowItem(r, charging) }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("关闭") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionRowItem(r: SessionRow, charging: Boolean) {
+    TonalCard(
+        Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${fmtDay(r.startTs)} ${fmtHm(r.startTs)} → ${fmtHm(r.endTs)}",
+                    fontWeight = FontWeight.Medium)
+                Spacer(Modifier.weight(1f))
+                Text(if (r.avgW > 0) "%.2f W".format(r.avgW) else "—",
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                val lvl = if (charging) "电量 ${r.startLv}% → ${r.endLv}% (+${(r.deltaLv).coerceAtLeast(0)})"
+                          else "电量 ${r.startLv}% → ${r.endLv}% (${r.deltaLv})"
+                Text(lvl, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("时长 ${fmtDur(r.durationSec)}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+private fun fmtHm(ts: Long): String = runCatching {
+    java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ts * 1000))
+}.getOrDefault("—")
+
+private fun fmtDay(ts: Long): String = runCatching {
+    java.text.SimpleDateFormat("MM-dd", java.util.Locale.getDefault()).format(java.util.Date(ts * 1000))
+}.getOrDefault("")
+
+private fun fmtDur(sec: Long): String = when {
+    sec < 60 -> "${sec}s"
+    sec < 3600 -> "${sec / 60}m"
+    else -> "${sec / 3600}h${(sec % 3600) / 60}m"
 }
 
 @Composable
