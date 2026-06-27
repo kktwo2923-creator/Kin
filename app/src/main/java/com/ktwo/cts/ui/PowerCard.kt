@@ -90,11 +90,11 @@ fun PowerCard(s: PowerSession, onClick: () -> Unit) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    kv("开始时间", fmtClock(s.startTs))
+                    kv("时间段", "${fmtClock(s.startTs)} → 现在")
+                    kv("时长", fmtDur(s.durationSec))
                     kv("当前电量", if (s.level >= 0) "${s.level}%" else "—")
                     kv("电压", "%.3f V".format(s.voltageV))
                     kv("温度", "%.1f℃".format(s.tempC))
-                    kv("时长", fmtDur(s.durationSec))
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
