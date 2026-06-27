@@ -306,7 +306,8 @@ private fun statRow(k: String, v: String) {
             maxLines = 1,
             softWrap = false,
         )
-        Spacer(Modifier.weight(1f))
+        // 值占满 key 之后的剩余宽度并右对齐: 之前误加了 Spacer(weight) + 值再 weight(1f),
+        // 两者各分一半 → 值只剩半行宽, "57.60 W" 被省略成 "..."。去掉 Spacer 即修复。
         Text(
             v,
             fontWeight = FontWeight.Medium,
@@ -314,7 +315,7 @@ private fun statRow(k: String, v: String) {
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.End,
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier.weight(1f),
         )
     }
 }
