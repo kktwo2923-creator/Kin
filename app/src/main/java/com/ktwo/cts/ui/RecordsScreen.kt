@@ -162,8 +162,8 @@ private fun SummaryCard(title: String, s: TypeSummary, modifier: Modifier, onCli
                 Text("逐条 ›", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            statRow("记录数", "${s.count} 次")
-            statRow("平均功率", if (s.avgW > 0) "%.2f W".format(s.avgW) else "—")
+            statRow("记录数", "${s.count} 次", small = true)
+            statRow("平均功率", if (s.avgW > 0) "%.2f W".format(s.avgW) else "—", small = true)
         }
     }
 }
@@ -294,7 +294,9 @@ private fun fmtDur(sec: Long): String = when {
 }
 
 @Composable
-private fun statRow(k: String, v: String) {
+private fun statRow(k: String, v: String, small: Boolean = false) {
+    // small=true: 半宽总结卡片用小一号字体, 让 "38.05 W" 这类较长值也能整行放下。
+    val style = if (small) MaterialTheme.typography.bodyMedium else LocalTextStyle.current
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -302,6 +304,7 @@ private fun statRow(k: String, v: String) {
     ) {
         Text(
             k,
+            style = style,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             softWrap = false,
@@ -310,6 +313,7 @@ private fun statRow(k: String, v: String) {
         // 两者各分一半 → 值只剩半行宽, "57.60 W" 被省略成 "..."。去掉 Spacer 即修复。
         Text(
             v,
+            style = style,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             softWrap = false,
