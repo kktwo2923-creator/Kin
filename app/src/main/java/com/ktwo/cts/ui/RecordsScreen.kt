@@ -12,6 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -86,9 +88,12 @@ fun RecordsScreen() {
         } else {
             PowerCard(data.session) { showDetail = true }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                SummaryCard("充电总结", data.charge, Modifier.weight(1f)) { listType = true }
-                SummaryCard("放电总结", data.discharge, Modifier.weight(1f)) { listType = false }
+            Row(
+                Modifier.height(IntrinsicSize.Min),   // 两卡片等高: 取较高者的高度
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                SummaryCard("充电总结", data.charge, Modifier.weight(1f).fillMaxHeight()) { listType = true }
+                SummaryCard("放电总结", data.discharge, Modifier.weight(1f).fillMaxHeight()) { listType = false }
             }
 
             if (data.etaOff != null || data.etaOn != null) {
@@ -149,7 +154,8 @@ fun RecordsScreen() {
 @Composable
 private fun SummaryCard(title: String, s: TypeSummary, modifier: Modifier, onClick: () -> Unit) {
     TonalCard(modifier.clickable(onClick = onClick)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxHeight().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
@@ -158,6 +164,7 @@ private fun SummaryCard(title: String, s: TypeSummary, modifier: Modifier, onCli
             }
             statRow("记录数", "${s.count} 次")
             statRow("平均功率", if (s.avgW > 0) "%.2f W".format(s.avgW) else "—")
+            statRow("时间段", if (s.count > 0) "${fmtDay(s.firstTs)} → ${fmtDay(s.lastTs)}" else "—")
         }
     }
 }
@@ -289,9 +296,27 @@ private fun fmtDur(sec: Long): String = when {
 
 @Composable
 private fun statRow(k: String, v: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(k, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(v, fontWeight = FontWeight.Medium)
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            k,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            v,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f, fill = false),
+        )
     }
 }
 

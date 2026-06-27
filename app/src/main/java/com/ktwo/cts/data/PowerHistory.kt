@@ -27,7 +27,12 @@ data class PowerSession(
     }
 }
 
-data class TypeSummary(val count: Int, val avgW: Double)
+data class TypeSummary(
+    val count: Int,
+    val avgW: Double,
+    val firstTs: Long = 0L,   // 最早一条会话的起始时间(0=无记录)
+    val lastTs: Long = 0L,    // 最近一条会话的结束时间(0=无记录)
+)
 data class EtaPair(val remainMin: Int, val fullMin: Int)   // 当前电量剩余 / 满电(0→100)
 
 /** 一条充电/放电会话(供"充电/放电总结"点开后逐条查看, 对齐 BatteryRecorder)。 */
@@ -147,10 +152,17 @@ object PowerHistory {
             val w = rows.map { it.avgW }.filter { it > 0.0 }
             return if (w.isNotEmpty()) w.average() else 0.0
         }
+        // rows 为新→旧: 最早起始 = last().startTs, 最近结束 = first().endTs; 空列表退回 0。
+        fun summaryOf(rows: List<SessionRow>) = TypeSummary(
+            count = rows.size,
+            avgW = avgOf(rows),
+            firstTs = rows.lastOrNull()?.startTs ?: 0L,
+            lastTs = rows.firstOrNull()?.endTs ?: 0L,
+        )
         return RecordsData(
             valid = true, session = session,
-            charge = TypeSummary(chargeRows.size, avgOf(chargeRows)),
-            discharge = TypeSummary(dischargeRows.size, avgOf(dischargeRows)),
+            charge = summaryOf(chargeRows),
+            discharge = summaryOf(dischargeRows),
             sceneOnW = onW, sceneOffW = offW,
             etaOff = eta(offW), etaOn = eta(onW),
             chargeRows = chargeRows, dischargeRows = dischargeRows,
