@@ -101,7 +101,7 @@ fun CellCalibrationDialog(cancelable: Boolean = false, onDone: () -> Unit) {
                                 shape = RoundedCornerShape(14.dp)) { Text("单电芯") }
                         } else {
                             Button(onClick = { choose(1) }, modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(14.dp)) { Text(if (hasReading) "单电芯 (建议)" else "单电芯") }
+                                shape = RoundedCornerShape(14.dp)) { Text("单电芯") }
                         }
                     }
                     val dualBtn: @Composable RowScope.() -> Unit = {
