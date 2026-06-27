@@ -61,6 +61,7 @@ jobs:
       # 公益版(gongyi):免授权,安装即用
       - name: Upload 公益版 APKs (gongyi)
         uses: actions/upload-artifact@v4
+        continue-on-error: true       # 产物上传失败(配额满)不算编译失败
         with:
           name: CTS-gongyi
           path: |
@@ -71,6 +72,7 @@ jobs:
       # 捐赠版(juanzeng):卡密授权
       - name: Upload 捐赠版 APKs (juanzeng)
         uses: actions/upload-artifact@v4
+        continue-on-error: true       # 产物上传失败(配额满)不算编译失败
         with:
           name: CTS-juanzeng
           path: |
