@@ -164,7 +164,6 @@ private fun SummaryCard(title: String, s: TypeSummary, modifier: Modifier, onCli
             }
             statRow("记录数", "${s.count} 次")
             statRow("平均功率", if (s.avgW > 0) "%.2f W".format(s.avgW) else "—")
-            statRow("时间段", if (s.count > 0) "${fmtDay(s.firstTs)} → ${fmtDay(s.lastTs)}" else "—")
         }
     }
 }
