@@ -114,14 +114,30 @@ object Prefs {
         ctx.dataStore.edit { it[REFRESH_RATE_KEY] = hz }
     }
 
-    // 电芯数:默认 2(一加大电池多为双芯串联)。若功耗偏高一倍,改 1(voltage_now 已是整包电压)。
+    // 电芯数:默认 1(单芯, voltage_now 即整包电压, 功率不翻倍)。双芯串联机型在「记录」首开矫正
+    // 或「设置 → 重新矫正电池」里改为 2,届时 computeWatt 按整包电压判定是否 ×2。
     private val CELL_COUNT_KEY = intPreferencesKey("cell_count")
     fun cellCountFlow(ctx: Context): Flow<Int> =
-        ctx.dataStore.data.map { it[CELL_COUNT_KEY] ?: 2 }
+        ctx.dataStore.data.map { it[CELL_COUNT_KEY] ?: 1 }
     suspend fun cellCount(ctx: Context): Int =
-        ctx.dataStore.data.first()[CELL_COUNT_KEY] ?: 2
+        ctx.dataStore.data.first()[CELL_COUNT_KEY] ?: 1
     suspend fun setCellCount(ctx: Context, n: Int) {
         ctx.dataStore.edit { it[CELL_COUNT_KEY] = n }
+    }
+
+    // 电芯矫正标记:「记录」页首开时若为 false 则弹一次矫正对话框(确认单/双电芯)。选后置 true 不再打扰。
+    private val CELL_CALIBRATED_KEY = booleanPreferencesKey("cell_calibrated")
+    fun cellCalibratedFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[CELL_CALIBRATED_KEY] ?: false }
+    suspend fun setCellCalibrated(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[CELL_CALIBRATED_KEY] = b }
+    }
+    // 一次性矫正提交:同时写电芯数 + 置矫正完成(避免两次 edit)。
+    suspend fun commitCellCalibration(ctx: Context, cells: Int) {
+        ctx.dataStore.edit {
+            it[CELL_COUNT_KEY] = cells
+            it[CELL_CALIBRATED_KEY] = true
+        }
     }
 }
 

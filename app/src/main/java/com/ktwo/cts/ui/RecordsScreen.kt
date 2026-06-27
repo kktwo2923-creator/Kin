@@ -31,7 +31,9 @@ import kotlinx.coroutines.withContext
 @Composable
 fun RecordsScreen() {
     val ctx = LocalContext.current
-    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 2)
+    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 1)
+    // initial=true 避免首帧(flow 未发射)就闪一下矫正框; 真值到达后若为 false 才弹。
+    val calibrated by Prefs.cellCalibratedFlow(ctx).collectAsState(initial = true)
     var data by remember { mutableStateOf(RecordsData.EMPTY) }
     var showDetail by remember { mutableStateOf(false) }
     // null=不显示;true=充电逐条;false=放电逐条
@@ -113,6 +115,12 @@ fun RecordsScreen() {
     listType?.let { charge ->
         val rows = if (charge) data.chargeRows else data.dischargeRows
         SessionListDialog(if (charge) "充电记录" else "放电记录", charge, rows) { listType = null }
+    }
+
+    // 首次进入「记录」且未矫正 → 弹一次电芯矫正(强制选择, 选后置 cell_calibrated=true)。
+    // 选择后 flow 自动回流为 true, 对话框收起。
+    if (!calibrated) {
+        CellCalibrationDialog(cancelable = false, onDone = { /* flow 回流为 true 自动收起 */ })
     }
 }
 
