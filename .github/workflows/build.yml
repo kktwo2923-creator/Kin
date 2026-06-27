@@ -66,6 +66,7 @@ jobs:
           path: |
             dist/CTS-gongyi-release.apk
             dist/CTS-gongyi-debug.apk
+          retention-days: 2          # APK 较大, 短期保留, 避免占满 Actions 存储配额
 
       # 捐赠版(juanzeng):卡密授权
       - name: Upload 捐赠版 APKs (juanzeng)
@@ -75,6 +76,7 @@ jobs:
           path: |
             dist/CTS-juanzeng-release.apk
             dist/CTS-juanzeng-debug.apk
+          retention-days: 2          # APK 较大, 短期保留, 避免占满 Actions 存储配额
 
       # 双版本上线期间:推送只产内部 artifact(上面两步);公开 "latest" 发布改为「仅手动触发」,
       # 避免覆盖现有对外发售的正版 APK。需要对外发布时在 Actions 页手动 Run workflow 即可。

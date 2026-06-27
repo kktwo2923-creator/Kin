@@ -1,0 +1,50 @@
+name: Cleanup old runs
+
+# APK 构建产物较大, 频繁推送会很快占满 Actions 存储配额。此工作流清理旧运行记录与
+# 全部构建产物(APK 已发到 Release, artifact 可放心删)。
+on:
+  schedule:
+    - cron: "0 3 * * *"     # 每天 03:00 UTC 自动清一次
+  workflow_dispatch:          # 也可在 Actions 页手动触发, 立即清理积压
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-runs
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 删除旧的 workflow 运行记录（保留最近 10 条）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          KEEP: "10"
+        run: |
+          gh api --paginate "repos/$REPO/actions/runs?per_page=100" \
+            --jq '.workflow_runs[].id' > all_ids.txt || exit 0
+          total=$(wc -l < all_ids.txt)
+          echo "共有 $total 条运行记录，保留最新 $KEEP 条"
+          tail -n +$((KEEP + 1)) all_ids.txt | while read -r id; do
+            [ -n "$id" ] || continue
+            gh api -X DELETE "repos/$REPO/actions/runs/$id" >/dev/null 2>&1 \
+              && echo "已删除 run $id" || echo "跳过 run $id"
+          done
+
+      - name: 删除所有构建产物（释放 Actions 存储配额，APK 已发到 Release）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate "repos/$REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts[].id' > art_ids.txt || exit 0
+          echo "共有 $(wc -l < art_ids.txt) 个构建产物，全部删除"
+          while read -r id; do
+            [ -n "$id" ] || continue
+            gh api -X DELETE "repos/$REPO/actions/artifacts/$id" >/dev/null 2>&1 \
+              && echo "已删除 artifact $id" || echo "跳过 artifact $id"
+          done < art_ids.txt
