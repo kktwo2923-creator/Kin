@@ -51,10 +51,9 @@ class AutoModeVm(app: Application) : AndroidViewModel(app) {
                 _cfg.value = parsed
                 _editing.value = parsed
                 _dirty.value = false
-                _smartEnabled.value = withContext(Dispatchers.IO) {
-                    val cur = RootShell.currentMode().ifBlank { RootShell.readGlobalMode() }
-                    cur == "auto"
-                }
+                // 以持久化全局默认判断, 不读 /data/coreturbo_powermode: 那是"当前生效档", auto 下会被
+                // FSM 解析出的基础档(balance 等)改写, 据此判会让总开关在开启后又被误显示为"关"(抖动)。
+                _smartEnabled.value = withContext(Dispatchers.IO) { RootShell.isSmartOn() }
             } catch (_: Throwable) {
                 _cfg.value = AutoModeCfg.EMPTY
                 _editing.value = AutoModeCfg.EMPTY

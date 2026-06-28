@@ -176,6 +176,7 @@ data class AutoModeCfg(
         touchBoost.put("duration_ms", touchBoostDurationMs.coerceIn(300, 5000).toString())
         touchBoost.put("level_pct", touchBoostLevelPct.coerceIn(10, 100).toString())
 
-        return o.toString(2)
+        // 4 空格缩进, 与模块出厂 config.json 一致(原 2 空格会让整份配置看起来"被打乱重排")。
+        return o.toString(4)
     }
 }

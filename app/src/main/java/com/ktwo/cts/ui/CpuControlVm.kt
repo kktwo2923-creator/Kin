@@ -108,8 +108,17 @@ class CpuControlVm(app: Application) : AndroidViewModel(app) {
         val configPolicies = pm.activeClusters.map { pm.policyOf(it) }
         val policies = (configPolicies + devicePolicies).filter { it >= 0 }.distinct().sorted()
         if (policies.isEmpty()) return p
+        // config Policy 已占用的 cIndex; 设备独有(config 未映射)的 policy 必须分配【未占用】的新 cIndex。
+        // 原实现用 policies.indexOf(policy) 按并集位置兜底 —— 该位置可能撞上已占用的 cIndex(如设备多出
+        // 一个中端 policy 时挤到 c1), 使该物理簇错继承并在保存时错写另一簇的 freq_*_cN/gov_cN(频率落错簇)。
+        val usedIdx = pm.cToPolicy.indices.filter { pm.cToPolicy[it] >= 0 }.toMutableSet()
+        var nextFree = (usedIdx.maxOrNull() ?: -1) + 1
         val clusters = policies.map { policy ->
-            val cIndex = pm.cToPolicy.indexOf(policy).let { if (it >= 0) it else policies.indexOf(policy) }
+            val mapped = pm.cToPolicy.indexOf(policy)
+            val cIndex = if (mapped >= 0) mapped else {
+                while (usedIdx.contains(nextFree)) nextFree++
+                usedIdx.add(nextFree); nextFree
+            }
             val existing = p.clusters.firstOrNull { it.cIndex == cIndex }
             com.ktwo.cts.data.ClusterModelCfg(
                 cIndex = cIndex,

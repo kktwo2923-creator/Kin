@@ -163,7 +163,8 @@ data class CpuControlCfg(
             p.coreOnline.forEachIndexed { i, v -> put("Core$i", v.toString()) }
         })
 
-        return o.toString(2)
+        // 4 空格缩进, 与模块出厂 config.json 一致(原 2 空格会让整份配置看起来"被打乱重排")。
+        return o.toString(4)
     }
 }
 
