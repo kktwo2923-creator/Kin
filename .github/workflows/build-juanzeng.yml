@@ -1,4 +1,4 @@
-name: Build APK
+name: Build 捐赠版 (juanzeng)
 
 on:
   push:
@@ -6,9 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 允许 CI 创建/更新 Release(上传 APK 供直接下载)
+# 仅本(捐赠版)工作流负责发布滚动 Release(避免与公益版重复发布 latest tag)
 permissions:
   contents: write
+
+concurrency:
+  group: build-juanzeng-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -38,36 +42,23 @@ jobs:
           echo "$CTS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "CTS_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
-      # assembleDebug / assembleRelease 是 meta 任务:一次性构建 gongyi(公益版) 与 juanzeng(捐赠版) 两个 flavor。
-      - name: Build Debug APKs (both editions)
-        run: gradle :app:assembleDebug --no-daemon
+      # 只构建 捐赠版(juanzeng) 这一个 flavor
+      - name: Build Debug APK (juanzeng)
+        run: gradle :app:assembleJuanzengDebug --no-daemon
 
-      - name: Build Release APKs (both editions)
+      - name: Build Release APK (juanzeng)
         env:
           CTS_KEYSTORE_PASSWORD: ${{ secrets.CTS_KEYSTORE_PASSWORD }}
           CTS_KEY_ALIAS: ${{ secrets.CTS_KEY_ALIAS }}
           CTS_KEY_PASSWORD: ${{ secrets.CTS_KEY_PASSWORD }}
-        run: gradle :app:assembleRelease --no-daemon -PctsCertSha256="${{ secrets.CTS_CERT_SHA256 }}"
+        run: gradle :app:assembleJuanzengRelease --no-daemon -PctsCertSha256="${{ secrets.CTS_CERT_SHA256 }}"
 
       - name: Collect & rename APKs
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/gongyi/release/app-gongyi-release.apk       dist/CTS-gongyi-release.apk
-          cp app/build/outputs/apk/juanzeng/release/app-juanzeng-release.apk   dist/CTS-juanzeng-release.apk
-          cp app/build/outputs/apk/gongyi/debug/app-gongyi-debug.apk           dist/CTS-gongyi-debug.apk
-          cp app/build/outputs/apk/juanzeng/debug/app-juanzeng-debug.apk       dist/CTS-juanzeng-debug.apk
+          cp app/build/outputs/apk/juanzeng/release/app-juanzeng-release.apk dist/CTS-juanzeng-release.apk
+          cp app/build/outputs/apk/juanzeng/debug/app-juanzeng-debug.apk     dist/CTS-juanzeng-debug.apk
           ls -la dist/
-
-      # 公益版(gongyi):免授权,安装即用
-      - name: Upload 公益版 APKs (gongyi)
-        uses: actions/upload-artifact@v4
-        continue-on-error: true       # 产物上传失败(配额满)不算编译失败
-        with:
-          name: CTS-gongyi
-          path: |
-            dist/CTS-gongyi-release.apk
-            dist/CTS-gongyi-debug.apk
-          retention-days: 2          # APK 较大, 短期保留, 避免占满 Actions 存储配额
 
       # 捐赠版(juanzeng):卡密授权
       - name: Upload 捐赠版 APKs (juanzeng)
@@ -80,8 +71,9 @@ jobs:
             dist/CTS-juanzeng-debug.apk
           retention-days: 2          # APK 较大, 短期保留, 避免占满 Actions 存储配额
 
-      # 双版本上线期间:推送只产内部 artifact(上面两步);公开 "latest" 发布改为「仅手动触发」,
-      # 避免覆盖现有对外发售的正版 APK。需要对外发布时在 Actions 页手动 Run workflow 即可。
+      # 滚动 "latest" Release 由本(捐赠版)工作流统一负责, 且仅手动触发:
+      #   1) 避免推送时自动覆盖对外发售的正版 APK;
+      #   2) 避免与公益版工作流重复发布同一个 latest tag。
       - name: Publish to rolling "latest" Release
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -89,15 +81,12 @@ jobs:
           tag_name: latest
           name: "最新构建 (latest)"
           body: |
-            自动构建的 APK，直接下载安装:
+            自动构建的 捐赠版 APK，直接下载安装:
             - **CTS-juanzeng-release.apk** — 捐赠版(卡密授权)
-            - **CTS-gongyi-release.apk** — 公益版(免授权，安装即用)
-            - 同名 -debug.apk 为各自调试版
+            - **CTS-juanzeng-debug.apk** — 捐赠版调试版
 
             提交: ${{ github.sha }}
           prerelease: true
           files: |
             dist/CTS-juanzeng-release.apk
-            dist/CTS-gongyi-release.apk
             dist/CTS-juanzeng-debug.apk
-            dist/CTS-gongyi-debug.apk

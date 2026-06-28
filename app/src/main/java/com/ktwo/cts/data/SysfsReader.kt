@@ -151,6 +151,9 @@ object SysfsReader {
         return mv / 1000.0
     }
 
+    /** 电池上报的原始整包电压(V), 不做电芯均摊。供电芯矫正自动建议:单节~3-4.5V; 2S 整包~6-9V。 */
+    fun rawVoltageV(): Double = voltageV()
+
     data class PowerInfo(
         val watt: Double, val currentMa: Double, val voltageV: Double,
         val battTempC: Double, val battPct: Int, val charging: Boolean,

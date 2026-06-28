@@ -49,6 +49,8 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
     var isRoot by remember { mutableStateOf(true) }
     var a11yEnabled by remember { mutableStateOf(false) }
     var batteryWhitelisted by remember { mutableStateOf(false) }
+    var showCalibrate by remember { mutableStateOf(false) }
+    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 1)
 
     // 回到前台就重查权限状态(用户去系统设置授权后返回, 红/绿即时刷新)
     fun refreshPerms() = scope.launch {
@@ -272,12 +274,39 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
             }
 
             Section("通用") {
-                ToggleRow(
-                    title = "开机自启动",
-                    desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
-                    checked = autostart,
-                    onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } }
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    ToggleRow(
+                        title = "开机自启动",
+                        desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
+                        checked = autostart,
+                        onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } }
+                    )
+                    HorizontalDivider()
+                    Row(
+                        Modifier.fillMaxWidth().clickable { showCalibrate = true },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Outlined.BatteryFull,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("重新矫正电池", fontWeight = FontWeight.Medium)
+                            Text(
+                                "当前: ${if (cellCount >= 2) "双电芯" else "单电芯"} · 功率偏差一倍时来这里改",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
 
             Section("权限") {
@@ -377,6 +406,11 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
 
             Spacer(Modifier.height(96.dp))
         }
+    }
+
+    // 设置里主动重新矫正:可取消(cancelable=true)
+    if (showCalibrate) {
+        CellCalibrationDialog(cancelable = true, onDone = { showCalibrate = false })
     }
 }
 

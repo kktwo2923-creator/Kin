@@ -315,6 +315,15 @@ object RootShell {
         return shOut("cat $CTS_DIR/power_sessions.txt 2>/dev/null").joinToString("\n")
     }
 
+    /** 清空充放电会话汇总(用户在记录页手动清空)。daemon 后续新会话会重新追加, 不影响记录功能。 */
+    fun clearPowerSessions(): Boolean {
+        runCatching {
+            val f = java.io.File("$CTS_DIR/power_sessions.txt")
+            if (f.exists() && f.canWrite()) { f.writeText(""); return true }
+        }
+        return shOk(": > $CTS_DIR/power_sessions.txt")
+    }
+
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
     fun readAutoStatus(): String {
         runCatching {

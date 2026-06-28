@@ -90,11 +90,11 @@ fun PowerCard(s: PowerSession, onClick: () -> Unit) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    kv("开始时间", fmtClock(s.startTs))
+                    kv("时间段", "${fmtClock(s.startTs)} → 现在")
+                    kv("时长", fmtDur(s.durationSec))
                     kv("当前电量", if (s.level >= 0) "${s.level}%" else "—")
                     kv("电压", "%.3f V".format(s.voltageV))
                     kv("温度", "%.1f℃".format(s.tempC))
-                    kv("时长", fmtDur(s.durationSec))
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
@@ -151,6 +151,29 @@ private fun legendDot(color: Color, label: String) {
     }
 }
 
+private fun fmtAxis(ts: Long, withSec: Boolean): String = runCatching {
+    val pat = if (withSec) "HH:mm:ss" else "HH:mm"
+    java.text.SimpleDateFormat(pat, java.util.Locale.getDefault()).format(java.util.Date(ts * 1000))
+}.getOrDefault("")
+
+/** 图表底部时间轴: 把会话时间跨度均分成几个刻度, 与曲线左右边对齐(首样本在最左, 末样本在最右)。 */
+@Composable
+private fun TimeAxis(samples: List<com.ktwo.cts.data.PwrSample>, modifier: Modifier) {
+    if (samples.size < 2) return
+    val t0 = samples.first().ts
+    val t1 = samples.last().ts
+    val span = (t1 - t0).coerceAtLeast(1)
+    val withSec = span < 600          // 跨度 <10min 显示到秒, 否则到分
+    val n = 5
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        for (i in 0 until n) {
+            val ts = t0 + span * i / (n - 1)
+            Text(fmtAxis(ts, withSec), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @Composable
 fun PowerDetailDialog(s: PowerSession, cellCount: Int, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss,
@@ -164,6 +187,7 @@ fun PowerDetailDialog(s: PowerSession, cellCount: Int, onDismiss: () -> Unit) {
                 Text("时间点详细数据", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 MultiSeriesChart(s.samples, cellCount, Modifier.fillMaxWidth().height(220.dp))
+                TimeAxis(s.samples, Modifier.fillMaxWidth())   // 图表底部时段刻度
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     legendDot(Color(0xFF2563EB), "功耗")
                     legendDot(Color(0xFF22C55E), "电量")

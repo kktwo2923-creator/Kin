@@ -25,10 +25,16 @@ jobs:
           REPO: ${{ github.repository }}
           KEEP: "10"
         run: |
+          set -uo pipefail
           gh api --paginate "repos/$REPO/actions/runs?per_page=100" \
-            --jq '.workflow_runs[].id' > all_ids.txt || exit 0
-          total=$(wc -l < all_ids.txt)
+            --jq '.workflow_runs[].id' > all_ids.txt || true
+          total=$(wc -l < all_ids.txt | tr -d ' ')
+          total=${total:-0}
           echo "共有 $total 条运行记录，保留最新 $KEEP 条"
+          if [ "$total" -le "$KEEP" ]; then
+            echo "无需删除"
+            exit 0
+          fi
           tail -n +$((KEEP + 1)) all_ids.txt | while read -r id; do
             [ -n "$id" ] || continue
             gh api -X DELETE "repos/$REPO/actions/runs/$id" >/dev/null 2>&1 \
@@ -40,9 +46,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
+          set -uo pipefail
           gh api --paginate "repos/$REPO/actions/artifacts?per_page=100" \
-            --jq '.artifacts[].id' > art_ids.txt || exit 0
-          echo "共有 $(wc -l < art_ids.txt) 个构建产物，全部删除"
+            --jq '.artifacts[].id' > art_ids.txt || true
+          count=$(wc -l < art_ids.txt | tr -d ' ')
+          count=${count:-0}
+          echo "共有 $count 个构建产物，全部删除"
           while read -r id; do
             [ -n "$id" ] || continue
             gh api -X DELETE "repos/$REPO/actions/artifacts/$id" >/dev/null 2>&1 \

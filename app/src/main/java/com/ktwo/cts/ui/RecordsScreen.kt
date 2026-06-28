@@ -12,6 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -26,18 +28,26 @@ import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
 fun RecordsScreen() {
     val ctx = LocalContext.current
-    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 2)
+    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 1)
+    // initial=true 避免首帧(flow 未发射)就闪一下矫正框; 真值到达后若为 false 才弹。
+    val calibrated by Prefs.cellCalibratedFlow(ctx).collectAsState(initial = true)
     var data by remember { mutableStateOf(RecordsData.EMPTY) }
     var showDetail by remember { mutableStateOf(false) }
     // null=不显示;true=充电逐条;false=放电逐条
     var listType by remember { mutableStateOf<Boolean?>(null) }
+    // 逐条列表里被点开查看详细的那条记录(null=未点开)
+    var detailRow by remember { mutableStateOf<SessionRow?>(null) }
+    // 清空记录后自增, 触发立即重载(不必等下一次轮询)
+    var reloadKey by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(cellCount) {
+    LaunchedEffect(cellCount, reloadKey) {
         while (isActive) {
             // 整段读取/聚合包在 runCatching 内: 任何 sysfs/解析异常都退回上次数据,
             // 不让协程未捕获异常把「记录」页直接崩掉。
@@ -78,9 +88,12 @@ fun RecordsScreen() {
         } else {
             PowerCard(data.session) { showDetail = true }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                SummaryCard("充电总结", data.charge, Modifier.weight(1f)) { listType = true }
-                SummaryCard("放电总结", data.discharge, Modifier.weight(1f)) { listType = false }
+            Row(
+                Modifier.height(IntrinsicSize.Min),   // 两卡片等高: 取较高者的高度
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                SummaryCard("充电总结", data.charge, Modifier.weight(1f).fillMaxHeight()) { listType = true }
+                SummaryCard("放电总结", data.discharge, Modifier.weight(1f).fillMaxHeight()) { listType = false }
             }
 
             if (data.etaOff != null || data.etaOn != null) {
@@ -112,47 +125,96 @@ fun RecordsScreen() {
     }
     listType?.let { charge ->
         val rows = if (charge) data.chargeRows else data.dischargeRows
-        SessionListDialog(if (charge) "充电记录" else "放电记录", charge, rows) { listType = null }
+        SessionListDialog(
+            title = if (charge) "充电记录" else "放电记录",
+            charging = charge,
+            rows = rows,
+            onRowClick = { detailRow = it },
+            onClear = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { runCatching { RootShell.clearPowerSessions() } }
+                    listType = null
+                    reloadKey++   // 立即重载, 清空生效
+                }
+            },
+            onDismiss = { listType = null },
+        )
+    }
+    detailRow?.let { row ->
+        SessionDetailDialog(row) { detailRow = null }
+    }
+
+    // 首次进入「记录」且未矫正 → 弹一次电芯矫正(强制选择, 选后置 cell_calibrated=true)。
+    // 选择后 flow 自动回流为 true, 对话框收起。
+    if (!calibrated) {
+        CellCalibrationDialog(cancelable = false, onDone = { /* flow 回流为 true 自动收起 */ })
     }
 }
 
 @Composable
 private fun SummaryCard(title: String, s: TypeSummary, modifier: Modifier, onClick: () -> Unit) {
     TonalCard(modifier.clickable(onClick = onClick)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxHeight().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
                 Text("逐条 ›", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            statRow("记录数", "${s.count} 次")
-            statRow("平均功率", if (s.avgW > 0) "%.2f W".format(s.avgW) else "—")
+            statRow("记录数", "${s.count} 次", small = true)
+            statRow("平均功率", if (s.avgW > 0) "%.2f W".format(s.avgW) else "—", small = true)
         }
     }
 }
 
-/** 逐条充/放电记录(对齐 BatteryRecorder: 每回都能点开看)。 */
+/** 逐条充/放电记录(对齐 BatteryRecorder: 每回都能点开看 + 可清空)。 */
 @Composable
-private fun SessionListDialog(title: String, charging: Boolean, rows: List<SessionRow>, onDismiss: () -> Unit) {
+private fun SessionListDialog(
+    title: String,
+    charging: Boolean,
+    rows: List<SessionRow>,
+    onRowClick: (SessionRow) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var confirmClear by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)) {
         TonalCard(Modifier.fillMaxWidth().padding(16.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    Text("共 ${rows.size} 次", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (rows.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
                         Text("暂无记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     LazyColumn(
-                        Modifier.heightIn(max = 460.dp),
+                        Modifier.heightIn(max = 440.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(rows) { r -> SessionRowItem(r, charging) }
+                        items(rows) { r -> SessionRowItem(r, charging) { onRowClick(r) } }
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (rows.isNotEmpty()) {
+                        if (confirmClear) {
+                            TextButton(onClick = onClear,
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error)) { Text("确认清空") }
+                            TextButton(onClick = { confirmClear = false }) { Text("取消") }
+                        } else {
+                            TextButton(onClick = { confirmClear = true },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error)) { Text("清空记录") }
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
                     TextButton(onClick = onDismiss) { Text("关闭") }
                 }
             }
@@ -161,9 +223,9 @@ private fun SessionListDialog(title: String, charging: Boolean, rows: List<Sessi
 }
 
 @Composable
-private fun SessionRowItem(r: SessionRow, charging: Boolean) {
+private fun SessionRowItem(r: SessionRow, charging: Boolean, onClick: () -> Unit) {
     TonalCard(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -180,8 +242,34 @@ private fun SessionRowItem(r: SessionRow, charging: Boolean) {
                           else "电量 ${r.startLv}% → ${r.endLv}% (${r.deltaLv})"
                 Text(lvl, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("时长 ${fmtDur(r.durationSec)}", style = MaterialTheme.typography.bodySmall,
+                Text("时长 ${fmtDur(r.durationSec)} ›", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/** 单条充/放电记录详细(点开列表里某一回看)。历史会话只存汇总, 故展示起止时间/时长/电量/平均功率。 */
+@Composable
+private fun SessionDetailDialog(r: SessionRow, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        TonalCard(Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if (r.charging) "充电记录详细" else "放电记录详细",
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    statRow("日期", fmtDate(r.startTs))
+                    statRow("时间段", "${fmtHm(r.startTs)} → ${fmtHm(r.endTs)}")
+                    statRow("时长", fmtDur(r.durationSec))
+                    statRow("起始电量", "${r.startLv}%")
+                    statRow("结束电量", "${r.endLv}%")
+                    statRow("电量变化", if (r.charging) "+${r.deltaLv.coerceAtLeast(0)}%" else "${r.deltaLv}%")
+                    statRow("平均功率", if (r.avgW > 0) "%.2f W".format(r.avgW) else "—")
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("关闭") }
+                }
             }
         }
     }
@@ -195,6 +283,10 @@ private fun fmtDay(ts: Long): String = runCatching {
     java.text.SimpleDateFormat("MM-dd", java.util.Locale.getDefault()).format(java.util.Date(ts * 1000))
 }.getOrDefault("")
 
+private fun fmtDate(ts: Long): String = runCatching {
+    java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(ts * 1000))
+}.getOrDefault("—")
+
 private fun fmtDur(sec: Long): String = when {
     sec < 60 -> "${sec}s"
     sec < 3600 -> "${sec / 60}m"
@@ -202,10 +294,33 @@ private fun fmtDur(sec: Long): String = when {
 }
 
 @Composable
-private fun statRow(k: String, v: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(k, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(v, fontWeight = FontWeight.Medium)
+private fun statRow(k: String, v: String, small: Boolean = false) {
+    // small=true: 半宽总结卡片用小一号字体, 让 "38.05 W" 这类较长值也能整行放下。
+    val style = if (small) MaterialTheme.typography.bodyMedium else LocalTextStyle.current
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            k,
+            style = style,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+        )
+        // 值占满 key 之后的剩余宽度并右对齐: 之前误加了 Spacer(weight) + 值再 weight(1f),
+        // 两者各分一半 → 值只剩半行宽, "57.60 W" 被省略成 "..."。去掉 Spacer 即修复。
+        Text(
+            v,
+            style = style,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
