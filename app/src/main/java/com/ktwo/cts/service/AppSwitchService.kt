@@ -24,6 +24,11 @@ class AppSwitchService : AccessibilityService() {
     private val main = Handler(Looper.getMainLooper())
     private var lastPkg: String = ""
 
+    // 息屏判定: 息屏时前台不会变, 且 daemon 息屏本就不读前台 —— 此时重推 topapp.txt 只会每 10s 白白
+    // 唤醒 daemon(用户反馈"息屏还一直检测前台")。故息屏不写, 亮屏后心跳/事件自然恢复推送。
+    private val power by lazy { getSystemService(Context.POWER_SERVICE) as android.os.PowerManager }
+    private fun isInteractive(): Boolean = runCatching { power.isInteractive }.getOrDefault(true)
+
     // 非应用窗口忽略集: 这些包频繁触发窗口事件却不是"前台应用", 推了会盖掉真实前台
     private val ignore = mutableSetOf(
         "com.android.systemui", "com.oplus.systemui", "com.coloros.systemui",
@@ -43,7 +48,8 @@ class AppSwitchService : AccessibilityService() {
     // 心跳:前台长时间不变时无障碍不再回调,定时重推让 daemon 端推送值保持新鲜(否则 daemon 回退 dumpsys)
     private val heartbeat = object : Runnable {
         override fun run() {
-            if (lastPkg.isNotEmpty()) RootShell.pushTopApp(lastPkg)
+            // 息屏跳过重推(只保留轻量 Handler 计时, 不做 root 写 / 不唤醒 daemon); 亮屏后下一拍自然恢复。
+            if (lastPkg.isNotEmpty() && isInteractive()) RootShell.pushTopApp(lastPkg)
             main.postDelayed(this, HEARTBEAT_MS)
         }
     }
@@ -74,8 +80,9 @@ class AppSwitchService : AccessibilityService() {
         val p = pkg.orEmpty()
         if (p == lastPkg || shouldIgnore(p)) return
         lastPkg = p
-        foreground = p
-        RootShell.pushTopApp(p)
+        foreground = p   // 进程内前台缓存照常更新(供 NotifyService 零 root 读)
+        // 仅亮屏时写 topapp.txt: 息屏 daemon 不读前台, 写了只会无谓唤醒 daemon。
+        if (isInteractive()) RootShell.pushTopApp(p)
     }
 
     /** 枚举所有窗口, 取面积最大的应用窗口的包名 = 全屏主应用(小窗面积小, 不会胜出)。 */
