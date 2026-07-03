@@ -34,7 +34,7 @@ android {
         minSdk = 33
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.1"
         vectorDrawables { useSupportLibrary = true }
 
         // 防破解:编译期固定签名指纹 + native 层开关,供 Integrity.kt 读取
@@ -42,14 +42,15 @@ android {
         buildConfigField("boolean", "NATIVE_GUARD", ctsNative.toString())
     }
 
-    // ---- 版本变体:捐赠版(卡密授权) / 公益版(免授权,安装即用) ----
-    // NO_LICENSE=true 的 gongyi flavor 彻底跳过授权门;juanzeng 保留完整卡密授权。
+    // ---- 版本变体 ----
+    // 已【去掉卡密验证】: 两个 flavor 的 NO_LICENSE 均为 true —— App 打开即用、不做任何卡密/联网/激活校验。
+    // (NO_LICENSE=true 时 MainActivity 直接进主界面、不登记自动复验; ScheduleService 也跳过授权块。)
     flavorDimensions += "edition"
     productFlavors {
-        // 捐赠版(默认):Ed25519 卡密授权 + 联网续签 + 重打包检测
+        // 原捐赠版: 现同样免授权(卡密验证已去除), 仅保留变体名以兼容既有构建/CI。
         create("juanzeng") {
             dimension = "edition"
-            buildConfigField("boolean", "NO_LICENSE", "false")
+            buildConfigField("boolean", "NO_LICENSE", "true")
             buildConfigField("String", "EDITION", "\"捐赠版\"")
             versionNameSuffix = "-juanzeng"
         }
