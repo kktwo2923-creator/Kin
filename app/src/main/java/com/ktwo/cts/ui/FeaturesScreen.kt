@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Lock
@@ -38,6 +39,7 @@ fun FeaturesScreen(
 ) {
     val ctx = LocalContext.current
     val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
+    var showOverlaySheet by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -67,8 +69,14 @@ fun FeaturesScreen(
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     FeatureRow(
-                        Icons.Outlined.Speed, "性能监控 · 悬浮窗",
-                        "实时 CPU/GPU/温度/帧率, 可开屏上悬浮窗(仿 Metric)",
+                        Icons.Outlined.Layers, "悬浮窗管理器",
+                        "六个独立监视悬浮窗(负载/进程/线程/迷你/帧率/温度), 可同时开、各自拖动",
+                        onClick = { showOverlaySheet = true },
+                    )
+                    HorizontalDivider()
+                    FeatureRow(
+                        Icons.Outlined.Speed, "性能监控 · 大屏",
+                        "应用内实时仪表盘: CPU/GPU/温度/帧率/功耗/内存",
                         onClick = onOpenPerfMon,
                     )
                     HorizontalDivider()
@@ -113,6 +121,10 @@ fun FeaturesScreen(
 
             Spacer(Modifier.height(96.dp))
         }
+    }
+
+    if (showOverlaySheet) {
+        OverlayManagerSheet(onDismiss = { showOverlaySheet = false })
     }
 }
 

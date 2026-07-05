@@ -154,6 +154,30 @@ object Prefs {
         ctx.dataStore.edit { it[MON_POSX_KEY] = x; it[MON_POSY_KEY] = y }
     }
 
+    // ── 悬浮窗管理器: 六个独立监视器各自开关 + 各自落点(仿 Metric)──
+    // key 动态生成 ovl_{id}_enabled / ovl_{id}_x / ovl_{id}_y。默认关、落点 MIN_VALUE(用错开默认)。
+    private fun ovlEnabledKey(t: OverlayType) = booleanPreferencesKey("ovl_${t.id}_enabled")
+    private fun ovlXKey(t: OverlayType) = intPreferencesKey("ovl_${t.id}_x")
+    private fun ovlYKey(t: OverlayType) = intPreferencesKey("ovl_${t.id}_y")
+
+    fun ovlEnabledFlow(ctx: Context, t: OverlayType): Flow<Boolean> =
+        ctx.dataStore.data.map { it[ovlEnabledKey(t)] ?: false }
+    suspend fun setOvlEnabled(ctx: Context, t: OverlayType, b: Boolean) {
+        ctx.dataStore.edit { it[ovlEnabledKey(t)] = b }
+    }
+    /** 一次读出所有已开启的监视器(服务恢复 / 开机同步用)。 */
+    suspend fun enabledOverlayTypes(ctx: Context): Set<OverlayType> {
+        val p = ctx.dataStore.data.first()
+        return OverlayType.entries.filter { p[ovlEnabledKey(it)] == true }.toSet()
+    }
+    suspend fun ovlPos(ctx: Context, t: OverlayType): Pair<Int, Int> {
+        val p = ctx.dataStore.data.first()
+        return (p[ovlXKey(t)] ?: Int.MIN_VALUE) to (p[ovlYKey(t)] ?: Int.MIN_VALUE)
+    }
+    suspend fun setOvlPos(ctx: Context, t: OverlayType, x: Int, y: Int) {
+        ctx.dataStore.edit { it[ovlXKey(t)] = x; it[ovlYKey(t)] = y }
+    }
+
     // 用户是否要求开启无障碍前台推送(root 授权): 开机由 BootReceiver 重新断言, 防 ROM 重启掉权限
     private val A11Y_WANTED_KEY = booleanPreferencesKey("a11y_wanted")
     suspend fun a11yWanted(ctx: Context): Boolean =

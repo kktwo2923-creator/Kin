@@ -66,6 +66,16 @@
                 android:value="Floating performance monitor overlay showing realtime CPU/GPU/temperature/FPS" />
         </service>
 
+        <!-- 悬浮窗管理器后端(仿 Metric):同时管理多个命名监视悬浮窗 -->
+        <service
+            android:name=".overlay.FloatWindowService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Multiple floating monitor overlays: load/process/thread/mini/fps/temperature" />
+        </service>
+
         <!-- 无障碍服务:把前台包名推给 daemon(dumpsys 轮询的加速器,可选启用) -->
         <service
             android:name=".service.AppSwitchService"
