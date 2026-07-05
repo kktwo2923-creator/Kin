@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,26 +24,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.data.MetricReader
 import com.ktwo.cts.data.ProcSampler
+import com.ktwo.cts.ui.TonalCard
 import com.ktwo.cts.ui.theme.MetricTokens
+import com.ktwo.cts.ui.theme.MonoNumber
 import java.util.Locale
 
 /** Metric 主页四块卡片。全部只依赖传入数据, 采样在 HomeDashboard 里统一做。 */
 
 private fun gb1(v: Double): String = String.format(Locale.US, "%.1fGB", v)
 
-/** Metric 白底圆角卡容器(仅 METRIC 分支使用, 固定浅色观感)。 */
+/** Metric 仪表盘卡容器: 复用全局液态玻璃卡 TonalCard, 明暗主题下均为玻璃观感。 */
 @Composable
 private fun MetricCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        modifier = modifier,
-        shape = MetricTokens.CardShape,
-        color = MetricTokens.CardBg,
-        contentColor = MetricTokens.TextDark,
-        shadowElevation = MetricTokens.CardElevation,
-    ) {
+    TonalCard(modifier) {
         Column(Modifier.padding(16.dp), content = content)
     }
 }
@@ -85,7 +80,7 @@ fun MemoryCard(snap: MetricReader.Snapshot?, modifier: Modifier = Modifier) {
         Text(
             "Used $usedSum%   SwapCached ${if (swapCached >= 0) "${swapCached}MB" else "--"}",
             style = MaterialTheme.typography.bodySmall,
-            color = MetricTokens.TextGrey,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -119,21 +114,20 @@ fun GpuCard(
             Column(Modifier.weight(1f)) {
                 Text(
                     if (mhz >= 0) "${mhz}MHz" else "--MHz",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MetricTokens.TextDark,
+                    style = MaterialTheme.typography.headlineMedium.merge(MonoNumber),
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     "负载：${if (load >= 0) "$load%" else "--"}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MetricTokens.TextDark,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(6.dp))
                 infoLines.forEach { line ->
                     Text(
                         line,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MetricTokens.TextGrey,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
                 }
@@ -158,14 +152,14 @@ fun ProcessListCard(
             "进程",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = MetricTokens.TextDark,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(10.dp))
         if (procs.isEmpty()) {
             Text(
                 if (rooted) "采样中…" else "需要 Root",
                 style = MaterialTheme.typography.bodySmall,
-                color = MetricTokens.TextGrey,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -180,7 +174,7 @@ fun ProcessListCard(
                         Text(
                             p.name,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MetricTokens.TextDark,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             modifier = Modifier.weight(1f),
                         )
@@ -188,7 +182,7 @@ fun ProcessListCard(
                         Text(
                             String.format(Locale.US, "%.0f%%", p.cpuPct),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MetricTokens.TextGrey,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -213,13 +207,13 @@ fun CpuCard(
                 "CPU",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = MetricTokens.TextDark,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 if (temp > -100) "$temp℃" else "--℃",
-                style = MaterialTheme.typography.bodySmall,
-                color = MetricTokens.TextGrey,
+                style = MaterialTheme.typography.bodySmall.merge(MonoNumber),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Spacer(Modifier.height(10.dp))
@@ -233,13 +227,13 @@ fun CpuCard(
             chipLine,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
-            color = MetricTokens.TextDark,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
         )
         Text(
             "负载：${if (load >= 0) "$load%" else "--"}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MetricTokens.TextGrey,
+            style = MaterialTheme.typography.bodySmall.merge(MonoNumber),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -258,7 +252,7 @@ fun ClusterGridCard(
             Text(
                 "读取 CPU 频率中…",
                 style = MaterialTheme.typography.bodySmall,
-                color = MetricTokens.TextGrey,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             return@MetricCard
         }
@@ -291,15 +285,17 @@ private fun ClusterCell(
     val pct = if (mx > 0 && cluster.mhz > 0) (cluster.mhz * 100 / mx).coerceIn(0, 100) else -1
     Column(
         modifier
-            .background(MetricTokens.Bg, RoundedCornerShape(16.dp))
+            .background(
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
+                RoundedCornerShape(16.dp),
+            )
             .padding(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (pct >= 0) "$pct%" else "--",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MetricTokens.TextDark,
+                style = MaterialTheme.typography.titleSmall.merge(MonoNumber),
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
             BarHistogram(
@@ -312,15 +308,14 @@ private fun ClusterCell(
         Spacer(Modifier.height(6.dp))
         Text(
             if (cluster.mhz > 0) "${cluster.mhz}MHz" else "--MHz",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MetricTokens.TextDark,
+            style = MaterialTheme.typography.titleLarge.merge(MonoNumber),
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
         )
         Text(
             if (mx > 0) "$mn~${mx}MHz" else cluster.name,
             style = MaterialTheme.typography.bodySmall,
-            color = MetricTokens.TextGrey,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
         )
     }

@@ -7,9 +7,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import com.ktwo.cts.ui.theme.LocalUiStyle
-import com.ktwo.cts.ui.theme.MetricTokens
-import com.ktwo.cts.ui.theme.UiStyle
 import com.ktwo.cts.ui.theme.isInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -81,17 +78,6 @@ fun WallpaperBackground(
     wallpaperUri: String = "",
     modifier: Modifier = Modifier,
 ) {
-    // Metric 风格: 纯色浅底, 不画壁纸/渐变。保留 hazeSource 采样源, 避免残留玻璃组件取不到源。
-    if (LocalUiStyle.current == UiStyle.METRIC) {
-        Box(
-            modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .hazeSource(hazeState)
-        )
-        return
-    }
-
     val ctx = LocalContext.current
     val bitmap = remember(wallpaperUri) {
         if (wallpaperUri.isBlank()) null
@@ -289,22 +275,6 @@ fun TonalCard(
                           else contentColorFor(color),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // Metric 风格: 纯白圆角卡 + 轻阴影(暗色主题下用 surfaceContainer), 不走玻璃。
-    if (LocalUiStyle.current == UiStyle.METRIC) {
-        val bg = if (color == Color.Unspecified) {
-            if (isInDarkTheme()) MaterialTheme.colorScheme.surfaceContainer else MetricTokens.CardBg
-        } else color
-        Surface(
-            modifier = modifier,
-            shape = MetricTokens.CardShape,
-            color = bg,
-            contentColor = contentColor,
-            shadowElevation = MetricTokens.CardElevation,
-        ) {
-            Column(content = content)
-        }
-        return
-    }
     GlassSurface(modifier = modifier, tint = color) {
         CompositionLocalProvider(LocalContentColor provides contentColor) {
             Column(content = content)

@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.ui.theme.MetricTokens
+import com.ktwo.cts.ui.theme.MonoNumber
 
 /**
  * Metric 仪表盘的纯 Canvas 图表组件(无数据依赖, 只用稳定 API):
@@ -82,9 +83,8 @@ fun RingGauge(
             if (centerTop != null) {
                 Text(
                     centerTop,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MetricTokens.TextDark,
+                    style = MaterialTheme.typography.titleMedium.merge(MonoNumber),
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                 )
             }
@@ -92,7 +92,7 @@ fun RingGauge(
                 Text(
                     centerBottom,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MetricTokens.TextGrey,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
             }
@@ -115,7 +115,7 @@ fun LabeledBar(
             Text(
                 label,
                 style = MaterialTheme.typography.bodySmall,
-                color = MetricTokens.TextDark,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
@@ -123,7 +123,7 @@ fun LabeledBar(
             Text(
                 valueText,
                 style = MaterialTheme.typography.bodySmall,
-                color = MetricTokens.TextGrey,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
         }

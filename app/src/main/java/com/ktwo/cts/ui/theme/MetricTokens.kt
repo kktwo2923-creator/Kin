@@ -3,11 +3,15 @@ package com.ktwo.cts.ui.theme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
- * 界面风格开关: GLASS = 现状液态玻璃(默认, 逐像素不变); METRIC = 浅色仪表盘(仿 Metric 主页)。
- * 所有 Metric 分支一律以 LocalUiStyle.current == UiStyle.METRIC 判定, 不改任何函数签名/路由。
+ * 界面风格开关: 两种风格都是全局液态玻璃, 区别仅在主页布局 —
+ * GLASS = 经典主页; METRIC = 主页显示 Metric 仪表盘。
+ * 判定一律用 LocalUiStyle.current == UiStyle.METRIC, 不改任何函数签名/路由。
  */
 enum class UiStyle(val key: String, val label: String) {
     GLASS("glass", "液态玻璃"),
@@ -20,16 +24,18 @@ enum class UiStyle(val key: String, val label: String) {
 
 val LocalUiStyle = staticCompositionLocalOf { UiStyle.GLASS }
 
-/** Metric 浅色仪表盘的设计令牌(纯色浅灰紫背景 + 白卡 + 蓝强调)。 */
+/** Metric 仪表盘的图表设计令牌(仅图表用色 + 卡片几何; 文字颜色一律随主题取 colorScheme)。 */
 object MetricTokens {
-    val Bg = Color(0xFFEEF0F5)
-    val CardBg = Color(0xFFFFFFFF)
     val Accent = Color(0xFF2A6DF4)
-    val TextDark = Color(0xFF1A2233)
-    val TextGrey = Color(0xFF8A93A6)
     val RingOrange = Color(0xFFFF8A34)
     val BarBlue = Color(0xFF3D7BFF)
     val RingGrey = Color(0xFFB8BFCC)
     val CardShape = RoundedCornerShape(24.dp)
     val CardElevation = 2.dp
 }
+
+/** 仪表盘大数值专用等宽字体样式(系统内置 Monospace, 不依赖任何字体资源)。 */
+val MonoNumber = TextStyle(
+    fontFamily = FontFamily.Monospace,
+    fontWeight = FontWeight.Bold,
+)

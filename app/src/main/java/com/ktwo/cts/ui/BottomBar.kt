@@ -27,12 +27,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.NavigationBarItemDefaults
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
-import com.ktwo.cts.ui.theme.LocalUiStyle
-import com.ktwo.cts.ui.theme.MetricTokens
-import com.ktwo.cts.ui.theme.UiStyle
 import top.yukonga.miuix.kmp.blur.Backdrop
 
 @Composable
@@ -42,9 +38,7 @@ fun BottomBar(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
 ) {
-    // Metric 风格强制走非悬浮 NavigationBar(悬浮玻璃底栏不生效)
-    val metric = LocalUiStyle.current == UiStyle.METRIC
-    val enableFloatingBottomBar = LocalEnableFloatingBottomBar.current && !metric
+    val enableFloatingBottomBar = LocalEnableFloatingBottomBar.current
     val enableFloatingBottomBarBlur = LocalEnableFloatingBottomBarBlur.current
     val selected by rememberUpdatedState(selectedIndex)
 
@@ -56,11 +50,6 @@ fun BottomBar(
                     label = { Text(label) },
                     selected = selectedIndex == index,
                     onClick = { onSelect(index) },
-                    colors = if (metric) NavigationBarItemDefaults.colors(
-                        selectedIconColor = MetricTokens.Accent,
-                        selectedTextColor = MetricTokens.Accent,
-                        indicatorColor = MetricTokens.Accent.copy(alpha = 0.12f),
-                    ) else NavigationBarItemDefaults.colors(),
                 )
             }
         }

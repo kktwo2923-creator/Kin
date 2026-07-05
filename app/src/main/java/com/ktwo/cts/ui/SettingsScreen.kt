@@ -180,30 +180,21 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
                 }
             }
 
-            Section("刷新率") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("屏幕刷新率", fontWeight = FontWeight.Medium)
-                    Text(
-                        "锁定后跨重启保持(root 写系统设置)。自动 = 交还系统自适应。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Section("通用") {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    ToggleRow(
+                        title = "开机自启动",
+                        desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
+                        checked = autostart,
+                        onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } }
                     )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(0 to "自动", 60 to "60Hz", 90 to "90Hz", 120 to "120Hz",
-                               144 to "144Hz", 165 to "165Hz").forEach { (hz, label) ->
-                            FilterChip(
-                                selected = hz == refreshRate,
-                                onClick = {
-                                    scope.launch {
-                                        Prefs.setRefreshRate(ctx, hz)
-                                        withContext(Dispatchers.IO) { RootShell.setRefreshRate(ctx, hz) }
-                                    }
-                                },
-                                label = { Text(label) },
-                                shape = RoundedCornerShape(12.dp),
-                            )
-                        }
-                    }
+                    HorizontalDivider()
+                    ToggleRow(
+                        title = "状态栏常驻通知",
+                        desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
+                        checked = notifyEnabled,
+                        onCheckedChange = { toggleNotify(it) },
+                    )
                 }
             }
 
@@ -230,7 +221,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
                         Column(Modifier.weight(1f)) {
                             Text("界面风格", fontWeight = FontWeight.Medium)
                             Text(
-                                "当前: ${UiStyle.fromKey(uiStyleKey).label} · Metric 风格下悬浮底栏与壁纸不生效",
+                                "当前: ${UiStyle.fromKey(uiStyleKey).label} · 仅切换主页布局, 全局保留液态玻璃",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -290,48 +281,57 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
                 }
             }
 
-            Section("通知") {
-                ToggleRow(
-                    title = "状态栏常驻通知",
-                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
-                    checked = notifyEnabled,
-                    onCheckedChange = { toggleNotify(it) },
-                )
-            }
-
-            Section("通用") {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    ToggleRow(
-                        title = "开机自启动",
-                        desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
-                        checked = autostart,
-                        onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } }
+            Section("采样") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("屏幕刷新率", fontWeight = FontWeight.Medium)
+                    Text(
+                        "锁定后跨重启保持(root 写系统设置)。自动 = 交还系统自适应。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    HorizontalDivider()
-                    Row(
-                        Modifier.fillMaxWidth().clickable { showCalibrate = true },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Outlined.BatteryFull,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("重新矫正电池", fontWeight = FontWeight.Medium)
-                            Text(
-                                "当前: ${if (cellCount >= 2) "双电芯" else "单电芯"} · 功率偏差一倍时来这里改",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(0 to "自动", 60 to "60Hz", 90 to "90Hz", 120 to "120Hz",
+                               144 to "144Hz", 165 to "165Hz").forEach { (hz, label) ->
+                            FilterChip(
+                                selected = hz == refreshRate,
+                                onClick = {
+                                    scope.launch {
+                                        Prefs.setRefreshRate(ctx, hz)
+                                        withContext(Dispatchers.IO) { RootShell.setRefreshRate(ctx, hz) }
+                                    }
+                                },
+                                label = { Text(label) },
+                                shape = RoundedCornerShape(12.dp),
                             )
                         }
-                        Icon(
-                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    }
+                }
+            }
+
+            Section("电池") {
+                Row(
+                    Modifier.fillMaxWidth().clickable { showCalibrate = true },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.BatteryFull,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("重新矫正电池", fontWeight = FontWeight.Medium)
+                        Text(
+                            "当前: ${if (cellCount >= 2) "双电芯" else "单电芯"} · 功率偏差一倍时来这里改",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
@@ -388,18 +388,17 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
                 }
             }
 
+            Section("日志") {
+                val moreLogs by Prefs.moreLogsFlow(ctx).collectAsState(initial = false)
+                ToggleRow(
+                    "更多日志",
+                    "日志页默认只显示 运行/模式/前台 三个日志;开启后显示全部日志文件",
+                    moreLogs,
+                ) { scope.launch { Prefs.setMoreLogs(ctx, it) } }
+            }
+
             // 同 SukiSU 设置页: 关于作为入口行, 点开展示图标/版本/GitHub 链接
             SectionTitle("其他")
-            TonalCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    val moreLogs by Prefs.moreLogsFlow(ctx).collectAsState(initial = false)
-                    ToggleRow(
-                        "更多日志",
-                        "日志页默认只显示 运行/模式/前台 三个日志;开启后显示全部日志文件",
-                        moreLogs,
-                    ) { scope.launch { Prefs.setMoreLogs(ctx, it) } }
-                }
-            }
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     Modifier
@@ -470,7 +469,7 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Metric 风格下悬浮底栏与壁纸不生效",
+                        "两种风格均为液态玻璃, 区别仅在主页是否显示仪表盘",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
