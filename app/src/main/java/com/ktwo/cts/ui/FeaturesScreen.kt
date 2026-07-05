@@ -38,6 +38,7 @@ fun FeaturesScreen(
     onOpenCpu: () -> Unit = {},
     onOpenAutoMode: () -> Unit = {},
     onOpenFpsRecord: () -> Unit = {},
+    onOpenProcess: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
@@ -74,6 +75,12 @@ fun FeaturesScreen(
                         Icons.Outlined.Timeline, "帧率记录",
                         "按应用录制 FPS/帧时间/卡顿, 生成会话报告与曲线",
                         onClick = onOpenFpsRecord,
+                    )
+                    HorizontalDivider()
+                    FeatureRow(
+                        Icons.Outlined.Memory, "进程管理器",
+                        "按应用分组查看进程 CPU/内存, 结束进程或强制停止应用",
+                        onClick = onOpenProcess,
                     )
                     HorizontalDivider()
                     FeatureRow(

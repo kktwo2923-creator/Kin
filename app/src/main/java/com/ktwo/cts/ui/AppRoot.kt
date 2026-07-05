@@ -26,6 +26,7 @@ import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.license.Pro
 import com.ktwo.cts.ui.fpsrecord.FpsRecordDetailScreen
 import com.ktwo.cts.ui.fpsrecord.FpsRecordListScreen
+import com.ktwo.cts.ui.process.ProcessScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import dev.chrisbanes.haze.HazeState
@@ -52,7 +53,7 @@ private val FEATURE_SUBROUTES = setOf("monitor", "records", "apps", "cpu", "auto
 
 // 自带返回/沉浸的二级页, 隐藏底栏。
 private val FULLSCREEN_ROUTES =
-    setOf("about", "automode", "pro", "perfmon", "fpsrecord", "fpsrecord_detail/{id}")
+    setOf("about", "automode", "pro", "perfmon", "fpsrecord", "fpsrecord_detail/{id}", "process")
 
 @Composable
 fun AppRoot() {
@@ -142,6 +143,7 @@ fun AppRoot() {
                             onOpenCpu      = { nav.navigate("cpu") },
                             onOpenAutoMode = { nav.navigate("automode") },
                             onOpenFpsRecord = { nav.navigate("fpsrecord") },
+                            onOpenProcess = { nav.navigate("process") },
                         )
                     }
                     composable("cpu")      { CpuControlScreen() }
@@ -167,6 +169,9 @@ fun AppRoot() {
                     }
                     composable("perfmon") {
                         MonitorOverlayScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("process") {
+                        ProcessScreen(onBack = { nav.popBackStack() })
                     }
                     composable("pro") {
                         ProUnlockScreen(onBack = { nav.popBackStack() })
