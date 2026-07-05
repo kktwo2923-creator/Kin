@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.History
@@ -39,6 +40,7 @@ fun FeaturesScreen(
     onOpenAutoMode: () -> Unit = {},
     onOpenFpsRecord: () -> Unit = {},
     onOpenProcess: () -> Unit = {},
+    onOpenThreadAlloc: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
@@ -122,6 +124,14 @@ fun FeaturesScreen(
                         Icons.Outlined.Memory, "配置",
                         "CPU 频率/调速器/GPU/核心 精细控制",
                         onClick = onOpenCpu,
+                    )
+                    HorizontalDivider()
+                    FeatureRow(
+                        Icons.Outlined.AccountTree, "线程分配",
+                        if (proUnlocked) "把游戏/应用的渲染线程归拢到大核, 提升流畅度"
+                        else "智能版功能 · 渲染线程归拢到大核",
+                        locked = !proUnlocked,
+                        onClick = onOpenThreadAlloc,
                     )
                     HorizontalDivider()
                     FeatureRow(
