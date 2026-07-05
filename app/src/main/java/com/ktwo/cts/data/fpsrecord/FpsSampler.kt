@@ -129,6 +129,7 @@ class FpsSampler {
             endMs: Long,
             stopReason: String,
             points: List<FpsPoint>,
+            threads: List<ThreadLoad> = emptyList(),   // M3: 线程负载汇总(带默认值, 旧调用不受影响)
         ): FpsSession {
             val valid = points.mapNotNull { p -> p.fps.takeIf { it > 0 } }.sorted()
             fun lowPct(f: Double): Int {
@@ -154,6 +155,7 @@ class FpsSampler {
                 bigJankTotal = points.sumOf { it.bigJank },
                 stopReason = stopReason,
                 points = points,
+                threads = threads,
             )
         }
     }

@@ -16,6 +16,7 @@ import com.ktwo.cts.data.fpsrecord.FpsPoint
 import com.ktwo.cts.data.fpsrecord.FpsRecordStore
 import com.ktwo.cts.data.fpsrecord.FpsSampler
 import com.ktwo.cts.data.fpsrecord.FpsSession
+import com.ktwo.cts.data.fpsrecord.ThreadSampler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -101,8 +102,10 @@ class FpsRecordService : Service() {
                 ).toString()
             }.getOrDefault(locked)
 
-            // ② 秒级采样
+            // ② 秒级采样(FPS 每 1s 一点; 线程负载每 2s 一次, 解耦以控制 root 开销)
             val sampler = FpsSampler()
+            val threadSampler = ThreadSampler()
+            var threadPid = -1          // 锁定应用主进程 pid(懒解析, 失败下个周期重试)
             val points = ArrayList<FpsPoint>()
             val startMs = System.currentTimeMillis()
             var reason: String? = null
@@ -114,6 +117,13 @@ class FpsRecordService : Service() {
                 val tick = System.currentTimeMillis()
                 val p = sampler.sample(cellCount, locked)
                 points.add(p)
+                // M3: 每 2 秒采一次线程负载(无 root / 失败静默, 不影响主流程)
+                if (points.size % 2 == 0) {
+                    runCatching {
+                        if (threadPid <= 0) threadPid = ThreadSampler.resolvePid(locked)
+                        if (threadPid > 0) threadSampler.sampleOnce(threadPid)
+                    }
+                }
                 _state.value = RecState(
                     active = true, recording = true, pkg = locked, appName = appName,
                     fps = p.fps, elapsedSec = points.size,
@@ -133,6 +143,7 @@ class FpsRecordService : Service() {
                 startMs = startMs, endMs = endMs,
                 stopReason = reason ?: "手动停止",
                 points = points,
+                threads = runCatching { threadSampler.aggregate() }.getOrDefault(emptyList()),
             ) else null
             finishAndStop(session)
         }

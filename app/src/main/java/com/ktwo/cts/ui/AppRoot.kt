@@ -26,6 +26,7 @@ import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.license.Pro
 import com.ktwo.cts.ui.fpsrecord.FpsRecordDetailScreen
 import com.ktwo.cts.ui.fpsrecord.FpsRecordListScreen
+import com.ktwo.cts.ui.fpsrecord.ThreadLoadScreen
 import com.ktwo.cts.ui.process.ProcessScreen
 import com.ktwo.cts.ui.threadalloc.ThreadAllocScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
@@ -54,7 +55,10 @@ private val FEATURE_SUBROUTES = setOf("monitor", "records", "apps", "cpu", "auto
 
 // 自带返回/沉浸的二级页, 隐藏底栏。
 private val FULLSCREEN_ROUTES =
-    setOf("about", "automode", "pro", "perfmon", "fpsrecord", "fpsrecord_detail/{id}", "process", "threadalloc")
+    setOf(
+        "about", "automode", "pro", "perfmon", "fpsrecord",
+        "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
+    )
 
 @Composable
 fun AppRoot() {
@@ -196,6 +200,16 @@ fun AppRoot() {
                         arguments = listOf(navArgument("id") { type = NavType.StringType }),
                     ) { backEntry ->
                         FpsRecordDetailScreen(
+                            id = backEntry.arguments?.getString("id").orEmpty(),
+                            onBack = { nav.popBackStack() },
+                            onOpenThreads = { id -> nav.navigate("fpsrecord_thread/$id") },
+                        )
+                    }
+                    composable(
+                        "fpsrecord_thread/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) { backEntry ->
+                        ThreadLoadScreen(
                             id = backEntry.arguments?.getString("id").orEmpty(),
                             onBack = { nav.popBackStack() },
                         )

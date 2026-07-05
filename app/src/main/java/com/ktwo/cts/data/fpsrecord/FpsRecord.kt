@@ -21,6 +21,26 @@ data class FpsPoint(
     val bigJank: Int,      // 本秒严重卡顿次数
 )
 
+/**
+ * 单条线程在整个录制会话中的负载汇总(M3 线程负载详情)。
+ *  - loadPoints/corePoints: 录制期每 2s 一个的采样序列(落盘前限长, 最多 120 点, 两者等长);
+ *  - dominantCore: corePoints 众数(该线程主要运行的核心), dominantCorePct 为众数占比 %;
+ *  - migrationCount: corePoints 相邻两点核心不同的次数(核间迁移);
+ *  - affinityChanges: Cpus_allowed_list 在录制期发生变化的次数。
+ */
+data class ThreadLoad(
+    val tid: Int,
+    val name: String,
+    val avgLoad: Float,          // 平均负载 %(单核口径, 0..100)
+    val maxLoad: Float,          // 峰值负载 %
+    val dominantCore: Int,       // 主要运行核心(-1 未知)
+    val dominantCorePct: Int,    // 主核占比 %(0..100)
+    val migrationCount: Int,     // 核间迁移次数
+    val affinityChanges: Int,    // 亲和(Cpus_allowed_list)变更次数
+    val loadPoints: List<Float>, // 负载采样序列(限长)
+    val corePoints: List<Int>,   // 核心采样序列(限长, 与 loadPoints 等长)
+)
+
 /** 一次完整录制会话(含全部采样点)。 */
 data class FpsSession(
     val id: String,
@@ -39,6 +59,8 @@ data class FpsSession(
     val bigJankTotal: Int,
     val stopReason: String,
     val points: List<FpsPoint>,
+    // M3: 线程负载详情。尾部追加且带默认值 → 旧存档/旧调用零破坏(读不到即空)。
+    val threads: List<ThreadLoad> = emptyList(),
 )
 
 /** 列表页用的会话摘要(不载入 points, 单独存 <id>.meta.json)。 */
@@ -119,6 +141,27 @@ object FpsRecordStore {
             })
         }
         full.put("points", arr)
+        // M3: 线程负载(可选字段, 空则不写; 旧版本读到该字段会自动忽略)
+        if (s.threads.isNotEmpty()) {
+            val th = JSONArray()
+            for (t in s.threads) {
+                th.put(JSONObject().apply {
+                    put("tid", t.tid)
+                    put("name", t.name)
+                    put("avgLoad", if (t.avgLoad.isFinite()) t.avgLoad.toDouble() else 0.0)
+                    put("maxLoad", if (t.maxLoad.isFinite()) t.maxLoad.toDouble() else 0.0)
+                    put("dominantCore", t.dominantCore)
+                    put("dominantCorePct", t.dominantCorePct)
+                    put("migrationCount", t.migrationCount)
+                    put("affinityChanges", t.affinityChanges)
+                    put("loadPoints", JSONArray().apply {
+                        t.loadPoints.forEach { put(if (it.isFinite()) it.toDouble() else 0.0) }
+                    })
+                    put("corePoints", JSONArray().apply { t.corePoints.forEach { put(it) } })
+                })
+            }
+            full.put("threads", th)
+        }
         File(d, "${s.id}.json").writeText(full.toString())
         File(d, "${s.id}.meta.json").writeText(JSONObject().also { putMetaFields(it, s) }.toString())
         true
@@ -168,13 +211,43 @@ object FpsRecordStore {
                 )
             )
         }
+        // M3: 线程负载(旧存档无此字段 → 空列表; 单条损坏跳过, 不影响整体)
+        val threads = ArrayList<ThreadLoad>()
+        val tArr = o.optJSONArray("threads") ?: JSONArray()
+        for (i in 0 until tArr.length()) {
+            val t = tArr.optJSONObject(i) ?: continue
+            runCatching {
+                val lp = ArrayList<Float>()
+                t.optJSONArray("loadPoints")?.let { a ->
+                    for (j in 0 until a.length()) lp.add(a.optDouble(j, 0.0).toFloat())
+                }
+                val cp = ArrayList<Int>()
+                t.optJSONArray("corePoints")?.let { a ->
+                    for (j in 0 until a.length()) cp.add(a.optInt(j, -1))
+                }
+                threads.add(
+                    ThreadLoad(
+                        tid = t.optInt("tid", -1),
+                        name = t.optString("name", ""),
+                        avgLoad = t.optDouble("avgLoad", 0.0).toFloat(),
+                        maxLoad = t.optDouble("maxLoad", 0.0).toFloat(),
+                        dominantCore = t.optInt("dominantCore", -1),
+                        dominantCorePct = t.optInt("dominantCorePct", 0),
+                        migrationCount = t.optInt("migrationCount", 0),
+                        affinityChanges = t.optInt("affinityChanges", 0),
+                        loadPoints = lp,
+                        corePoints = cp,
+                    )
+                )
+            }
+        }
         FpsSession(
             id = meta.id, pkg = meta.pkg, appName = meta.appName,
             startMs = meta.startMs, endMs = o.optLong("endMs", 0L), durationMs = meta.durationMs,
             avgFps = meta.avgFps, minFps = meta.minFps, maxFps = meta.maxFps,
             low1Fps = meta.low1Fps, low5Fps = meta.low5Fps,
             avgWatt = meta.avgWatt, jankTotal = meta.jankTotal, bigJankTotal = meta.bigJankTotal,
-            stopReason = meta.stopReason, points = pts,
+            stopReason = meta.stopReason, points = pts, threads = threads,
         )
     }.getOrNull()
 

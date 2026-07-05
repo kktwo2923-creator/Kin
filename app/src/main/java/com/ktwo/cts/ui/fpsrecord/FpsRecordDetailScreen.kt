@@ -1,6 +1,7 @@
 // 帧率记录详情页: 会话信息 + 多张「标题+统计行+折线图」卡片(FPS/帧时间/CPU/GPU/温度/功耗/电量)。
 package com.ktwo.cts.ui.fpsrecord
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -27,6 +28,7 @@ import java.util.Locale
 fun FpsRecordDetailScreen(
     id: String,
     onBack: () -> Unit,
+    onOpenThreads: (String) -> Unit = {},   // M3: 打开「线程负载」二级页(带默认值, 旧调用兼容)
 ) {
     val ctx = LocalContext.current
     var loaded by remember { mutableStateOf(false) }
@@ -69,13 +71,17 @@ fun FpsRecordDetailScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            else -> DetailContent(s, Modifier.fillMaxSize().padding(inner))
+            else -> DetailContent(s, onOpenThreads, Modifier.fillMaxSize().padding(inner))
         }
     }
 }
 
 @Composable
-private fun DetailContent(s: FpsSession, modifier: Modifier = Modifier) {
+private fun DetailContent(
+    s: FpsSession,
+    onOpenThreads: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val pts = s.points
     LazyColumn(
         modifier,
@@ -204,6 +210,46 @@ private fun DetailContent(s: FpsSession, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.secondary,
                 percent = true,
             )
+        }
+
+        // ── 8) 线程负载入口(M3): 有数据可点进二级页; 无数据置灰提示 ──
+        item {
+            val hasThreads = s.threads.isNotEmpty()
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (hasThreads) Modifier.clickable { onOpenThreads(s.id) }
+                            else Modifier
+                        )
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "线程负载",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (hasThreads) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            if (hasThreads) "共 ${s.threads.size} 条线程 · 负载/主核/迁移/亲和"
+                            else "本次未采集线程数据(需要 Root)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (hasThreads) {
+                        Text(
+                            "→",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
         }
 
         item { Spacer(Modifier.height(96.dp)) }
