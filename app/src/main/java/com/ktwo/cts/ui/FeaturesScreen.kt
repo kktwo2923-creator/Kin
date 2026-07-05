@@ -12,6 +12,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,6 +29,7 @@ import com.ktwo.cts.data.Prefs
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeaturesScreen(
+    onOpenPerfMon: () -> Unit = {},
     onOpenMonitor: () -> Unit = {},
     onOpenRecords: () -> Unit = {},
     onOpenApps: () -> Unit = {},
@@ -65,7 +67,13 @@ fun FeaturesScreen(
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     FeatureRow(
-                        Icons.Outlined.Insights, "监控",
+                        Icons.Outlined.Speed, "性能监控 · 悬浮窗",
+                        "实时 CPU/GPU/温度/帧率, 可开屏上悬浮窗(仿 Metric)",
+                        onClick = onOpenPerfMon,
+                    )
+                    HorizontalDivider()
+                    FeatureRow(
+                        Icons.Outlined.Insights, "智能监控",
                         "智能调度实时状态: FSM/学习/温度/负载/频率",
                         onClick = onOpenMonitor,
                     )

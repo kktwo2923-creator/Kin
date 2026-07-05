@@ -44,7 +44,10 @@ private val TABS = listOf(
 )
 
 // 「功能」hub 下属的子页面: 选中它们时底栏仍高亮「功能」tab。
-private val FEATURE_SUBROUTES = setOf("monitor", "records", "apps", "cpu", "automode")
+private val FEATURE_SUBROUTES = setOf("monitor", "records", "apps", "cpu", "automode", "perfmon")
+
+// 自带返回/沉浸的二级页, 隐藏底栏。
+private val FULLSCREEN_ROUTES = setOf("about", "automode", "pro", "perfmon")
 
 @Composable
 fun AppRoot() {
@@ -81,10 +84,8 @@ fun AppRoot() {
             else TABS.indexOfFirst { d -> curRoute?.any { it.route == d.route } == true }
                 .coerceAtLeast(0)
         }
-        // 二级页(自带返回/沉浸)隐藏底栏; 功能 hub 的子页面保留底栏(靠「功能」tab 返回)。
-        val hideBottomBar = curDestRoute == "about" ||
-            curDestRoute == "automode" ||
-            curDestRoute == "pro"
+        // 二级页(自带返回/沉浸)隐藏底栏; 功能 hub 的其余子页面(监控/记录/应用/配置)保留底栏。
+        val hideBottomBar = curDestRoute in FULLSCREEN_ROUTES
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
@@ -129,6 +130,7 @@ fun AppRoot() {
                     composable("home")     { HomeScreen() }
                     composable("features") {
                         FeaturesScreen(
+                            onOpenPerfMon  = { nav.navigate("perfmon") },
                             onOpenMonitor  = { nav.navigate("monitor") },
                             onOpenRecords  = { nav.navigate("records") },
                             onOpenApps     = { nav.navigate("apps") },
@@ -156,6 +158,9 @@ fun AppRoot() {
                             proUnlocked = proUnlocked,
                             onNeedPro = { nav.navigate("pro") },
                         )
+                    }
+                    composable("perfmon") {
+                        MonitorOverlayScreen(onBack = { nav.popBackStack() })
                     }
                     composable("pro") {
                         ProUnlockScreen(onBack = { nav.popBackStack() })

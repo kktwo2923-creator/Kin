@@ -107,6 +107,53 @@ object Prefs {
         ctx.dataStore.edit { it[AUTOSTART_KEY] = b }
     }
 
+    // ── 悬浮性能监控窗(仿 Metric)──
+    // 开关 / 显示项(csv, 见 MonitorItems) / 透明度(0-100) / 字号(sp) / 落点(px)
+    private val MON_ENABLED_KEY  = booleanPreferencesKey("monitor_overlay_enabled")
+    private val MON_ITEMS_KEY    = stringPreferencesKey("monitor_items")
+    private val MON_OPACITY_KEY  = intPreferencesKey("monitor_opacity")
+    private val MON_TEXTSIZE_KEY = intPreferencesKey("monitor_text_size")
+    private val MON_POSX_KEY     = intPreferencesKey("monitor_pos_x")
+    private val MON_POSY_KEY     = intPreferencesKey("monitor_pos_y")
+    // 默认显示: 帧率 / CPU频率 / GPU频率 / 温度 / 电量
+    const val MON_ITEMS_DEFAULT = "fps,cpu,gpu,temp,batt"
+
+    fun monEnabledFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[MON_ENABLED_KEY] ?: false }
+    suspend fun monEnabled(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[MON_ENABLED_KEY] ?: false
+    suspend fun setMonEnabled(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[MON_ENABLED_KEY] = b }
+    }
+    fun monItemsFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[MON_ITEMS_KEY] ?: MON_ITEMS_DEFAULT }
+    suspend fun monItems(ctx: Context): String =
+        ctx.dataStore.data.first()[MON_ITEMS_KEY] ?: MON_ITEMS_DEFAULT
+    suspend fun setMonItems(ctx: Context, csv: String) {
+        ctx.dataStore.edit { it[MON_ITEMS_KEY] = csv }
+    }
+    fun monOpacityFlow(ctx: Context): Flow<Int> =
+        ctx.dataStore.data.map { it[MON_OPACITY_KEY] ?: 85 }
+    suspend fun monOpacity(ctx: Context): Int =
+        ctx.dataStore.data.first()[MON_OPACITY_KEY] ?: 85
+    suspend fun setMonOpacity(ctx: Context, v: Int) {
+        ctx.dataStore.edit { it[MON_OPACITY_KEY] = v }
+    }
+    fun monTextSizeFlow(ctx: Context): Flow<Int> =
+        ctx.dataStore.data.map { it[MON_TEXTSIZE_KEY] ?: 12 }
+    suspend fun monTextSize(ctx: Context): Int =
+        ctx.dataStore.data.first()[MON_TEXTSIZE_KEY] ?: 12
+    suspend fun setMonTextSize(ctx: Context, v: Int) {
+        ctx.dataStore.edit { it[MON_TEXTSIZE_KEY] = v }
+    }
+    suspend fun monPos(ctx: Context): Pair<Int, Int> {
+        val p = ctx.dataStore.data.first()
+        return (p[MON_POSX_KEY] ?: Int.MIN_VALUE) to (p[MON_POSY_KEY] ?: Int.MIN_VALUE)
+    }
+    suspend fun setMonPos(ctx: Context, x: Int, y: Int) {
+        ctx.dataStore.edit { it[MON_POSX_KEY] = x; it[MON_POSY_KEY] = y }
+    }
+
     // 用户是否要求开启无障碍前台推送(root 授权): 开机由 BootReceiver 重新断言, 防 ROM 重启掉权限
     private val A11Y_WANTED_KEY = booleanPreferencesKey("a11y_wanted")
     suspend fun a11yWanted(ctx: Context): Boolean =

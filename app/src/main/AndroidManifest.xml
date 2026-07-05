@@ -56,6 +56,16 @@
                 android:value="Persistent status notification showing current power mode and battery, with a floating quick mode switcher" />
         </service>
 
+        <!-- 悬浮性能监控窗(仿 Metric):实时显示 CPU/GPU/温度/帧率 -->
+        <service
+            android:name=".service.MonitorOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Floating performance monitor overlay showing realtime CPU/GPU/temperature/FPS" />
+        </service>
+
         <!-- 无障碍服务:把前台包名推给 daemon(dumpsys 轮询的加速器,可选启用) -->
         <service
             android:name=".service.AppSwitchService"
