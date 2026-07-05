@@ -71,6 +71,14 @@ object Prefs {
         ctx.dataStore.edit { it[ENABLE_FLOATING_BAR_BLUR_KEY] = b }
     }
 
+    // 界面风格: glass(液态玻璃, 默认现状) / metric(Metric 浅色仪表盘)
+    private val UI_STYLE_KEY = stringPreferencesKey("ui_style")
+    fun uiStyleFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[UI_STYLE_KEY] ?: "glass" }
+    suspend fun setUiStyle(ctx: Context, k: String) {
+        ctx.dataStore.edit { it[UI_STYLE_KEY] = k }
+    }
+
     fun themeModeFlow(ctx: Context): Flow<String> =
         ctx.dataStore.data.map { it[THEME_KEY] ?: "system" }
     suspend fun setThemeMode(ctx: Context, mode: String) {

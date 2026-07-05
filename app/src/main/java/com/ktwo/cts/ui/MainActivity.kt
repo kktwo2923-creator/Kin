@@ -16,6 +16,7 @@ import com.ktwo.cts.ui.theme.AppTheme
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import com.ktwo.cts.ui.theme.ThemeMode
+import com.ktwo.cts.ui.theme.UiStyle
 import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
@@ -33,11 +34,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             val ctx = LocalContext.current
             val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
+            val styleKey by Prefs.uiStyleFlow(ctx).collectAsState(initial = "glass")
             val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx)
                 .collectAsState(initial = true)
             val enableFloatingBarBlur by Prefs.enableFloatingBottomBarBlurFlow(ctx)
                 .collectAsState(initial = true)
-            AppTheme(mode = ThemeMode.fromKey(themeKey)) {
+            AppTheme(mode = ThemeMode.fromKey(themeKey), uiStyle = UiStyle.fromKey(styleKey)) {
                 CompositionLocalProvider(
                     LocalEnableFloatingBottomBar provides enableFloatingBar,
                     LocalEnableFloatingBottomBarBlur provides enableFloatingBarBlur,

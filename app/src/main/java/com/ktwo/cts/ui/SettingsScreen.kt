@@ -29,6 +29,7 @@ import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.ForegroundDetector
 import com.ktwo.cts.ui.theme.ThemeMode
+import com.ktwo.cts.ui.theme.UiStyle
 import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -40,6 +41,8 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
     val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
     val autostart by Prefs.autostartFlow(ctx).collectAsState(initial = true)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
+    val uiStyleKey by Prefs.uiStyleFlow(ctx).collectAsState(initial = "glass")
+    var showStyleDialog by remember { mutableStateOf(false) }
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
     val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx).collectAsState(initial = true)
     val enableFloatingBarBlur by Prefs.enableFloatingBottomBarBlurFlow(ctx)
@@ -217,6 +220,26 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
                                 shape = RoundedCornerShape(12.dp),
                             )
                         }
+                    }
+                    HorizontalDivider()
+                    // 界面风格: 液态玻璃(默认) / Metric 仪表盘
+                    Row(
+                        Modifier.fillMaxWidth().clickable { showStyleDialog = true },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("界面风格", fontWeight = FontWeight.Medium)
+                            Text(
+                                "当前: ${UiStyle.fromKey(uiStyleKey).label} · Metric 风格下悬浮底栏与壁纸不生效",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     HorizontalDivider()
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -414,6 +437,49 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
     // 设置里主动重新矫正:可取消(cancelable=true)
     if (showCalibrate) {
         CellCalibrationDialog(cancelable = true, onDone = { showCalibrate = false })
+    }
+
+    // 界面风格单选对话框
+    if (showStyleDialog) {
+        AlertDialog(
+            onDismissRequest = { showStyleDialog = false },
+            title = { Text("界面风格") },
+            text = {
+                Column {
+                    UiStyle.entries.forEach { style ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    scope.launch { Prefs.setUiStyle(ctx, style.key) }
+                                    showStyleDialog = false
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = style.key == uiStyleKey,
+                                onClick = {
+                                    scope.launch { Prefs.setUiStyle(ctx, style.key) }
+                                    showStyleDialog = false
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(style.label)
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Metric 风格下悬浮底栏与壁纸不生效",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showStyleDialog = false }) { Text("完成") }
+            },
+        )
     }
 }
 

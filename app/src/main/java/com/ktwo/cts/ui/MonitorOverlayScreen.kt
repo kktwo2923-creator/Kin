@@ -53,6 +53,12 @@ fun MonitorOverlayScreen(onBack: () -> Unit) {
     // 实时快照(应用内大屏)
     var snap by remember { mutableStateOf<MetricReader.Snapshot?>(null) }
     LaunchedEffect(cellCount) {
+        @Suppress("DEPRECATION")
+        runCatching {
+            MetricReader.fallbackHz =
+                (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
+                    .defaultDisplay.refreshRate.toInt()
+        }
         while (true) {
             snap = withContext(Dispatchers.IO) { runCatching { MetricReader.snapshot(cellCount) }.getOrNull() }
             delay(1000)

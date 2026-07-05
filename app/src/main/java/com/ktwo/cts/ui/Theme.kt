@@ -74,6 +74,18 @@ private val DarkScheme = darkColorScheme(
     onErrorContainer = Color(0xFFF12522),
 )
 
+// Metric 浅色仪表盘配色: 在 LightScheme 基础上换成 浅灰紫底 + 白卡 + Metric 蓝
+private val MetricLightScheme = LightScheme.copy(
+    primary = Color(0xFF2A6DF4),
+    background = Color(0xFFEEF0F5),
+    onBackground = Color(0xFF1A2233),
+    surface = Color.White,
+    onSurface = Color(0xFF1A2233),
+    surfaceVariant = Color(0xFFE4E7EE),
+    onSurfaceVariant = Color(0xFF8A93A6),
+    surfaceContainer = Color.White,
+)
+
 /** 主题模式: 同 SukiSU 主题设置 — 跟随系统 / 浅色 / 深色 */
 enum class ThemeMode(val key: String, val label: String) {
     SYSTEM("system", "跟随系统"),
@@ -88,6 +100,7 @@ enum class ThemeMode(val key: String, val label: String) {
 @Composable
 fun AppTheme(
     mode: ThemeMode = ThemeMode.SYSTEM,
+    uiStyle: UiStyle = UiStyle.GLASS,
     content: @Composable () -> Unit,
 ) {
     val sysDark = isSystemInDarkTheme()
@@ -96,8 +109,15 @@ fun AppTheme(
         ThemeMode.DARK -> true
         ThemeMode.SYSTEM -> sysDark
     }
-    val scheme: ColorScheme = if (dark) DarkScheme else LightScheme
-    CompositionLocalProvider(LocalDarkMode provides dark) {
+    val scheme: ColorScheme = when {
+        !dark && uiStyle == UiStyle.METRIC -> MetricLightScheme
+        dark -> DarkScheme
+        else -> LightScheme
+    }
+    CompositionLocalProvider(
+        LocalDarkMode provides dark,
+        LocalUiStyle provides uiStyle,
+    ) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }

@@ -43,6 +43,9 @@ class FloatWindowService : Service() {
         super.onCreate()
         dp = resources.displayMetrics.density
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        // 屏幕刷新率作为 FPS 兜底(实测帧率取不到时退回它)
+        @Suppress("DEPRECATION")
+        MetricReader.fallbackHz = runCatching { wm.defaultDisplay.refreshRate.toInt() }.getOrDefault(-1)
         startForeground(NOTIF_ID, buildNotification())
         scope.launch {
             cellCount = Prefs.cellCount(this@FloatWindowService)
