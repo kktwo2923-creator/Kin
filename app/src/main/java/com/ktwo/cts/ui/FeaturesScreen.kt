@@ -41,6 +41,8 @@ fun FeaturesScreen(
     onOpenFpsRecord: () -> Unit = {},
     onOpenProcess: () -> Unit = {},
     onOpenThreadAlloc: () -> Unit = {},
+    onOpenMemory: () -> Unit = {},
+    onOpenGovernor: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
@@ -86,6 +88,12 @@ fun FeaturesScreen(
                     )
                     HorizontalDivider()
                     FeatureRow(
+                        Icons.Outlined.Memory, "内存详情",
+                        "物理内存/ZRAM/交换/VM 参数",
+                        onClick = onOpenMemory,
+                    )
+                    HorizontalDivider()
+                    FeatureRow(
                         Icons.Outlined.Layers, "悬浮窗管理器",
                         "六个独立监视悬浮窗(负载/进程/线程/迷你/帧率/温度), 可同时开、各自拖动",
                         onClick = { showOverlaySheet = true },
@@ -124,6 +132,12 @@ fun FeaturesScreen(
                         Icons.Outlined.Memory, "配置",
                         "CPU 频率/调速器/GPU/核心 精细控制",
                         onClick = onOpenCpu,
+                    )
+                    HorizontalDivider()
+                    FeatureRow(
+                        Icons.Outlined.Tune, "调速器参数",
+                        "每簇 governor 可调参数精细编辑",
+                        onClick = onOpenGovernor,
                     )
                     HorizontalDivider()
                     FeatureRow(

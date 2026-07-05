@@ -27,6 +27,8 @@ import com.ktwo.cts.license.Pro
 import com.ktwo.cts.ui.fpsrecord.FpsRecordDetailScreen
 import com.ktwo.cts.ui.fpsrecord.FpsRecordListScreen
 import com.ktwo.cts.ui.fpsrecord.ThreadLoadScreen
+import com.ktwo.cts.ui.governor.GovernorParamsScreen
+import com.ktwo.cts.ui.memory.MemoryDetailScreen
 import com.ktwo.cts.ui.process.ProcessScreen
 import com.ktwo.cts.ui.threadalloc.ThreadAllocScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
@@ -58,6 +60,7 @@ private val FULLSCREEN_ROUTES =
     setOf(
         "about", "automode", "pro", "perfmon", "fpsrecord",
         "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
+        "memory", "governor",
     )
 
 @Composable
@@ -150,6 +153,8 @@ fun AppRoot() {
                             onOpenFpsRecord = { nav.navigate("fpsrecord") },
                             onOpenProcess = { nav.navigate("process") },
                             onOpenThreadAlloc = { nav.navigate("threadalloc") },
+                            onOpenMemory = { nav.navigate("memory") },
+                            onOpenGovernor = { nav.navigate("governor") },
                         )
                     }
                     composable("cpu")      { CpuControlScreen() }
@@ -178,6 +183,12 @@ fun AppRoot() {
                     }
                     composable("process") {
                         ProcessScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("memory") {
+                        MemoryDetailScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("governor") {
+                        GovernorParamsScreen(onBack = { nav.popBackStack() })
                     }
                     composable("threadalloc") {
                         ThreadAllocScreen(
