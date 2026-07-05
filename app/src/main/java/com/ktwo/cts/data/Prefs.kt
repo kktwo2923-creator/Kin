@@ -28,6 +28,17 @@ object Prefs {
         ctx.dataStore.edit { it[SMART_KEY] = b }
     }
 
+    // 付费解锁(Pro/智能版)是否已解锁。缓存本地供 UI 秒读, 真正的来源是 License.state()==VALID:
+    // App 启动 / 激活成功时由 Pro.sync() 从 License 同步写入。智能模式与「系统优化」相关功能受它门控。
+    private val PRO_KEY = booleanPreferencesKey("pro_unlocked")
+    fun proUnlockedFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[PRO_KEY] ?: false }
+    suspend fun proUnlocked(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[PRO_KEY] ?: false
+    suspend fun setProUnlocked(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[PRO_KEY] = b }
+    }
+
     fun notifyEnabledFlow(ctx: Context): Flow<Boolean> =
         ctx.dataStore.data.map { it[NOTIFY_KEY] ?: false }
     suspend fun notifyEnabled(ctx: Context): Boolean =

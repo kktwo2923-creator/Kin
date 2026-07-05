@@ -218,6 +218,35 @@ object License {
         return activate(key)
     }
 
+    /** 捐赠站默认套餐 code(永久),供订单号自动发卡用。 */
+    private const val DEFAULT_PLAN_CODE = "forever"
+
+    /**
+     * 用「付款订单号」解锁:把订单号提交到服务端(有申请就自动发卡),取回卡密后立即激活本机。
+     * 服务端 /api/order/submit 在 AUTO_APPROVE 下会直接返回 data.license_key。
+     * 务必在 IO 线程调用。
+     */
+    fun redeemByOrder(orderNo: String): Result {
+        val no = orderNo.trim()
+        if (no.isEmpty()) return Result(false, "请输入付款订单号")
+        val body = JSONObject()
+            .put("plan_code", DEFAULT_PLAN_CODE)
+            .put("pay_type", "alipay")
+            .put("order_no", no)
+            .toString()
+        val resp = runCatching { post("$BASE_URL/api/order/submit", body) }
+            .getOrElse { return Result(false, "连不上服务器,请开启加速器/梯子后重试") }
+        val j = runCatching { JSONObject(resp) }
+            .getOrElse { return Result(false, "服务器返回异常,请稍后再试") }
+        if (!j.optBoolean("success", false)) {
+            return Result(false, j.optString("message", "该订单号暂不可用,请确认后重试"))
+        }
+        val key = j.optJSONObject("data")?.optString("license_key", "").orEmpty()
+        if (key.isBlank()) return Result(false, "订单已受理,但未取得卡密,请稍后重试")
+        // 拿到卡密后走正常激活(绑定本机 + 写授权文件)
+        return activate(key)
+    }
+
     /** 执行服务器下发的 pending_commands,执行完成后上报结果。
      *  命令格式建议 JSON: {"action":"delete","target":"data"}
      *  也支持纯文本 shell 命令(需 Root)。

@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,7 +26,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
+fun AutoModeScreen(
+    onBack: () -> Unit,
+    proUnlocked: Boolean = true,
+    onNeedPro: () -> Unit = {},
+    vm: AutoModeVm = viewModel(),
+) {
     val cfg by vm.editing.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val smartEnabled by vm.smartEnabled.collectAsStateWithLifecycle()
@@ -87,20 +93,39 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // ── 总开关 ──
+            // ── 总开关(未解锁则引导去付费页) ──
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("智能模式", fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("智能模式", fontWeight = FontWeight.Bold)
+                                if (!proUnlocked) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Icon(
+                                        Icons.Outlined.Lock, contentDescription = "需解锁",
+                                        modifier = Modifier.size(15.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
                             Text(
-                                if (smartEnabled) "已启用 · 全局切到智能档,按温度/电量/负载自动调度"
-                                else "关闭 · 全局回到均衡档",
+                                when {
+                                    !proUnlocked -> "智能版功能 · 点开关前往解锁"
+                                    smartEnabled -> "已启用 · 全局切到智能档,按温度/电量/负载自动调度"
+                                    else -> "关闭 · 全局回到均衡档"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Switch(checked = smartEnabled, onCheckedChange = { vm.setSmartEnabled(it) })
+                        Switch(
+                            checked = smartEnabled && proUnlocked,
+                            onCheckedChange = { want ->
+                                if (want && !proUnlocked) onNeedPro()
+                                else vm.setSmartEnabled(want)
+                            },
+                        )
                     }
                     Text(
                         "开启后,守护进程会自学习你的使用习惯,在省电/均衡/性能之间自动切换;下面的开关用来微调它的脾气。",
@@ -192,7 +217,12 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
                 ) { vm.update { c -> c.copy(fsmSustainedExit = it) } }
             }
 
-            // ── 系统优化 (WiFi/网络/内存,所有模式生效) ──
+            // ── 系统优化 (WiFi/网络/内存,所有模式生效;智能版功能) ──
+            if (!proUnlocked) {
+                AmSection("系统优化 (WiFi / 网络 / 内存)") {
+                    ProLockedNotice(onNeedPro)
+                }
+            } else
             AmSection("系统优化 (WiFi / 网络 / 内存)") {
                 AmToggle(
                     "WiFi / 网络 / 内存调优",
@@ -296,6 +326,27 @@ fun AutoModeScreen(onBack: () -> Unit, vm: AutoModeVm = viewModel()) {
 
             Spacer(Modifier.height(96.dp))
         }
+    }
+}
+
+@Composable
+private fun ProLockedNotice(onNeedPro: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Outlined.Lock, contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("智能版功能", fontWeight = FontWeight.Medium)
+            Text(
+                "WiFi/网络/内存调优、开机精简、后台内存回收 —— 解锁智能版后可用",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        FilledTonalButton(onClick = onNeedPro) { Text("解锁") }
     }
 }
 

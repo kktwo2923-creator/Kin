@@ -8,13 +8,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Insights
-import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.runtime.*
-import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -25,6 +21,7 @@ import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.ktwo.cts.data.Prefs
+import com.ktwo.cts.license.Pro
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import dev.chrisbanes.haze.HazeState
@@ -37,23 +34,17 @@ private data class TopDest(
     val icon: ImageVector,
 )
 
-// 关闭智能调度时的常规 tab(含 CPU / 应用)
-private val TABS_NORMAL = listOf(
+// 固定四个底栏 tab: 首页 / 功能 / 日志 / 设置。
+// 「功能」是一个聚合入口(hub), 把 监控 / 记录 / 应用 / 配置 / 智能调度高级设置 收进去。
+private val TABS = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
-    TopDest("cpu",      "CPU", Icons.Outlined.Memory),
-    TopDest("apps",     "应用", CtsIcons.Apps),
+    TopDest("features", "功能", Icons.Outlined.GridView),
     TopDest("logs",     "日志", CtsIcons.Logs),
     TopDest("settings", "设置", CtsIcons.Settings),
 )
 
-// 开启智能调度时:隐藏 CPU / 应用,改为「监控」面板(手动档无意义)
-private val TABS_SMART = listOf(
-    TopDest("home",     "首页", CtsIcons.Speed),
-    TopDest("monitor",  "监控", Icons.Outlined.Insights),
-    TopDest("records",  "记录", Icons.Outlined.History),
-    TopDest("logs",     "日志", CtsIcons.Logs),
-    TopDest("settings", "设置", CtsIcons.Settings),
-)
+// 「功能」hub 下属的子页面: 选中它们时底栏仍高亮「功能」tab。
+private val FEATURE_SUBROUTES = setOf("monitor", "records", "apps", "cpu", "automode")
 
 @Composable
 fun AppRoot() {
@@ -74,57 +65,35 @@ fun AppRoot() {
         drawContent()
     }
 
-    // 智能调度是否开启 → 决定底栏 tab 集(开:监控/记录;关:CPU/应用)。
-    // 唯一可信来源是持久化的 Prefs(开关时由 AutoModeVm 写入), 稳定不抖 —— tab 集不会
-    // 反复重算, 底栏也就不会把刚点的页签弹回。启动时探测 root 一次同步真实状态:
-    // 读到 null(root 未就绪)就稍后再试, 一旦读到确定值即落盘并【停止轮询】(不再无限轮询,
-    // 那正是上一版让 tab 集持续churn、点击被弹回的祸根)。
-    val persistedSmart by Prefs.smartEnabledFlow(ctx).collectAsState(initial = null)
+    // 付费解锁态: App 启动时从 License 同步一次(root/网络在 IO 线程), 之后 UI 秒读 Prefs 缓存。
+    val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
     LaunchedEffect(Unit) {
-        while (true) {
-            val probed = withContext(Dispatchers.IO) { RootShell.probeSmartOn() }
-            if (probed != null) {
-                Prefs.setSmartEnabled(ctx, probed)   // DataStore 同值不触发变更, 不会churn
-                break
-            }
-            delay(800)   // root 未就绪, 稍后重试
-        }
+        withContext(Dispatchers.IO) { runCatching { Pro.sync(ctx) } }
     }
-    val smartOn: Boolean? = persistedSmart
-    val smart = smartOn == true
-    val tabs = if (smart) TABS_SMART else TABS_NORMAL
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
-        val selectedIndex = tabs.indexOfFirst { d ->
-            curRoute?.any { it.route == d.route } == true
-        }.coerceAtLeast(0)
         val curDestRoute = entry?.destination?.route
-        // 切换智能调度后, 若正停在【另一套 tab 才有】的页面(智能开却停在 CPU/应用,
-        // 或智能关却停在 监控/记录), 回首页一次。【只 key 在 smartOn 上】——
-        // 不再 key curDestRoute, 否则每次点 tab(路由变化)都会重跑本效应; 仅在真正切换
-        // 智能开关时才触发, 此时才需要这次跳转。点 tab 永远不会被它误踢。
-        LaunchedEffect(smartOn) {
-            val s = smartOn ?: return@LaunchedEffect          // 状态未定前不跳转
-            val r = entry?.destination?.route ?: return@LaunchedEffect
-            val stranded = if (s) (r == "cpu" || r == "apps")
-                           else   (r == "monitor" || r == "records")
-            if (stranded) {
-                nav.navigate("home") {
-                    popUpTo(nav.graph.findStartDestination().id)
-                    launchSingleTop = true
-                }
-            }
+        // 选中项: 子页面(监控/记录/应用/配置/智能高级)一律高亮「功能」tab。
+        val selectedIndex = run {
+            val onFeatureSub = curDestRoute != null &&
+                (curDestRoute in FEATURE_SUBROUTES)
+            if (onFeatureSub) TABS.indexOfFirst { it.route == "features" }
+            else TABS.indexOfFirst { d -> curRoute?.any { it.route == d.route } == true }
+                .coerceAtLeast(0)
         }
-        val hideBottomBar = curDestRoute == "about" || curDestRoute == "automode"
+        // 二级页(自带返回/沉浸)隐藏底栏; 功能 hub 的子页面保留底栏(靠「功能」tab 返回)。
+        val hideBottomBar = curDestRoute == "about" ||
+            curDestRoute == "automode" ||
+            curDestRoute == "pro"
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
                 if (!hideBottomBar) BottomBar(
                     backdrop = backdrop,
-                    items = tabs.map { it.label to it.icon },
+                    items = TABS.map { it.label to it.icon },
                     selectedIndex = selectedIndex,
                 ) { idx ->
-                    val d = tabs[idx]
+                    val d = TABS[idx]
                     if (d.route != entry?.destination?.route) {
                         view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                     }
@@ -158,6 +127,15 @@ fun AppRoot() {
                     popExitTransition = { fadeOut(tween(140)) },
                 ) {
                     composable("home")     { HomeScreen() }
+                    composable("features") {
+                        FeaturesScreen(
+                            onOpenMonitor  = { nav.navigate("monitor") },
+                            onOpenRecords  = { nav.navigate("records") },
+                            onOpenApps     = { nav.navigate("apps") },
+                            onOpenCpu      = { nav.navigate("cpu") },
+                            onOpenAutoMode = { nav.navigate("automode") },
+                        )
+                    }
                     composable("cpu")      { CpuControlScreen() }
                     composable("apps")     { AppsScreen() }
                     composable("monitor")  { AutoMonitorScreen() }
@@ -166,14 +144,21 @@ fun AppRoot() {
                     composable("settings") {
                         SettingsScreen(
                             onOpenAbout = { nav.navigate("about") },
-                            onOpenAutoMode = { nav.navigate("automode") },
+                            onOpenPro = { nav.navigate("pro") },
                         )
                     }
                     composable("about") {
                         AboutScreen(onBack = { nav.popBackStack() })
                     }
                     composable("automode") {
-                        AutoModeScreen(onBack = { nav.popBackStack() })
+                        AutoModeScreen(
+                            onBack = { nav.popBackStack() },
+                            proUnlocked = proUnlocked,
+                            onNeedPro = { nav.navigate("pro") },
+                        )
+                    }
+                    composable("pro") {
+                        ProUnlockScreen(onBack = { nav.popBackStack() })
                     }
                 }
             }

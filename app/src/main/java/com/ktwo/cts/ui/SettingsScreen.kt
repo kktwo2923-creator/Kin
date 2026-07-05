@@ -33,10 +33,11 @@ import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}) {
+fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
     val autostart by Prefs.autostartFlow(ctx).collectAsState(initial = true)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
@@ -142,28 +143,30 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenAutoMode: () -> Unit = {}
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 智能调度入口:打开自动模式(智能档)的全部开关/阈值
-            SectionTitle("调度")
+            // 付费解锁入口(仿 MetricPro): 智能模式 + 系统优化 的解锁页
+            SectionTitle("智能版")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onOpenAutoMode)
+                        .clickable(onClick = onOpenPro)
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Outlined.Tune,
+                        Icons.Outlined.AutoAwesome,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("智能调度", fontWeight = FontWeight.Medium)
+                        Text("解锁智能版 · Pro", fontWeight = FontWeight.Medium)
                         Text(
-                            "自动模式开关 · 省电/夜间/温控阈值",
+                            if (proUnlocked) "已解锁 · 智能模式 / 系统优化 已可用"
+                            else "解锁智能模式 + 系统优化(WiFi/网络/内存)",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (proUnlocked) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Icon(
