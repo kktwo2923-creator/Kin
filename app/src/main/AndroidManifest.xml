@@ -76,6 +76,16 @@
                 android:value="Multiple floating monitor overlays: load/process/thread/mini/fps/temperature" />
         </service>
 
+        <!-- 帧率录制服务:锁定前台应用, 每秒采样 FPS/帧时间/功耗并生成会话报告 -->
+        <service
+            android:name=".service.FpsRecordService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="FPS recording session: samples framerate/frametime/power of the foreground app once per second" />
+        </service>
+
         <!-- 无障碍服务:把前台包名推给 daemon(dumpsys 轮询的加速器,可选启用) -->
         <service
             android:name=".service.AppSwitchService"

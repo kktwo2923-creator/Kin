@@ -19,9 +19,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.*
+import androidx.navigation.navArgument
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.license.Pro
+import com.ktwo.cts.ui.fpsrecord.FpsRecordDetailScreen
+import com.ktwo.cts.ui.fpsrecord.FpsRecordListScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import dev.chrisbanes.haze.HazeState
@@ -47,7 +51,8 @@ private val TABS = listOf(
 private val FEATURE_SUBROUTES = setOf("monitor", "records", "apps", "cpu", "automode", "perfmon")
 
 // 自带返回/沉浸的二级页, 隐藏底栏。
-private val FULLSCREEN_ROUTES = setOf("about", "automode", "pro", "perfmon")
+private val FULLSCREEN_ROUTES =
+    setOf("about", "automode", "pro", "perfmon", "fpsrecord", "fpsrecord_detail/{id}")
 
 @Composable
 fun AppRoot() {
@@ -136,6 +141,7 @@ fun AppRoot() {
                             onOpenApps     = { nav.navigate("apps") },
                             onOpenCpu      = { nav.navigate("cpu") },
                             onOpenAutoMode = { nav.navigate("automode") },
+                            onOpenFpsRecord = { nav.navigate("fpsrecord") },
                         )
                     }
                     composable("cpu")      { CpuControlScreen() }
@@ -164,6 +170,21 @@ fun AppRoot() {
                     }
                     composable("pro") {
                         ProUnlockScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("fpsrecord") {
+                        FpsRecordListScreen(
+                            onBack = { nav.popBackStack() },
+                            onOpenDetail = { id -> nav.navigate("fpsrecord_detail/$id") },
+                        )
+                    }
+                    composable(
+                        "fpsrecord_detail/{id}",
+                        arguments = listOf(navArgument("id") { type = NavType.StringType }),
+                    ) { backEntry ->
+                        FpsRecordDetailScreen(
+                            id = backEntry.arguments?.getString("id").orEmpty(),
+                            onBack = { nav.popBackStack() },
+                        )
                     }
                 }
             }

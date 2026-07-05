@@ -1,4 +1,4 @@
-// 「功能」聚合入口: 把 监控 / 记录 / 应用 / 配置 / 智能调度高级设置 收进一个 tab。
+// 「功能」聚合入口, 分两组: 设备监控(帧率记录/悬浮窗/大屏/智能监控/记录) + 设备调优(应用/配置/智能调度高级设置)。
 package com.ktwo.cts.ui
 
 import androidx.compose.foundation.clickable
@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +37,7 @@ fun FeaturesScreen(
     onOpenApps: () -> Unit = {},
     onOpenCpu: () -> Unit = {},
     onOpenAutoMode: () -> Unit = {},
+    onOpenFpsRecord: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
@@ -65,9 +67,15 @@ fun FeaturesScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            SectionTitle("实时")
+            SectionTitle("设备监控")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
+                    FeatureRow(
+                        Icons.Outlined.Timeline, "帧率记录",
+                        "按应用录制 FPS/帧时间/卡顿, 生成会话报告与曲线",
+                        onClick = onOpenFpsRecord,
+                    )
+                    HorizontalDivider()
                     FeatureRow(
                         Icons.Outlined.Layers, "悬浮窗管理器",
                         "六个独立监视悬浮窗(负载/进程/线程/迷你/帧率/温度), 可同时开、各自拖动",
@@ -94,7 +102,7 @@ fun FeaturesScreen(
                 }
             }
 
-            SectionTitle("配置")
+            SectionTitle("设备调优")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     FeatureRow(
