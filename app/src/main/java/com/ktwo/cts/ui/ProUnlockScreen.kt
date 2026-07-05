@@ -46,11 +46,19 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
 
     var cardKey by remember { mutableStateOf("") }
     var orderNo by remember { mutableStateOf("") }
-    var qrWechat by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     var msgOk by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
+
+    // 「曾购买过会员」——诚信自助:点激活直接本地解锁, 不联网/不验证(同 Metric)。
+    fun doHonorUnlock() {
+        scope.launch {
+            Pro.markUnlocked(ctx)
+            msgOk = true; msg = "已解锁, 感谢支持!"
+            onUnlocked()
+        }
+    }
 
     // 激活:卡密优先, 否则用订单号自动取卡再激活。成功即置解锁缓存并回调。
     fun doActivate() {
@@ -145,7 +153,7 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                 }
             }
 
-            // ── 收款码 ──
+            // ── 收款码(一张图含 左微信 · 右支付宝 两个收款码) ──
             SectionTitle("扫码支持")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -153,24 +161,18 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    // 微信/支付宝切换
-                    SingleChoiceSegmentedButtonRow {
-                        SegmentedButton(
-                            selected = qrWechat, onClick = { qrWechat = true },
-                            shape = SegmentedButtonDefaults.itemShape(0, 2),
-                        ) { Text("微信") }
-                        SegmentedButton(
-                            selected = !qrWechat, onClick = { qrWechat = false },
-                            shape = SegmentedButtonDefaults.itemShape(1, 2),
-                        ) { Text("支付宝") }
-                    }
+                    Text(
+                        "微信 / 支付宝 收款码（左微信 · 右支付宝）",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                     Image(
-                        painter = painterResource(if (qrWechat) R.drawable.qr_wechat else R.drawable.qr_alipay),
-                        contentDescription = "收款码",
+                        painter = painterResource(R.drawable.qr_pay),
+                        contentDescription = "微信支付宝收款码",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
-                            .fillMaxWidth(0.72f)
-                            .heightIn(max = 300.dp)
+                            .fillMaxWidth()
+                            .heightIn(max = 260.dp)
                             .clip(RoundedCornerShape(12.dp)),
                     )
                     Text(
@@ -251,19 +253,14 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
     if (showConfirm) {
         AlertDialog(
             onDismissRequest = { showConfirm = false },
-            title = { Text("恢复/激活会员") },
+            title = { Text("曾购买过会员") },
             text = {
-                Text(
-                    if (cardKey.isNotBlank() || orderNo.isNotBlank())
-                        "将用你填写的卡密/订单号激活本机, 点「激活」继续。"
-                    else
-                        "请先在上面填入卡密或付款订单号, 再点「激活」。",
-                )
+                Text("确认你曾购买 / 支持过本项目?\n点「激活」即可直接解锁, 无需卡密、无需联网验证。")
             },
             confirmButton = {
                 TextButton(onClick = {
                     showConfirm = false
-                    doActivate()
+                    doHonorUnlock()
                 }) { Text("激活") }
             },
             dismissButton = {

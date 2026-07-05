@@ -21,10 +21,14 @@ object Pro {
     fun isUnlockedNow(): Boolean =
         runCatching { License.state() == License.State.VALID }.getOrDefault(false)
 
-    /** 从 License 同步解锁态到 Prefs(App 启动 / 联网复验后调用)。 */
+    /**
+     * 从 License 同步解锁态到 Prefs(App 启动 / 联网复验后调用)。
+     * 只【向上】置位, 绝不下调: 一旦解锁(卡密/订单号激活, 或「曾购买过会员」诚信自助),
+     * 就持久保留 —— 为爱发电模式下不因缺令牌/离线把已解锁用户又锁回去。
+     */
     suspend fun sync(context: Context) {
         val unlocked = withContext(Dispatchers.IO) { isUnlockedNow() }
-        Prefs.setProUnlocked(context, unlocked)
+        if (unlocked) Prefs.setProUnlocked(context, true)
     }
 
     /** 激活成功后置位缓存(避免等待下次 sync)。 */
