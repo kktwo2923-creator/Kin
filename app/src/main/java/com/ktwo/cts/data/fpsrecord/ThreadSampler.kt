@@ -39,7 +39,7 @@ class ThreadSampler {
     )
 
     /**
-     * 采一次: 一条 root shell 遍历 /proc/<pid>/task/*, 首行附带 /proc/stat 总 jiffies。
+     * 采一次: 一条 root shell 遍历 /proc/[pid]/task 目录, 首行附带 /proc/stat 总 jiffies。
      * 第一次调用只建立基线(不产生负载点); 之后每次差分追加 load/core 点。
      * 任何失败(无 root / 进程退出 / 输出为空)静默跳过本次。
      */
