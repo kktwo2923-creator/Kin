@@ -22,11 +22,13 @@ data class TickData(
     val threads: List<ProcSampler.Thr>?,
 )
 
-private const val WHITE = Color.WHITE
-private val GREY = Color.parseColor("#B7BDC9")
-private val ORANGE = Color.parseColor("#FF8A34")
-private val RED = Color.parseColor("#EF5350")
-private val GREEN = Color.parseColor("#4CAF50")
+// 悬浮窗改为液态玻璃(浅色磨砂 + 窗口背景模糊)后, 文本用深色墨。
+// 命名沿用 WHITE 以缩小改动面 —— 它现在代表"浅玻璃底上的主文本色(深墨)"。
+private val WHITE = Color.parseColor("#141A24")
+private val GREY = Color.parseColor("#5F6B7A")
+private val ORANGE = Color.parseColor("#E8760F")
+private val RED = Color.parseColor("#E5484D")
+private val GREEN = Color.parseColor("#2FA65A")
 
 /** 悬浮窗抽象基类: 提供近黑玻璃卡背景、monospace 文本行等公共构件。 */
 abstract class OverlayWindow(
@@ -41,10 +43,11 @@ abstract class OverlayWindow(
     abstract val root: View
     abstract fun onTick(t: TickData)
 
-    protected fun cardBg(cornerDp: Int = 12) = GradientDrawable().apply {
+    // 液态玻璃卡: 磨砂浅玻璃底 + 细描边(配合窗口 blurBehind 呈现真实玻璃质感)。
+    protected fun cardBg(cornerDp: Int = 14) = GradientDrawable().apply {
         cornerRadius = px(cornerDp).toFloat()
-        setColor(Color.argb(alpha, 12, 14, 18))
-        setStroke(px(1), Color.argb((alpha * 0.5f).toInt(), 255, 255, 255))
+        setColor(Color.argb(alpha, 246, 248, 251))
+        setStroke(px(1), Color.argb(110, 255, 255, 255))
     }
 
     protected fun verticalCard(cornerDp: Int = 12): LinearLayout = LinearLayout(ctx).apply {

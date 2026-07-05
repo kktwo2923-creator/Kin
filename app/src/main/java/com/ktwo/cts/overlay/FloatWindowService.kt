@@ -106,6 +106,11 @@ class FloatWindowService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = (resources.displayMetrics.widthPixels - px(150)).coerceAtLeast(0)
             y = px(48 + 90 * idx)
+            // 液态玻璃: 窗口背景模糊(Android 12+; 系统未开启跨窗模糊时自动降级为磨砂卡)
+            if (Build.VERSION.SDK_INT >= 31) {
+                flags = flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+                blurBehindRadius = px(20)
+            }
         }
     }
 
