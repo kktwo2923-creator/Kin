@@ -5,10 +5,12 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.ktwo.cts.data.MetricReader
@@ -77,37 +79,141 @@ abstract class OverlayWindow(
     }
 }
 
-/** 负载监视器: CPU 总占用 + 每簇频率 + GPU。 */
+/**
+ * 环形进度表(纯自绘): 浅色整圈轨道 + 彩色进度弧。
+ * 环心/环下文字不在这里画, 由外层 FrameLayout 叠 TextView 实现。
+ */
+class RingView(ctx: Context, strokePx: Float) : View(ctx) {
+    private var pct = 0
+    private val inset = strokePx / 2f + 1f
+    private val bounds = RectF()
+    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = strokePx
+        color = Color.argb(60, 20, 30, 45)
+    }
+    private val arcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = strokePx
+        strokeCap = Paint.Cap.ROUND
+        color = GREEN
+    }
+
+    /** 更新进度与弧色并重绘。pct 会被夹到 0..100。 */
+    fun set(pct: Int, arcColor: Int) {
+        this.pct = pct.coerceIn(0, 100)
+        arcPaint.color = arcColor
+        invalidate()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        bounds.set(inset, inset, w - inset, h - inset)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        if (bounds.isEmpty) return
+        canvas.drawArc(bounds, 0f, 360f, false, trackPaint)
+        if (pct > 0) canvas.drawArc(bounds, -90f, pct / 100f * 360f, false, arcPaint)
+    }
+}
+
+/**
+ * 负载监视器: 横向磨砂胶囊, 内含三个环形表(CPU / GPU / 电量)。
+ * 环 = 进度弧, 环心 = 主标签, 环下 = 频率/温度小字 —— 对齐 Metric 观感。
+ */
 class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
-    private val card = verticalCard()
-    private val tHead = title("负载监视器")
-    private val tCpu = row()
-    private val tGpu = row()
-    private val clusterRows = ArrayList<TextView>()
-    override val root: View = card
-    init {
-        card.addView(tHead); card.addView(tCpu)
-        repeat(4) { val r = row(); r.visibility = View.GONE; clusterRows.add(r); card.addView(r) }
-        card.addView(tGpu)
+
+    /** 一列环形表的视图引用: 竖直列容器 + 环 + 环心字 + 环下字。 */
+    private class RingColumn(
+        val col: LinearLayout,
+        val ring: RingView,
+        val center: TextView,
+        val below: TextView,
+    )
+
+    private val ringSize = px(46)
+
+    private fun ringColumn(centerText: String, belowText: String): RingColumn {
+        val ring = RingView(ctx, px(4).toFloat())
+        val center = row((textSp - 3f).coerceAtLeast(8f)).apply {
+            text = centerText
+            gravity = Gravity.CENTER
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        }
+        val frame = FrameLayout(ctx).apply {
+            addView(ring, FrameLayout.LayoutParams(ringSize, ringSize))
+            addView(center, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER))
+        }
+        val below = row((textSp - 4f).coerceAtLeast(8f), GREY).apply {
+            text = belowText
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            addView(frame, LinearLayout.LayoutParams(ringSize, ringSize))
+            addView(below, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(3) })
+        }
+        return RingColumn(col, ring, center, below)
     }
+
+    private val cpuCol = ringColumn("CPU", "--")
+    private val gpuCol = ringColumn("GPU", "--")
+    private val battCol = ringColumn("--", "--")
+
+    private val pill = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(px(14), px(9), px(14), px(9))
+        background = cardBg(18)
+        addView(cpuCol.col)
+        addView(gpuCol.col, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            marginStart = px(12); marginEnd = px(12)
+        })
+        addView(battCol.col)
+    }
+    override val root: View = pill
+
+    /** 负载弧色: 低绿 / 中橙 / 高红; 未知按低档处理(此时进度为 0, 基本不可见)。 */
+    private fun loadArcColor(p: Int): Int = when {
+        p < 60 -> GREEN
+        p < 85 -> ORANGE
+        else -> RED
+    }
+
+    /** 电量弧色: 充足绿 / 偏低橙 / 告急红。 */
+    private fun battArcColor(p: Int): Int = when {
+        p > 50 -> GREEN
+        p >= 20 -> ORANGE
+        else -> RED
+    }
+
     override fun onTick(t: TickData) {
         val s = t.snap
+
         val cpu = s?.cpuLoadPct ?: -1
-        tCpu.text = "CPU " + (if (cpu >= 0) "$cpu%" else "--")
-        tCpu.setTextColor(pctColor(cpu))
-        val cs = s?.clusters ?: emptyList()
-        clusterRows.forEachIndexed { i, tv ->
-            val c = cs.getOrNull(i)
-            if (c == null) { tv.visibility = View.GONE } else {
-                tv.visibility = View.VISIBLE
-                tv.text = String.format("%-4s %5dMHz", c.name, c.mhz.coerceAtLeast(0))
-            }
-        }
-        val g = s?.gpuLoadPct ?: -1
-        val gm = s?.gpuMhz ?: -1
-        tGpu.text = "GPU " + (if (g >= 0) "$g% " else "-- ") + (if (gm > 0) "${gm}MHz" else "")
-        tGpu.setTextColor(pctColor(g))
+        cpuCol.ring.set(cpu.coerceAtLeast(0), loadArcColor(cpu))
+        val topMhz = s?.clusters?.maxOfOrNull { it.mhz } ?: -1
+        cpuCol.below.text = if (topMhz > 0) "${topMhz}MHz" else "--"
+
+        val gpu = s?.gpuLoadPct ?: -1
+        gpuCol.ring.set(gpu.coerceAtLeast(0), loadArcColor(gpu))
+        val gpuMhz = s?.gpuMhz ?: -1
+        gpuCol.below.text = if (gpuMhz > 0) "${gpuMhz}MHz" else "--"
+
+        val batt = s?.battPct ?: -1
+        battCol.ring.set(batt.coerceAtLeast(0), battArcColor(batt))
+        battCol.center.text = if (batt >= 0) "$batt%" else "--"
+        val temp = s?.tempC ?: -999
+        battCol.below.text = if (temp > -100) "$temp℃" else "--"
     }
 }
 
