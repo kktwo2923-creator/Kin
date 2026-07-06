@@ -32,6 +32,7 @@ import com.ktwo.cts.ui.fpsrecord.ThreadLoadScreen
 import com.ktwo.cts.ui.governor.GovernorParamsScreen
 import com.ktwo.cts.ui.memory.MemoryDetailScreen
 import com.ktwo.cts.ui.process.ProcessScreen
+import com.ktwo.cts.ui.threadalloc.ManualAllocScreen
 import com.ktwo.cts.ui.threadalloc.ThreadAllocScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
@@ -62,7 +63,7 @@ private val FULLSCREEN_ROUTES =
     setOf(
         "about", "automode", "pro", "perfmon", "fpsrecord",
         "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
-        "memory", "governor", "docs",
+        "threadalloc_manual", "memory", "governor", "docs",
     )
 
 @Composable
@@ -203,6 +204,14 @@ fun AppRoot() {
                     }
                     composable("threadalloc") {
                         ThreadAllocScreen(
+                            onBack = { nav.popBackStack() },
+                            proUnlocked = proUnlocked,
+                            onNeedPro = { nav.navigate("pro") },
+                            onOpenManual = { nav.navigate("threadalloc_manual") },
+                        )
+                    }
+                    composable("threadalloc_manual") {
+                        ManualAllocScreen(
                             onBack = { nav.popBackStack() },
                             proUnlocked = proUnlocked,
                             onNeedPro = { nav.navigate("pro") },

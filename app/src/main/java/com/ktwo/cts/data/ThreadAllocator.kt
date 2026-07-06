@@ -93,6 +93,140 @@ object ThreadAllocator {
         ok
     }.getOrDefault(0)
 
+    // ── 手动分配: 列出目标进程全部线程 + 给指定 tid 绑核(供 ManualAllocScreen 使用) ──
+
+    /** 手动分配单次列出的线程数上限, 防异常进程线程数爆炸拖垮 UI。 */
+    private const val MAX_THREADS = 200
+
+    /**
+     * 单条线程信息(手动分配列表用)。
+     * core = 当前运行核(stat 1-based 第 39 字段 processor, 取不到为 -1);
+     * affinity = status 的 Cpus_allowed_list 原文(如 "0-7"、"0-3,7", 取不到为空串)。
+     */
+    data class ThreadInfo(
+        val tid: Int,
+        val name: String,
+        val core: Int,
+        val affinity: String,
+    )
+
+    /**
+     * 列出 pid 的全部线程: 一条 root shell 遍历 /proc/[pid]/task 下各 tid,
+     * 每条线程分 4 行输出("@I tid"、"@C comm"、"@S stat"、"@A Cpus_allowed_list"),
+     * 分行是为了避免线程名里的空格/括号污染分隔(与 ThreadSampler 同一套读法)。
+     * 无 root / 进程不存在 / 解析失败一律静默返回空列表。按 tid 升序, 上限 MAX_THREADS 条。
+     */
+    fun listThreads(pid: Int): List<ThreadInfo> = runCatching {
+        if (pid <= 0 || !RootShell.isRooted()) return@runCatching emptyList()
+        val cmd = "for t in /proc/$pid/task/[0-9]*; do " +
+            "echo \"@I \$(basename \$t)\"; " +
+            "echo \"@C \$(cat \$t/comm 2>/dev/null)\"; " +
+            "echo \"@S \$(cat \$t/stat 2>/dev/null)\"; " +
+            "echo \"@A \$(grep Cpus_allowed_list \$t/status 2>/dev/null)\"; " +
+            "done"
+        val out = RootShell.exec(cmd)
+        if (out.isBlank()) return@runCatching emptyList()
+
+        val result = ArrayList<ThreadInfo>()
+        var tid = -1
+        var name = ""
+        var core = -1
+        var affinity = ""
+        fun flush() {
+            if (tid > 0) result.add(ThreadInfo(tid, name.ifEmpty { "$tid" }, core, affinity))
+            tid = -1; name = ""; core = -1; affinity = ""
+        }
+        for (raw in out.lineSequence()) {
+            val line = raw.trim()
+            when {
+                line.startsWith("@I ") -> {
+                    flush()
+                    tid = line.removePrefix("@I ").trim().toIntOrNull() ?: -1
+                }
+                line.startsWith("@C ") -> {
+                    val n = line.removePrefix("@C ").trim()
+                    if (n.isNotEmpty()) name = n.take(32)
+                }
+                line.startsWith("@S ") -> {
+                    // stat 的 comm 在括号里(可含空格/括号), 取最后一个 ')' 之后的字段;
+                    // 去掉 pid 与 comm 后 0-based 第 36 个即 processor(1-based 第 39 字段)。
+                    val tail = line.removePrefix("@S ").substringAfterLast(')', "").trim()
+                    if (tail.isNotEmpty()) {
+                        core = tail.split(Regex("\\s+")).getOrNull(36)?.toIntOrNull() ?: -1
+                    }
+                }
+                line.startsWith("@A ") -> {
+                    // "Cpus_allowed_list:\t0-7" → "0-7"
+                    affinity = line.removePrefix("@A ").substringAfter(':', "").trim()
+                }
+            }
+        }
+        flush()
+        result.sortedBy { it.tid }.take(MAX_THREADS)
+    }.getOrDefault(emptyList())
+
+    /**
+     * CPU 簇分组(簇名 → 核编号列表), 供手动分配 UI 按 小核/中核/大核 分组展示复选框。
+     * 展示顺序按 policy 升序(即 CPU 编号顺序); 命名按 cpuinfo_max_freq 从低到高的名次
+     * (与 MetricReader.clusterLabel 同一套口径)。sysfs 读不到时退回单组「全部核心」。
+     */
+    fun coreClusters(): List<Pair<String, List<Int>>> = runCatching {
+        val policies = SysfsReader.discoverPolicies()
+        val groups = policies.mapNotNull { p ->
+            val cpus = SysfsReader.relatedCpus(p).filter { it in 0..30 }.sorted()
+            if (cpus.isEmpty()) null
+            else Triple(p, cpus, SysfsReader.minMaxFreqMhz(p).second)
+        }
+        if (groups.isEmpty()) {
+            val n = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            return@runCatching listOf("全部核心" to (0 until n).toList())
+        }
+        // 名次表: 按最大频率升序排出每个 policy 的名次, 命名用; 展示顺序仍按 CPU 编号。
+        val rank = groups.sortedBy { it.third }
+            .mapIndexed { i, g -> g.first to i }.toMap()
+        groups.map { g -> clusterName(rank[g.first] ?: 0, groups.size) to g.second }
+    }.getOrDefault(emptyList())
+
+    /** 簇命名: index = 按频率升序的名次(0 最低)。与 MetricReader.clusterLabel 同思路。 */
+    private fun clusterName(index: Int, count: Int): String = when {
+        count <= 1 -> "全部核心"
+        count == 2 -> if (index == 0) "小核" else "大核"
+        count == 3 -> listOf("小核", "中核", "大核").getOrElse(index) { "簇$index" }
+        else -> when (index) {
+            0 -> "小核"
+            count - 1 -> "超大核"
+            count - 2 -> "大核"
+            else -> "中核"
+        }
+    }
+
+    /** 解析 Cpus_allowed_list 风格的核列表(如 "0-3,7") → 升序核编号; 非法输入返回空。 */
+    fun parseCpuList(s: String): List<Int> = runCatching {
+        val out = sortedSetOf<Int>()
+        s.split(',').forEach { seg ->
+            val t = seg.trim()
+            if (t.isEmpty()) return@forEach
+            val dash = t.indexOf('-')
+            if (dash > 0) {
+                val a = t.substring(0, dash).trim().toIntOrNull()
+                val b = t.substring(dash + 1).trim().toIntOrNull()
+                if (a != null && b != null && a in 0..127 && b in a..127) out.addAll(a..b)
+            } else {
+                t.toIntOrNull()?.let { if (it in 0..127) out.add(it) }
+            }
+        }
+        out.toList()
+    }.getOrDefault(emptyList())
+
+    /**
+     * 把指定 tid 绑到 mask 对应的核心集合: taskset -p <十六进制掩码> <tid>。
+     * tid<=0 或 mask==0 直接拒绝; 无 root / 命令失败返回 false, 永不抛出。
+     */
+    fun applyAffinityToTid(tid: Int, mask: Int): Boolean = runCatching {
+        if (tid <= 0 || mask == 0) return@runCatching false
+        RootShell.execSilent("taskset -p ${Integer.toHexString(mask)} $tid")
+    }.getOrDefault(false)
+
     /**
      * 检测可能与线程分配打架的调度/加速框架, 返回展示名列表(空 = 未发现)。
      * 只读检测, 不做任何处置。

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,6 +54,7 @@ fun ThreadAllocScreen(
     onBack: () -> Unit,
     proUnlocked: Boolean = true,
     onNeedPro: () -> Unit = {},
+    onOpenManual: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -298,6 +300,37 @@ fun ThreadAllocScreen(
                         checked = gameWeight && proUnlocked,
                         proUnlocked = proUnlocked, onNeedPro = onNeedPro,
                     ) { v -> scope.launch { ThreadAllocCfg.setGameWeight(ctx, v) } }
+                }
+            }
+
+            // ── 手动分配入口 ──
+            SectionTitle("手动分配")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { if (!proUnlocked) onNeedPro() else onOpenManual() }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Tune, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("手动线程绑核", fontWeight = FontWeight.Medium)
+                        Text(
+                            "选应用查看线程列表, 手动把某个线程绑到指定核心 · 需要 Root",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 

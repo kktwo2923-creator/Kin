@@ -24,8 +24,8 @@ data class TickData(
     val threads: List<ProcSampler.Thr>?,
 )
 
-// 悬浮窗改为液态玻璃(浅色磨砂 + 窗口背景模糊)后, 文本用深色墨。
-// 命名沿用 WHITE 以缩小改动面 —— 它现在代表"浅玻璃底上的主文本色(深墨)"。
+// 悬浮窗容器为 Metric 风格灰玻璃(中性浅灰半透明), 文本用深色墨。
+// 命名沿用 WHITE 以缩小改动面 —— 它现在代表"浅灰玻璃底上的主文本色(深墨)"。
 private val WHITE = Color.parseColor("#141A24")
 private val GREY = Color.parseColor("#5F6B7A")
 private val ORANGE = Color.parseColor("#E8760F")
@@ -45,14 +45,14 @@ abstract class OverlayWindow(
     abstract val root: View
     abstract fun onTick(t: TickData)
 
-    // 液态玻璃卡: 磨砂浅玻璃底 + 细描边(配合窗口 blurBehind 呈现真实玻璃质感)。
-    protected fun cardBg(cornerDp: Int = 14) = GradientDrawable().apply {
+    // Metric 风格灰玻璃胶囊: 中性浅灰半透明底 + 大圆角, 描边仅留极弱的深色细线。
+    protected fun cardBg(cornerDp: Int = 18) = GradientDrawable().apply {
         cornerRadius = px(cornerDp).toFloat()
-        setColor(Color.argb(alpha, 246, 248, 251))
-        setStroke(px(1), Color.argb(110, 255, 255, 255))
+        setColor(Color.argb(alpha, 228, 231, 236))
+        setStroke(1, Color.argb(24, 20, 30, 45))
     }
 
-    protected fun verticalCard(cornerDp: Int = 12): LinearLayout = LinearLayout(ctx).apply {
+    protected fun verticalCard(cornerDp: Int = 16): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(px(10), px(7), px(10), px(7))
         background = cardBg(cornerDp)
@@ -118,7 +118,7 @@ class RingView(ctx: Context, strokePx: Float) : View(ctx) {
 }
 
 /**
- * 负载监视器: 横向磨砂胶囊, 内含三个环形表(CPU / GPU / 电量)。
+ * 负载监视器: 横向灰玻璃胶囊, 内含三个环形表(CPU / GPU / 电量)。
  * 环 = 进度弧, 环心 = 主标签, 环下 = 频率/温度小字 —— 对齐 Metric 观感。
  */
 class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
@@ -182,35 +182,22 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     }
     override val root: View = pill
 
-    /** 负载弧色: 低绿 / 中橙 / 高红; 未知按低档处理(此时进度为 0, 基本不可见)。 */
-    private fun loadArcColor(p: Int): Int = when {
-        p < 60 -> GREEN
-        p < 85 -> ORANGE
-        else -> RED
-    }
-
-    /** 电量弧色: 充足绿 / 偏低橙 / 告急红。 */
-    private fun battArcColor(p: Int): Int = when {
-        p > 50 -> GREEN
-        p >= 20 -> ORANGE
-        else -> RED
-    }
-
+    // 三环弧色对齐 Metric: 按指标固定色(CPU 恒绿 / GPU 恒橙 / 电量恒绿), 不随负载值变色。
     override fun onTick(t: TickData) {
         val s = t.snap
 
         val cpu = s?.cpuLoadPct ?: -1
-        cpuCol.ring.set(cpu.coerceAtLeast(0), loadArcColor(cpu))
+        cpuCol.ring.set(cpu.coerceAtLeast(0), GREEN)
         val topMhz = s?.clusters?.maxOfOrNull { it.mhz } ?: -1
         cpuCol.below.text = if (topMhz > 0) "${topMhz}MHz" else "--"
 
         val gpu = s?.gpuLoadPct ?: -1
-        gpuCol.ring.set(gpu.coerceAtLeast(0), loadArcColor(gpu))
+        gpuCol.ring.set(gpu.coerceAtLeast(0), ORANGE)
         val gpuMhz = s?.gpuMhz ?: -1
         gpuCol.below.text = if (gpuMhz > 0) "${gpuMhz}MHz" else "--"
 
         val batt = s?.battPct ?: -1
-        battCol.ring.set(batt.coerceAtLeast(0), battArcColor(batt))
+        battCol.ring.set(batt.coerceAtLeast(0), GREEN)
         battCol.center.text = if (batt >= 0) "$batt%" else "--"
         val temp = s?.tempC ?: -999
         battCol.below.text = if (temp > -100) "$temp℃" else "--"
