@@ -393,29 +393,121 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     }
 }
 
-/** 迷你监视器: 单行药丸 fps · CPU% · 温度。 */
+/**
+ * 迷你监视器(对齐 Metric 原版): 顶部居中贴状态栏的超细 HUD 横条, 点击穿透(窗口层加 NOT_TOUCHABLE)。
+ * 深色半透明底 #D91B1D22 + 8dp 圆角, 四段: CPU(绿, 带微型负载折线) / GPU(蓝) / FPS(金) / 功耗温度轮换(粉)。
+ * 第四段按 Metric 的 mini-overlay-power-swap 节奏: 9s 一循环, 前 6s 显功耗后 3s 显温度。
+ * 紧凑字号固定(Metric 原版 7~8sp), 不随用户悬浮窗字号设置走。
+ */
 class MiniOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
-    private val pill = LinearLayout(ctx).apply {
+
+    private val segGreen = Color.parseColor("#8DEB9A")
+    private val segBlue = Color.parseColor("#8FB9FF")
+    private val segGold = Color.parseColor("#FFD166")
+    private val segPink = Color.parseColor("#FF8EA1")
+    private val ink = Color.parseColor("#F2F5F9")
+    private val fs = 8f
+
+    private fun cell(color: Int, minWidthDp: Int = 0) = TextView(ctx).apply {
+        setTextColor(color)
+        textSize = fs
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        includeFontPadding = false
+        if (minWidthDp > 0) minimumWidth = px(minWidthDp)
+    }
+
+    private val spark = MiniSparkView(ctx, segGreen)
+    private val vCpu = cell(ink, 22)
+    private val vGpu = cell(ink, 22)
+    private val vFps = cell(ink, 26)
+    private val lPwr = cell(segPink)
+    private val vPwr = cell(ink, 36)
+
+    private val bar = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(px(12), px(6), px(12), px(6))
-        background = cardBg(18)
+        setPadding(px(8), px(3), px(8), px(3))
+        background = GradientDrawable().apply {
+            cornerRadius = px(8).toFloat()
+            setColor(Color.argb(217, 27, 29, 34))   // Metric #D91B1D22
+        }
     }
-    private val tv = row()
-    override val root: View = pill
+    override val root: View = bar
+
+    private fun addSeg(label: TextView, vararg views: View) {
+        bar.addView(label, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            marginStart = if (bar.childCount == 0) 0 else px(7)
+        })
+        views.forEach { v ->
+            bar.addView(v, LinearLayout.LayoutParams(
+                if (v is MiniSparkView) px(20) else LinearLayout.LayoutParams.WRAP_CONTENT,
+                if (v is MiniSparkView) px(8) else LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = px(2) })
+        }
+    }
+
     init {
-        pill.addView(tv)
-        pill.post { (pill.background as? GradientDrawable)?.cornerRadius = pill.height / 2f }
+        addSeg(cell(segGreen).apply { text = "CPU" }, spark, vCpu)
+        addSeg(cell(segBlue).apply { text = "GPU" }, vGpu)
+        addSeg(cell(segGold).apply { text = "FPS" }, vFps)
+        lPwr.text = "PWR"
+        addSeg(lPwr, vPwr)
     }
+
+    private var tick = 0L
+
     override fun onTick(t: TickData) {
+        tick++
         val s = t.snap
-        val fps = s?.fps ?: -1
         val cpu = s?.cpuLoadPct ?: -1
-        val temp = s?.tempC ?: -999
-        tv.text = (if (fps >= 0) "${fps}fps" else "--fps") + " · " +
-            (if (cpu >= 0) "$cpu%" else "--") + " · " +
-            (if (temp > -100) "$temp℃" else "--")
+        vCpu.text = if (cpu >= 0) "$cpu%" else "--"
+        if (cpu >= 0) spark.push(cpu)
+        val gpu = s?.gpuLoadPct ?: -1
+        vGpu.text = if (gpu >= 0) "$gpu%" else "--"
+        val fps = s?.fps ?: -1
+        vFps.text = if (fps >= 0) String.format(java.util.Locale.US, "%.1f", fps.toFloat()) else "--"
+        // 功耗/温度轮换(Metric: phase<2/3 显功耗, 其余显温度)
+        if (tick % 9 < 6) {
+            lPwr.text = "PWR"
+            val w = s?.watt ?: 0.0
+            vPwr.text = if (w > 0.0) String.format(java.util.Locale.US, "%.2fW", w) else "--W"
+        } else {
+            lPwr.text = "TEMP"
+            val c = s?.tempC ?: -999
+            vPwr.text = if (c > -100) "$c℃" else "--℃"
+        }
+    }
+}
+
+/** 迷你条上的微型负载折线(0..100 固定量程, 保留最近 30 个点)。 */
+class MiniSparkView(ctx: Context, lineColor: Int) : View(ctx) {
+    private val data = ArrayDeque<Int>()
+    private val cap = 30
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = lineColor; style = Paint.Style.STROKE; strokeWidth = 2f; strokeCap = Paint.Cap.ROUND
+    }
+    private val path = Path()
+    fun push(v: Int) {
+        if (data.size >= cap) data.removeFirst()
+        data.addLast(v.coerceIn(0, 100))
+        invalidate()
+    }
+    override fun onDraw(canvas: Canvas) {
+        if (data.size < 2) return
+        val w = width.toFloat(); val h = height.toFloat()
+        val stepX = w / (cap - 1)
+        val start = cap - data.size
+        path.reset()
+        var started = false
+        data.forEachIndexed { i, v ->
+            val x = (start + i) * stepX
+            val y = h - v / 100f * (h - 2f) - 1f
+            if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
+        }
+        canvas.drawPath(path, paint)
     }
 }
 

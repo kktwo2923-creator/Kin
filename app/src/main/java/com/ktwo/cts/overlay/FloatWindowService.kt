@@ -114,6 +114,24 @@ class FloatWindowService : Service() {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else
             @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+        // 迷你监视器对齐 Metric 原版: 顶部居中贴挖孔区, 点击穿透(NOT_TOUCHABLE), 不可拖动
+        if (type == OverlayType.MINI) {
+            return WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                winType,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                x = 0; y = px(2)
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         val idx = OverlayType.entries.indexOf(type).coerceAtLeast(0)
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -136,23 +154,28 @@ class FloatWindowService : Service() {
         if (windows.containsKey(type)) return
         val win = factory(type)
         val lp = defaultParams(type)
-        attachDrag(type, win, lp)
-        // 入场动画: 缩放 0.85→1 + 淡入, 带一点回弹(Metric/Compose spring 观感)
+        val fixed = type == OverlayType.MINI   // 迷你条固定顶部居中, 点击穿透不可拖
+        if (!fixed) attachDrag(type, win, lp)
+        // 入场动画: 普通窗缩放 0.85→1+淡入(带回弹); 迷你条从状态栏上方滑入+淡入
         win.root.alpha = 0f
-        win.root.scaleX = 0.85f
-        win.root.scaleY = 0.85f
+        if (fixed) {
+            win.root.translationY = -px(16).toFloat()
+        } else {
+            win.root.scaleX = 0.85f
+            win.root.scaleY = 0.85f
+        }
         val ok = runCatching { wm.addView(win.root, lp) }.isSuccess
         if (!ok) return
         win.root.animate()
-            .alpha(1f).scaleX(1f).scaleY(1f)
+            .alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
             .setDuration(280)
             .setInterpolator(OvershootInterpolator(1.1f))
             .start()
         windows[type] = Holder(win, lp)
         activeTypes = windows.keys.toSet()
         updateNotification()
-        // 异步应用存档落点
-        scope.launch {
+        // 异步应用存档落点(迷你条不落点, 恒定顶部居中)
+        if (!fixed) scope.launch {
             val (sx, sy) = Prefs.ovlPos(this@FloatWindowService, type)
             if (sx != Int.MIN_VALUE && sy != Int.MIN_VALUE) withContext(Dispatchers.Main) {
                 lp.x = sx; lp.y = sy
