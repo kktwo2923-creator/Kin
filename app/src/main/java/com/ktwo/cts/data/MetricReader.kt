@@ -16,7 +16,8 @@ import java.io.File
  */
 object MetricReader {
 
-    data class Cluster(val name: String, val mhz: Int)
+    // cpus 为该簇覆盖的核编号(related_cpus), 读不到为空表 —— 带默认值, 老调用零改动。
+    data class Cluster(val name: String, val mhz: Int, val cpus: List<Int> = emptyList())
 
     data class Snapshot(
         val clusters: List<Cluster>,   // 每簇: 名(小核/中核/大核) + 当前 MHz
@@ -35,6 +36,13 @@ object MetricReader {
         val swapUsedGb: Double = 0.0,  // 已用 swap GB
         val swapTotalGb: Double = 0.0, // 总 swap GB
         val swapCachedMb: Int = -1,    // SwapCached MB(-1 未知)
+        // ── 悬浮窗展开态追加(全部带默认值, 老调用零改动; 取不到即默认)──
+        val coreLoadPct: List<Int> = emptyList(),  // 每核占用 %(下标=核号, -1 未知)
+        val coreMhz: List<Int> = emptyList(),      // 每核当前 MHz(下标=核号, -1 未知)
+        val ramCombinedPct: Int = -1,  // (物理已用+swap 已用)/物理总量 %(可 >100, -1 未知)
+        val ddrMhz: Int = -1,          // DDR/内存总线当前频率 MHz(-1 未知)
+        val ddrTempC: Double = -999.0, // DDR 温度 ℃(-999 未知)
+        val gpuTempC: Double = -999.0, // GPU 温度 ℃(-999 未知)
     )
 
     // ── CPU 占用率: /proc/stat 差分 ──
@@ -94,13 +102,165 @@ object MetricReader {
     }
 
     @Volatile private var cachedPolicies: List<Int>? = null
+    @Volatile private var cachedRelatedCpus: Map<Int, List<Int>>? = null
 
     private fun readClusters(): List<Cluster> {
         val policies = cachedPolicies ?: SysfsReader.discoverPolicies().also { cachedPolicies = it }
         if (policies.isEmpty()) return emptyList()
+        val related = cachedRelatedCpus ?: policies.associateWith { p ->
+            runCatching { SysfsReader.relatedCpus(p) }.getOrDefault(emptyList())
+        }.also { cachedRelatedCpus = it }
         return policies.mapIndexed { i, p ->
-            Cluster(clusterLabel(i, policies.size), SysfsReader.curFreqMhz(p))
+            Cluster(clusterLabel(i, policies.size), SysfsReader.curFreqMhz(p), related[p] ?: emptyList())
         }
+    }
+
+    // ── 每核占用率: /proc/stat 的 cpu0..cpuN 行差分(与整体 CPU 同法, 按核各自持有上次值)──
+    private val lastCoreIdle = HashMap<Int, Long>()
+    private val lastCoreTotal = HashMap<Int, Long>()
+
+    // 整读 /proc/stat 文本(免 root 优先, 读不到 root 兜底); null=均不可用。
+    private fun procStatText(): String? {
+        runCatching {
+            val txt = File("/proc/stat").readText()
+            if (txt.startsWith("cpu")) return txt
+        }
+        if (RootShell.isRooted()) {
+            runCatching { RootShell.exec("cat /proc/stat 2>/dev/null") }.getOrNull()
+                ?.takeIf { it.startsWith("cpu") }?.let { return it }
+        }
+        return null
+    }
+
+    /**
+     * 每核占用 %。返回下标=核号的列表(长度=核数), 未知核为 -1;
+     * 首帧(无上次值)与离线核(/proc/stat 里没有该行)均为 -1。整体不可读返回空表。
+     */
+    private fun readPerCoreLoads(): List<Int> {
+        val n = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val txt = procStatText() ?: return emptyList()
+        val out = MutableList(n) { -1 }
+        // snapshot() 可能被多个采样方并发调用, 差分缓存加锁防 HashMap 并发写坏
+        synchronized(lastCoreIdle) {
+            for (line in txt.lineSequence()) {
+                if (!line.startsWith("cpu")) continue
+                val id = line.substring(3).takeWhile { it.isDigit() }.toIntOrNull() ?: continue
+                if (id !in 0 until n) continue
+                val parts = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
+                if (parts.size < 5) continue
+                val idle = parts[3] + parts[4]
+                val total = parts.sum()
+                val prevIdle = lastCoreIdle[id]
+                val prevTotal = lastCoreTotal[id]
+                lastCoreIdle[id] = idle
+                lastCoreTotal[id] = total
+                if (prevIdle == null || prevTotal == null || total <= prevTotal) continue
+                val dTotal = (total - prevTotal).toDouble()
+                val dIdle = (idle - prevIdle).toDouble()
+                out[id] = (((dTotal - dIdle) / dTotal) * 100.0).toInt().coerceIn(0, 100)
+            }
+        }
+        return out
+    }
+
+    /**
+     * 每核当前频率 MHz(下标=核号, -1 未知)。免 root 逐核直读 scaling_cur_freq;
+     * 一个都读不到且有 root 时用单条 shell 批量兜底(避免每核一次 root exec)。
+     */
+    private fun readPerCoreMhz(): List<Int> {
+        val n = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val out = MutableList(n) { -1 }
+        var anyDirect = false
+        for (i in 0 until n) {
+            runCatching {
+                val f = File("/sys/devices/system/cpu/cpu$i/cpufreq/scaling_cur_freq")
+                if (f.canRead()) {
+                    val k = f.readText().trim().toLongOrNull()
+                    if (k != null && k > 0) { out[i] = (k / 1000).toInt(); anyDirect = true }
+                }
+            }
+        }
+        if (!anyDirect && RootShell.isRooted()) {
+            val txt = runCatching {
+                RootShell.exec(
+                    "for c in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq; do " +
+                        "echo \"\$c \$(cat \$c 2>/dev/null)\"; done"
+                )
+            }.getOrDefault("")
+            val re = Regex("cpu(\\d+)/cpufreq/scaling_cur_freq\\s+(\\d+)")
+            for (line in txt.lineSequence()) {
+                val m = re.find(line) ?: continue
+                val id = m.groupValues[1].toIntOrNull() ?: continue
+                val k = m.groupValues[2].toLongOrNull() ?: continue
+                if (id in 0 until n && k > 0) out[id] = (k / 1000).toInt()
+            }
+        }
+        return out
+    }
+
+    // ── DDR 频率: 枚举 /sys/class/devfreq 里名字含 ddr/dvfsrc/bimc 的节点, 读 cur_freq ──
+    @Volatile private var ddrPathResolved = false
+    @Volatile private var ddrPath: String? = null
+
+    private fun resolveDdrPath(): String? {
+        if (ddrPathResolved) return ddrPath
+        ddrPathResolved = true
+        val names = runCatching {
+            File("/sys/class/devfreq").list()?.toList() ?: emptyList()
+        }.getOrDefault(emptyList()).ifEmpty {
+            if (RootShell.isRooted()) runCatching {
+                RootShell.exec("ls -1 /sys/class/devfreq 2>/dev/null")
+                    .lines().map { it.trim() }.filter { it.isNotEmpty() }
+            }.getOrDefault(emptyList()) else emptyList()
+        }
+        // 优先级: 名字含 ddr > mtk dvfsrc(DDR 档位) > 高通 bimc(内存总线)
+        for (hint in listOf("ddr", "dvfsrc", "bimc")) {
+            val hit = names.firstOrNull { it.lowercase().contains(hint) } ?: continue
+            val p = "/sys/class/devfreq/$hit/cur_freq"
+            if (readOrRoot(p) != null) { ddrPath = p; return p }
+        }
+        return null
+    }
+
+    private fun readDdrMhz(): Int {
+        val p = resolveDdrPath() ?: return -1
+        val raw = readOrRoot(p)?.toLongOrNull() ?: return -1
+        // 按量级判断单位: >10M=Hz, >10K=kHz, 否则已是 MHz
+        val mhz = when {
+            raw > 10_000_000 -> (raw / 1_000_000).toInt()
+            raw > 10_000     -> (raw / 1000).toInt()
+            else             -> raw.toInt()
+        }
+        return if (mhz > 0) mhz else -1
+    }
+
+    // ── 指定部件温度: thermal zone type 含关键词的取最高(路径首次枚举后缓存)──
+    private val namedTempPaths = HashMap<String, List<String>>()
+
+    private fun discoverNamedTempPaths(hint: String): List<String> {
+        val zones = runCatching {
+            File("/sys/class/thermal").list()?.filter { it.startsWith("thermal_zone") } ?: emptyList()
+        }.getOrDefault(emptyList())
+        val out = ArrayList<String>()
+        for (z in zones.take(80)) {
+            val type = readOrRoot("/sys/class/thermal/$z/type")?.lowercase() ?: continue
+            if (type.contains(hint)) out.add("/sys/class/thermal/$z/temp")
+        }
+        return out
+    }
+
+    /** 读 type 含 [hint] 的热区最高温(℃); 取不到 -999.0。 */
+    private fun readNamedTempC(hint: String): Double {
+        val paths = synchronized(namedTempPaths) {
+            namedTempPaths.getOrPut(hint) { discoverNamedTempPaths(hint) }
+        }
+        var best = -999.0
+        for (p in paths.take(6)) {
+            val raw = readOrRoot(p)?.toDoubleOrNull() ?: continue
+            val c = if (kotlin.math.abs(raw) > 1000) raw / 1000.0 else raw
+            if (c in 0.0..150.0) best = maxOf(best, c)
+        }
+        return best
     }
 
     // ── GPU 占用率 ──
@@ -153,6 +313,7 @@ object MetricReader {
     private data class RamInfo(
         val pct: Int, val usedGb: Double, val totalGb: Double,
         val swapPct: Int, val swapUsedGb: Double, val swapTotalGb: Double, val swapCachedMb: Int,
+        val combinedPct: Int = -1,   // (物理已用+swap 已用)/物理总量 %, 可 >100
     )
 
     private fun readRam(): RamInfo {
@@ -195,7 +356,13 @@ object MetricReader {
             swapPct = ((usedKb.toDouble() / swapTotal) * 100.0).toInt().coerceIn(0, 100)
         }
         val swapCachedMb = if (swapCached >= 0) (swapCached / 1024).toInt() else -1
-        return RamInfo(pct, usedGb, totalGb, swapPct, swapUsedGb, swapTotalGb, swapCachedMb)
+        // 合计口径(仿 Metric "#RAM 81% 131%" 的第二个数): (物理已用+swap 已用)/物理总量
+        val combinedPct = if (total > 0 && avail >= 0) {
+            val usedKb = (total - avail).coerceAtLeast(0)
+            val swapUsedKb = if (swapTotal > 0 && swapFree >= 0) (swapTotal - swapFree).coerceAtLeast(0) else 0L
+            (((usedKb + swapUsedKb).toDouble() / total) * 100.0).toInt().coerceIn(0, 999)
+        } else -1
+        return RamInfo(pct, usedGb, totalGb, swapPct, swapUsedGb, swapTotalGb, swapCachedMb, combinedPct)
     }
 
     // ── FPS ──
@@ -296,6 +463,12 @@ object MetricReader {
             swapUsedGb = ram.swapUsedGb,
             swapTotalGb = ram.swapTotalGb,
             swapCachedMb = ram.swapCachedMb,
+            coreLoadPct = runCatching { readPerCoreLoads() }.getOrDefault(emptyList()),
+            coreMhz = runCatching { readPerCoreMhz() }.getOrDefault(emptyList()),
+            ramCombinedPct = ram.combinedPct,
+            ddrMhz = runCatching { readDdrMhz() }.getOrDefault(-1),
+            ddrTempC = runCatching { readNamedTempC("ddr") }.getOrDefault(-999.0),
+            gpuTempC = runCatching { readNamedTempC("gpu") }.getOrDefault(-999.0),
         )
     }
 }

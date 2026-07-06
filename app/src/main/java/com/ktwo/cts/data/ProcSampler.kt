@@ -11,7 +11,18 @@ import com.ktwo.cts.root.RootShell
 object ProcSampler {
 
     data class Proc(val pid: Int, val name: String, val cpuPct: Float, val rssMb: Int)
-    data class Thr(val tid: Int, val name: String, val cpuPct: Float, val state: Char)
+
+    // affinity/core 带默认值("", -1), 老调用处零改动:
+    //  - affinity: /proc/[tid]/status 的 Cpus_allowed_list(如 "0-7"), 取不到为 ""
+    //  - core: /proc/[tid]/stat 第 39 字段 processor(当前所在核), 取不到为 -1
+    data class Thr(
+        val tid: Int,
+        val name: String,
+        val cpuPct: Float,
+        val state: Char,
+        val affinity: String = "",
+        val core: Int = -1,
+    )
 
     @Volatile private var topUsable = true
 
@@ -78,7 +89,48 @@ object ProcSampler {
             val st = parts[2].firstOrNull() ?: 'S'
             rows.add(Thr(tid, baseName(parts[3]), cpu, st))
         }
-        return rows.sortedByDescending { it.cpuPct }.take(limit)
+        val top = rows.sortedByDescending { it.cpuPct }.take(limit)
+        return enrichThreads(top)
+    }
+
+    /**
+     * 给 TOP 线程补齐 亲和(Cpus_allowed_list)与当前核(stat processor 字段)。
+     * 单条 root shell 批量读 /proc/[tid]/stat 与 /proc/[tid]/status(线程目录可直接寻址);
+     * 任一失败保持默认("", -1), 不影响主列表。
+     */
+    private fun enrichThreads(rows: List<Thr>): List<Thr> {
+        if (rows.isEmpty()) return rows
+        return runCatching {
+            val cmd = StringBuilder()
+            for (r in rows) {
+                cmd.append("echo \"@I ${r.tid}\"; ")
+                cmd.append("echo \"@S \$(cat /proc/${r.tid}/stat 2>/dev/null)\"; ")
+                cmd.append("echo \"@A \$(grep Cpus_allowed_list /proc/${r.tid}/status 2>/dev/null)\"; ")
+            }
+            val out = RootShell.exec(cmd.toString())
+            val cores = HashMap<Int, Int>()
+            val affs = HashMap<Int, String>()
+            var cur = -1
+            for (raw in out.lineSequence()) {
+                val line = raw.trim()
+                when {
+                    line.startsWith("@I ") ->
+                        cur = line.removePrefix("@I ").trim().toIntOrNull() ?: -1
+                    line.startsWith("@S ") && cur > 0 -> {
+                        // comm 在括号里可含空格, 取最后一个 ')' 之后; 去 pid+comm 后 0-based 36=processor
+                        val tail = line.removePrefix("@S ").substringAfterLast(')', "").trim()
+                        val f = tail.split(Regex("\\s+"))
+                        f.getOrNull(36)?.toIntOrNull()?.let { if (it >= 0) cores[cur] = it }
+                    }
+                    line.startsWith("@A ") && cur > 0 -> {
+                        // "Cpus_allowed_list:\t0-7" → "0-7"
+                        val a = line.removePrefix("@A ").substringAfter(':', "").trim()
+                        if (a.isNotEmpty()) affs[cur] = a.take(15)
+                    }
+                }
+            }
+            rows.map { it.copy(affinity = affs[it.tid] ?: "", core = cores[it.tid] ?: -1) }
+        }.getOrDefault(rows)
     }
 
     // ── /proc 差分回退(仅进程)──

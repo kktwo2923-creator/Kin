@@ -18,6 +18,9 @@ import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.ProcSampler
 import com.ktwo.cts.data.OverlayType
 import com.ktwo.cts.data.SysfsReader
+import com.ktwo.cts.data.fpsrecord.ThreadSampler
+import com.ktwo.cts.service.AppSwitchService
+import com.ktwo.cts.service.ForegroundDetector
 import kotlinx.coroutines.*
 
 /**
@@ -78,13 +81,23 @@ class FloatWindowService : Service() {
 
     private fun factory(type: OverlayType): OverlayWindow {
         val a = type.accent.toInt()
-        return when (type) {
+        val win = when (type) {
             OverlayType.LOAD    -> LoadOverlayWindow(this, a, alpha, textSp)
             OverlayType.PROCESS -> ProcessOverlayWindow(this, a, alpha, textSp)
             OverlayType.THREAD  -> ThreadOverlayWindow(this, a, alpha, textSp)
             OverlayType.MINI    -> MiniOverlayWindow(this, a, alpha, textSp)
             OverlayType.FPS     -> FpsOverlayWindow(this, a, alpha, textSp)
             OverlayType.TEMP    -> TempOverlayWindow(this, a, alpha, textSp)
+        }
+        // 窗内 ✕: 移除该窗并持久化关闭(防 START_STICKY 重建 syncFromPrefs 复活)
+        win.onCloseRequest = { requestClose(type) }
+        return win
+    }
+
+    private fun requestClose(type: OverlayType) {
+        scope.launch {
+            runCatching { Prefs.setOvlEnabled(this@FloatWindowService, type, false) }
+            withContext(Dispatchers.Main) { hideWindow(type) }
         }
     }
 
@@ -115,7 +128,7 @@ class FloatWindowService : Service() {
         if (windows.containsKey(type)) return
         val win = factory(type)
         val lp = defaultParams(type)
-        attachDrag(type, win.root, lp)
+        attachDrag(type, win, lp)
         val ok = runCatching { wm.addView(win.root, lp) }.isSuccess
         if (!ok) return
         windows[type] = Holder(win, lp)
@@ -148,7 +161,10 @@ class FloatWindowService : Service() {
         }
     }
 
-    private fun attachDrag(type: OverlayType, view: View, lp: WindowManager.LayoutParams) {
+    // 拖动 + 单击分发: 移动阈值(3dp)内抬手视为 tap, 回调窗体 onTap(负载窗用它做收起/展开)。
+    // 带点击监听的子 View(✕/标签)会自行消费触摸, 不会走到这里, 天然不冲突。
+    private fun attachDrag(type: OverlayType, win: OverlayWindow, lp: WindowManager.LayoutParams) {
+        val view = win.root
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
         view.setOnTouchListener { _, ev ->
             when (ev.action) {
@@ -163,9 +179,37 @@ class FloatWindowService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (moved) scope.launch { Prefs.setOvlPos(this@FloatWindowService, type, lp.x, lp.y) }
+                    else runCatching { win.onTap() }
                     true
                 }
                 else -> false
+            }
+        }
+    }
+
+    // ── 前台应用信息(线程窗表头): 优先无障碍推送的进程内缓存(零开销), 兜底 ForegroundDetector ──
+    private var fgDetector: ForegroundDetector? = null
+    private var fgPkg = ""
+    private var fgLabel = ""
+    private var fgPid = -1
+
+    private fun refreshForeground(tick: Long) {
+        runCatching {
+            var p = AppSwitchService.foreground
+            if ((p.isEmpty() || p == packageName) && tick % 5 == 0L) {
+                val d = fgDetector ?: ForegroundDetector(this).also { fgDetector = it }
+                p = runCatching { d.currentForegroundPackage() }.getOrNull().orEmpty()
+            }
+            if (p.isEmpty() || p == packageName) return   // 拿不到/是自己 → 保持上次
+            if (p != fgPkg) {
+                fgPkg = p
+                fgLabel = runCatching {
+                    val pm = packageManager
+                    pm.getApplicationLabel(pm.getApplicationInfo(p, 0)).toString()
+                }.getOrDefault("")
+                fgPid = runCatching { ThreadSampler.resolvePid(p) }.getOrDefault(-1)
+            } else if (fgPid <= 0 && tick % 5 == 0L) {
+                fgPid = runCatching { ThreadSampler.resolvePid(p) }.getOrDefault(-1)
             }
         }
     }
@@ -181,7 +225,8 @@ class FloatWindowService : Service() {
                 runCatching { ProcSampler.topProcesses(8) }.getOrNull() else null
             val thrs = if (needProc && activeTypes.contains(OverlayType.THREAD))
                 runCatching { ProcSampler.topThreads(8) }.getOrNull() else null
-            val data = TickData(snap, batt, procs, thrs)
+            if (activeTypes.contains(OverlayType.THREAD)) refreshForeground(tick)
+            val data = TickData(snap, batt, procs, thrs, fgPkg, fgLabel, fgPid)
             withContext(Dispatchers.Main) { windows.values.forEach { it.win.onTick(data) } }
             tick++
             delay(1000)
