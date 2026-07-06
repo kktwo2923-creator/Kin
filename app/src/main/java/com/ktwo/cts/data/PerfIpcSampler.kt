@@ -16,6 +16,9 @@ object PerfIpcSampler {
     private val running = AtomicBoolean(false)
     @Volatile private var wanted = false
     @Volatile private var launchedAt = 0L
+    // 专用 root 会话: simpleperf 是常驻长命令, 绝不能占用 libsu 主 shell ——
+    // 主 shell 是全 App 共享的串行队列, 被占住会堵死帧率/进程/线程等所有 root 读数
+    @Volatile private var perfShell: Shell? = null
 
     /** 核号 → 最近一秒 IPC; 未知(未采到/不支持)返回 NaN。 */
     fun ipcOf(core: Int): Double = if (core in ipc.indices) ipc[core] else Double.NaN
@@ -36,6 +39,8 @@ object PerfIpcSampler {
     fun stop() {
         wanted = false
         ipc = DoubleArray(0)
+        runCatching { perfShell?.close() }   // 关掉专用会话, simpleperf 随会话终止
+        perfShell = null
         runCatching { RootShell.execSilent("pkill -f 'simpleperf stat -a --per-core' 2>/dev/null") }
     }
 
@@ -87,7 +92,17 @@ object PerfIpcSampler {
         val cmd = "simpleperf stat -a --per-core -e cpu-cycles,instructions " +
             "--interval 1000 --duration 3600 2>/dev/null"
         runCatching {
-            Shell.cmd(cmd).to(sink).submit {
+            // 独立 root 会话跑长命令(不能用 Shell.cmd —— 那是共享主 shell 的串行队列)
+            val sh = Shell.Builder.create().build("su")
+            if (!sh.isRoot) {
+                runCatching { sh.close() }
+                running.set(false)
+                return
+            }
+            perfShell = sh
+            sh.newJob().add(cmd).to(sink).submit {
+                runCatching { sh.close() }
+                if (perfShell === sh) perfShell = null
                 running.set(false)
                 ipc = DoubleArray(0)
                 // 只有跑满一分钟以上(排除启动即失败的机器)且仍被需要才自续
