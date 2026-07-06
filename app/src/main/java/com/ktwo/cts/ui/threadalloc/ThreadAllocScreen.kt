@@ -36,12 +36,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.ktwo.cts.data.ThreadAllocCfg
+import com.ktwo.cts.data.ThreadAllocDaemonCfg
 import com.ktwo.cts.data.ThreadAllocator
 import com.ktwo.cts.service.AppSwitchService
 import com.ktwo.cts.service.ForegroundDetector
 import com.ktwo.cts.ui.SectionTitle
 import com.ktwo.cts.ui.TonalCard
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -69,6 +71,19 @@ fun ThreadAllocScreen(
     var bigCores by remember { mutableStateOf<List<Int>>(emptyList()) }
     var showGamePicker by remember { mutableStateOf(false) }
     var applying by remember { mutableStateOf(false) }
+
+    // 把总开关 + 游戏库同步进守护 config.json 的 Function.ThreadAlloc 段(守护据此持续绑核)。
+    // 先落 DataStore 再从 DataStore 读最新值写盘, 避免连续勾选时用到过期的 compose 状态;
+    // 内部 runCatching + IO 线程, 无 root 时静默失败, 不打断用户。
+    suspend fun syncDaemon() {
+        runCatching {
+            ThreadAllocDaemonCfg.sync(
+                ctx,
+                enabled = ThreadAllocCfg.enabled(ctx),
+                gamePkgs = ThreadAllocCfg.gamePkgsFlow(ctx).first(),
+            )
+        }
+    }
 
     // 冲突检测 + 大核识别: 进页时后台跑一次, 失败静默(空列表)
     LaunchedEffect(Unit) {
@@ -169,7 +184,7 @@ fun ThreadAllocScreen(
                         else "已识别大核: CPU ${bigCores.joinToString("/")} · 重负载线程将归拢到这些核心",
                         checked = enabled && proUnlocked,
                         proUnlocked = proUnlocked, onNeedPro = onNeedPro,
-                    ) { v -> scope.launch { ThreadAllocCfg.setEnabled(ctx, v) } }
+                    ) { v -> scope.launch { ThreadAllocCfg.setEnabled(ctx, v); syncDaemon() } }
                     HorizontalDivider()
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("模式", fontWeight = FontWeight.Medium)
@@ -287,6 +302,12 @@ fun ThreadAllocScreen(
             }
 
             // ── 立即应用 ──
+            Text(
+                "开启后由 Kin 守护在后台持续把游戏渲染线程绑到大核(前台是游戏库中的游戏时自动生效); " +
+                    "下方「立即应用」用于守护未运行时的临时绑核。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Button(
                 onClick = {
                     if (!proUnlocked) { onNeedPro(); return@Button }
@@ -318,7 +339,7 @@ fun ThreadAllocScreen(
                 Text(if (applying) "正在应用…" else "立即应用到当前前台应用")
             }
             Text(
-                "提示: 首版为手动应用一次; 应用重启后需要重新应用。常驻自动分配将在后续版本提供。",
+                "提示: 「立即应用」为一次性动作, 应用重启后需重新应用; 常驻自动分配由 Kin 守护按上方设置完成。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -330,7 +351,9 @@ fun ThreadAllocScreen(
     if (showGamePicker) {
         GamePickerSheet(
             selected = gamePkgs,
-            onToggle = { pkg -> scope.launch { ThreadAllocCfg.toggleGamePkg(ctx, pkg) } },
+            onToggle = { pkg ->
+                scope.launch { ThreadAllocCfg.toggleGamePkg(ctx, pkg); syncDaemon() }
+            },
             onDismiss = { showGamePicker = false },
         )
     }
