@@ -222,6 +222,7 @@ class FloatWindowService : Service() {
         val view = win.root
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         var moved = false; var longPressed = false
+        var snapAnim: android.animation.ValueAnimator? = null
 
         fun settle() {
             view.animate().scaleX(1f).scaleY(1f)
@@ -239,6 +240,7 @@ class FloatWindowService : Service() {
         view.setOnTouchListener { _, ev ->
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    snapAnim?.cancel(); snapAnim = null   // 吸边动画途中再抓住 → 停在手上
                     downX = ev.rawX; downY = ev.rawY; startX = lp.x; startY = lp.y
                     moved = false; longPressed = false
                     view.postDelayed(longPress, 500)
@@ -266,7 +268,30 @@ class FloatWindowService : Service() {
                     view.removeCallbacks(longPress)
                     if (moved) {
                         settle()
-                        scope.launch { Prefs.setOvlPos(this@FloatWindowService, type, lp.x, lp.y) }
+                        // Metric: 仅帧率窗松手吸附到最近的左右屏边(lb0 FPS 分支带 edge-snap)
+                        if (type == OverlayType.FPS) {
+                            val dm = resources.displayMetrics
+                            val maxX = (dm.widthPixels - view.width).coerceAtLeast(0)
+                            val toX = if (lp.x + view.width / 2 < dm.widthPixels / 2) 0 else maxX
+                            snapAnim = android.animation.ValueAnimator.ofInt(lp.x, toX).apply {
+                                duration = 300
+                                interpolator = android.view.animation.PathInterpolator(0.15f, 1f, 0.3f, 1f)
+                                addUpdateListener {
+                                    lp.x = it.animatedValue as Int
+                                    runCatching { wm.updateViewLayout(view, lp) }
+                                }
+                                addListener(object : android.animation.AnimatorListenerAdapter() {
+                                    override fun onAnimationEnd(a: android.animation.Animator) {
+                                        scope.launch {
+                                            Prefs.setOvlPos(this@FloatWindowService, type, lp.x, lp.y)
+                                        }
+                                    }
+                                })
+                                start()
+                            }
+                        } else {
+                            scope.launch { Prefs.setOvlPos(this@FloatWindowService, type, lp.x, lp.y) }
+                        }
                     } else if (!longPressed) runCatching { win.onTap() }
                     true
                 }
