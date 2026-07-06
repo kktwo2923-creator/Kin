@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.ktwo.cts.data.MetricReader
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.service.MonitorOverlayService
+import com.ktwo.cts.ui.metric.HomeDashboard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -50,18 +51,13 @@ fun MonitorOverlayScreen(onBack: () -> Unit) {
     var hasOverlay by remember { mutableStateOf(Settings.canDrawOverlays(ctx)) }
     val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 1)
 
-    // 实时快照(应用内大屏)
-    var snap by remember { mutableStateOf<MetricReader.Snapshot?>(null) }
-    LaunchedEffect(cellCount) {
+    // 实时大屏改用 HomeDashboard(内部自采样), 这里只需喂一次屏幕刷新率兜底给 FPS 采样。
+    LaunchedEffect(Unit) {
         @Suppress("DEPRECATION")
         runCatching {
             MetricReader.fallbackHz =
                 (ctx.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager)
                     .defaultDisplay.refreshRate.toInt()
-        }
-        while (true) {
-            snap = withContext(Dispatchers.IO) { runCatching { MetricReader.snapshot(cellCount) }.getOrNull() }
-            delay(1000)
         }
     }
 
@@ -125,42 +121,10 @@ fun MonitorOverlayScreen(onBack: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // ── 实时大屏 ──
+            // ── 实时大屏: Metric 同款仪表盘(内存环/GPU环/进程+CPU直方图/每簇网格) ──
+            // 复用主页的 HomeDashboard, 内部自采样, 与 Metric 主页布局一致。
             SectionTitle("实时状态")
-            TonalCard(modifier = Modifier.fillMaxWidth()) {
-                val s = snap
-                FlowRow(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    StatTile("帧率", if (s == null || s.fps < 0) "--" else "${s.fps}", "FPS")
-                    StatTile("CPU", if (s == null) "--" else (s.clusters.maxOfOrNull { it.mhz }?.takeIf { it > 0 }?.toString() ?: "--"), "MHz")
-                    StatTile("CPU占用", if (s == null || s.cpuLoadPct < 0) "--" else "${s.cpuLoadPct}", "%")
-                    StatTile("GPU", if (s == null || s.gpuMhz < 0) "--" else "${s.gpuMhz}", "MHz")
-                    StatTile("GPU占用", if (s == null || s.gpuLoadPct < 0) "--" else "${s.gpuLoadPct}", "%")
-                    StatTile("温度", if (s == null || s.tempC <= -100) "--" else "${s.tempC}", "℃")
-                    StatTile("电量", if (s == null || s.battPct < 0) "--" else "${s.battPct}", "%")
-                    StatTile("功耗", if (s == null) "--" else String.format("%.1f", s.watt), "W")
-                    StatTile("内存", if (s == null || s.ramTotalGb <= 0) "--" else String.format("%.1f", s.ramUsedGb), "GB")
-                }
-            }
-            // 每簇频率
-            snap?.clusters?.takeIf { it.isNotEmpty() }?.let { cs ->
-                TonalCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("CPU 各簇频率", fontWeight = FontWeight.Medium)
-                        cs.forEach { c ->
-                            Row(Modifier.fillMaxWidth()) {
-                                Text(c.name, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(if (c.mhz > 0) "${c.mhz} MHz" else "--",
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
-                }
-            }
+            HomeDashboard(Modifier.fillMaxWidth())
 
             // ── 悬浮窗设置 ──
             SectionTitle("悬浮监控窗")
