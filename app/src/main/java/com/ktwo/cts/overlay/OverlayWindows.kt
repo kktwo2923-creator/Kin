@@ -469,12 +469,12 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
                     else "${cpus.first()}-${cpus.last()}"
                 sb.append('#').append(range).append(' ')
                     .append(if (c.mhz > 0) "${c.mhz}MHz" else "--").append('\n')
-                for (cpu in cpus) appendCoreLine(sb, loads.getOrNull(cpu), freqs.getOrNull(cpu))
+                for (cpu in cpus) appendCoreLine(sb, cpu, loads.getOrNull(cpu), freqs.getOrNull(cpu))
             }
         } else if (loads.isNotEmpty() || freqs.isNotEmpty()) {
             // 拿不到簇→核映射时平铺所有核
             val n = maxOf(loads.size, freqs.size)
-            for (cpu in 0 until n) appendCoreLine(sb, loads.getOrNull(cpu), freqs.getOrNull(cpu))
+            for (cpu in 0 until n) appendCoreLine(sb, cpu, loads.getOrNull(cpu), freqs.getOrNull(cpu))
         }
         val fps = s?.fps ?: -1
         sb.append("#FPS ").append(if (fps >= 0)
@@ -485,11 +485,15 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         detail.text = sb.toString()
     }
 
-    // Metric 每核行: " 55% 1055M IPC0.92" —— 负载% + 核频(M) + IPC(无 perf 数据时同 Metric 显 --)
-    private fun appendCoreLine(sb: StringBuilder, load: Int?, mhz: Int?) {
+    // Metric 每核行: " 55% 1055M IPC0.92" —— 负载% + 核频(M) + 真 IPC
+    // (root 下由 PerfIpcSampler 常驻 simpleperf 统计得到; 采不到时同 Metric 空闲核显 --)
+    private fun appendCoreLine(sb: StringBuilder, cpu: Int, load: Int?, mhz: Int?) {
         val l = if (load != null && load >= 0) "$load%" else "--"
         val f = if (mhz != null && mhz > 0) "${mhz}M" else "0M"
-        sb.append(String.format(" %-4s %-6s IPC--", l, f)).append('\n')
+        val ipc = com.ktwo.cts.data.PerfIpcSampler.ipcOf(cpu)
+        val ipcStr = if (ipc.isNaN()) "--"
+            else String.format(java.util.Locale.US, "%.2f", ipc)
+        sb.append(String.format(" %-4s %-6s IPC%s", l, f, ipcStr)).append('\n')
     }
 }
 

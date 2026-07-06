@@ -19,6 +19,7 @@ import com.ktwo.cts.data.MetricReader
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.ProcSampler
 import com.ktwo.cts.data.OverlayType
+import com.ktwo.cts.data.PerfIpcSampler
 import com.ktwo.cts.data.SysfsReader
 import com.ktwo.cts.data.fpsrecord.ThreadSampler
 import com.ktwo.cts.service.AppSwitchService
@@ -93,6 +94,7 @@ class FloatWindowService : Service() {
             runCatching { d.dismiss() }
         }
         leaving.clear()
+        Thread { runCatching { PerfIpcSampler.stop() } }.start()
     }
 
     private fun px(v: Int) = (v * dp).toInt()
@@ -200,6 +202,8 @@ class FloatWindowService : Service() {
         windows[type] = Holder(win, dlg)
         activeTypes = windows.keys.toSet()
         updateNotification()
+        // 负载窗需要每核 IPC(Metric 展开面板 IPC 列) → 拉起 root perf 采样(无 root 自动空转)
+        if (type == OverlayType.LOAD) scope.launch { runCatching { PerfIpcSampler.start() } }
         // 展开/收起等导致窗口变大时自动钳回屏幕内(Metric xb1.d 语义: 展开不许伸出屏)
         if (!fixed) dlg.window?.decorView?.addOnLayoutChangeListener { _, l, tt, r, bb, ol, ot, or2, ob ->
             val wPx = r - l; val hPx = bb - tt
@@ -239,6 +243,7 @@ class FloatWindowService : Service() {
     private fun hideWindow(type: OverlayType) {
         val h = windows.remove(type) ?: return
         activeTypes = windows.keys.toSet()
+        if (type == OverlayType.LOAD) scope.launch { runCatching { PerfIpcSampler.stop() } }
         val dlg = h.dlg
         val d = dlg.window?.decorView
         if (d == null) {
