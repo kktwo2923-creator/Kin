@@ -35,6 +35,9 @@ data class TickData(
 // 悬浮窗配色对齐 Metric 原版: 深色玻璃底(#1B1D22 半透明, 支持时叠背景模糊) + 白字分层。
 // Metric 文字层级: 主文 white、次级 white@0.74、弱化 white@0.62(见反编译 ph2/qb2/pc1)。
 private val WHITE = Color.WHITE
+private val WHITE92 = Color.argb(235, 255, 255, 255)  // white @0.92(选中筛选片)
+private val WHITE80 = Color.argb(204, 255, 255, 255)  // white @0.80(表头)
+private val WHITE74 = Color.argb(189, 255, 255, 255)  // white @0.74(数据行/图标)
 private val GREY = Color.argb(158, 255, 255, 255)   // white @0.62
 private val ORANGE = Color.parseColor("#FFB300")     // Metric 琥珀(r30.e)
 private val RED = Color.parseColor("#EF5350")        // Metric 红(r30.f)
@@ -110,6 +113,31 @@ abstract class OverlayWindow(
         includeFontPadding = false
         setPadding(px(10), px(2), px(2), px(4))
         setOnClickListener { runCatching { onCloseRequest?.invoke() } }
+    }
+
+    /** Metric 固定字号等宽文本(1:1 还原用, 不随用户字号设置缩放)。 */
+    protected fun mono(sizeSp: Float, color: Int = WHITE, bold: Boolean = true): TextView =
+        TextView(ctx).apply {
+            setTextColor(color)
+            textSize = sizeSp
+            typeface = if (bold) Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+                else Typeface.MONOSPACE
+            includeFontPadding = false
+        }
+
+    /** Metric 30dp 圆形图标钮: 白 10% 圆底 + 白 74% 图标(线程/进程窗关闭钮同款)。 */
+    protected fun circleBtn(glyph: String, onClick: () -> Unit): TextView = TextView(ctx).apply {
+        text = glyph
+        setTextColor(WHITE74)
+        textSize = 12f
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        includeFontPadding = false
+        gravity = Gravity.CENTER
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.argb(26, 255, 255, 255))
+        }
+        setOnClickListener { runCatching { onClick() } }
     }
 
     protected fun pctColor(p: Int): Int = when {
@@ -214,14 +242,13 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         val below: TextView,
     )
 
-    private val ringSize = px(34)
+    private val ringSize = px(32)   // Metric: 环 32dp / 单元 32×42dp
 
     private fun ringCol(centerText: String): RingCol {
         val ring = RingView(ctx, px(4).toFloat())
-        val center = row((textSp - 4f).coerceAtLeast(7f)).apply {
+        val center = mono(7f).apply {   // Metric 环心 7sp
             text = centerText
             gravity = Gravity.CENTER
-            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         }
         val frame = FrameLayout(ctx).apply {
             addView(ring, FrameLayout.LayoutParams(ringSize, ringSize))
@@ -230,8 +257,8 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER))
         }
-        // Metric 环下小字: 白色全亮(f:4118), 非弱化灰
-        val below = row((textSp - 5f).coerceAtLeast(6f), WHITE).apply {
+        // Metric 环下小字: 6sp 白色全亮(f:4054/4118), 非弱化灰
+        val below = mono(6f).apply {
             text = "--"
             gravity = Gravity.CENTER_HORIZONTAL
         }
@@ -253,7 +280,7 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     private val collapsedRow = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(px(10), px(6), px(10), px(6))
+        setPadding(px(6), px(6), px(6), px(6))   // Metric h: 整体 padding 6dp → 124×54
         addView(hCpu.col)
         addView(hGpu.col, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -263,7 +290,8 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         addView(hBat.col)
     }
 
-    private val detail = row((textSp - 2f).coerceAtLeast(8f))
+    // Metric 参数列 7sp/行高 8.5dp 的紧凑排版(取 7.5sp + 1dp 行距的等宽近似)
+    private val detail = mono(7.5f).apply { setLineSpacing(px(1).toFloat(), 1f) }
 
     private val ringsColV = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
@@ -280,11 +308,12 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     private val expandedBox = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(px(12), px(10), px(12), px(10))
-        addView(ringsColV)
+        setPadding(px(6), px(6), px(6), px(6))   // Metric a:363/365: 6dp
+        addView(ringsColV, LinearLayout.LayoutParams(
+            px(44), LinearLayout.LayoutParams.WRAP_CONTENT))   // Metric: 环列限宽 44dp
         addView(detail, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(12) })
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6) })
         visibility = View.GONE
         this.alpha = 0f
     }
@@ -1110,29 +1139,30 @@ class TempOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
     private val card = verticalCard(18).apply {
         setPadding(px(12), px(7), px(12), px(7))   // Metric: 12dp 横 / 7dp 纵
-        gravity = Gravity.CENTER_HORIZONTAL
+        gravity = Gravity.CENTER
+        minimumWidth = px(83)    // Metric 定宽 83dp
+        minimumHeight = px(54)   // Metric 定高 54dp
     }
-    private val tBat = row()
-    private val tCpu = row()
-    private val tGpu = row()
-    private val tDdr = row()
-    private val tNone = row(textSp - 1f, GREY).apply { text = "温度不可用"; visibility = View.GONE }
+    // Metric wc4.c: 8.5sp/行高 10sp, jetbrains-mono 粗体, 统一白色(无阈值变色)
+    private fun tempRow() = mono(8.5f).apply {
+        setLineSpacing(px(1).toFloat(), 1f)
+    }
+    private val tBat = tempRow()
+    private val tCpu = tempRow()
+    private val tGpu = tempRow()
+    private val tDdr = tempRow()
+    private val tNone = mono(8.5f, GREY).apply { text = "温度不可用"; visibility = View.GONE }
     override val root: View = card
     init {
         card.addView(tBat); card.addView(tCpu); card.addView(tGpu); card.addView(tDdr)
         card.addView(tNone)
     }
 
-    /** 有值填行并显示, 无值整行隐藏; 返回该行是否可见。 */
+    /** 有值填行并显示, 无值整行隐藏(Metric: temp≤0 不渲染); 返回该行是否可见。 */
     private fun line(tv: TextView, label: String, c: Double): Boolean {
         if (c <= -100) { tv.visibility = View.GONE; return false }
         tv.visibility = View.VISIBLE
         tv.text = String.format(java.util.Locale.US, "%s %.1f℃", label, c)
-        tv.setTextColor(when {
-            c < 40 -> WHITE
-            c <= 45 -> ORANGE
-            else -> RED
-        })
         return true
     }
 
@@ -1156,26 +1186,29 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
 
     private class Line(val box: LinearLayout, val icon: ImageView, val name: TextView, val pct: TextView)
 
-    private val card = verticalCard()
-    private val tHead = title("进程")
+    private val card = verticalCard().apply {
+        setPadding(px(10), px(10), px(10), px(10))   // Metric eb3: 纵向 10dp
+    }
+    // Metric eb3 标题: "进程" 11sp jetbrains-mono 粗体, 纯白(非主题色), weight(1)
+    private val tHead = mono(11f).apply { text = "进程" }
     private var appsOnly = false
     private var lastProcs: List<ProcSampler.Proc>? = null
 
-    // 筛选片(Metric ProcessFilterTransition): 胶囊底 + 180ms 选中过渡
+    // 筛选片(Metric pc1.k/l): 34×20dp, 8sp; 选中 = 白92 粗体 + 白18 胶囊底,
+    // 未选 = 白62 常规; 切换走 180ms 过渡(ProcessFilterTransition tween(180))
     private fun chipBgColor(sel: Boolean) =
         if (sel) Color.argb(46, 255, 255, 255) else Color.TRANSPARENT
 
-    private fun tab(label: String, sel: Boolean, onClick: () -> Unit) = row(textSp - 2f).apply {
-        text = label
-        gravity = Gravity.CENTER
-        setPadding(px(7), px(2), px(7), px(2))
-        setTextColor(if (sel) WHITE else GREY)
-        background = GradientDrawable().apply {
-            cornerRadius = px(10).toFloat()
-            setColor(chipBgColor(sel))
+    private fun tab(label: String, sel: Boolean, onClick: () -> Unit) =
+        mono(8f, if (sel) WHITE92 else GREY, bold = sel).apply {
+            text = label
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = px(10).toFloat()
+                setColor(chipBgColor(sel))
+            }
+            setOnClickListener { onClick() }
         }
-        setOnClickListener { onClick() }
-    }
 
     private val tabAll = tab("全部", true) { setMode(false) }
     private val tabApp = tab("应用", false) { setMode(true) }
@@ -1184,12 +1217,12 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
     private val header = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(tHead)
-        addView(tabAll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(10) })
-        addView(tabApp)
-        addView(closeButton())
+        addView(tHead, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addView(tabAll, LinearLayout.LayoutParams(px(34), px(20)))
+        addView(tabApp, LinearLayout.LayoutParams(px(34), px(20)).apply { marginStart = px(2) })
+        addView(circleBtn("✕") { onCloseRequest?.invoke() },
+            LinearLayout.LayoutParams(px(30), px(30)).apply { marginStart = px(6) })
     }
 
     private val lines = ArrayList<Line>()
@@ -1197,31 +1230,36 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
     override val root: View = card
 
     init {
-        card.addView(header)
-        // Metric: 进程窗列表定高 165dp 可滚动, 最多 30 行(行高 21dp/间距 3dp 的紧凑观感)
-        repeat(30) {
+        card.addView(header, LinearLayout.LayoutParams(
+            px(168), LinearLayout.LayoutParams.WRAP_CONTENT))
+        // Metric pc1.n: 行高 21dp / 图标 16dp / 名称 9sp 粗体(weight1) / CPU% 10sp 白74,
+        // 行距 3dp; 列表定高 165dp 可滚动, top-30; 内容定宽 168dp(Metric widthIn 158~188)
+        repeat(30) { i ->
             val icon = ImageView(ctx).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
-            val name = row(textSp - 1f)
-            val pct = row(textSp - 1f)
+            val name = mono(9f).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            val pct = mono(10f, WHITE74)
             val box = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, px(1), 0, px(1))
-                addView(icon, LinearLayout.LayoutParams(px(14), px(14)))
+                addView(icon, LinearLayout.LayoutParams(px(16), px(16)))
                 addView(name, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6) })
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(4) })
                 addView(pct, LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(8) })
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6) })
             }
             lines.add(Line(box, icon, name, pct))
-            listBox.addView(box)
+            listBox.addView(box, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, px(21)).apply {
+                if (i > 0) topMargin = px(3)
+            })
         }
         card.addView(MaxHeightScrollView(ctx, px(165)).apply { addView(listBox) },
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(4) })
+            LinearLayout.LayoutParams(px(168), LinearLayout.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = px(5) })
     }
 
     private fun setMode(only: Boolean) {
@@ -1240,8 +1278,8 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
                     .setColor(ev.evaluate(f, Color.TRANSPARENT, chipBgColor(true)) as Int)
                 (fromSel.background as GradientDrawable)
                     .setColor(ev.evaluate(f, chipBgColor(true), Color.TRANSPARENT) as Int)
-                toSel.setTextColor(ev.evaluate(f, GREY, WHITE) as Int)
-                fromSel.setTextColor(ev.evaluate(f, WHITE, GREY) as Int)
+                toSel.setTextColor(ev.evaluate(f, GREY, WHITE92) as Int)
+                fromSel.setTextColor(ev.evaluate(f, WHITE92, GREY) as Int)
             }
             start()
         }
@@ -1303,10 +1341,9 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
             } else {
                 l.box.visibility = View.VISIBLE
                 l.icon.setImageDrawable(runCatching { iconFor(p.name) }.getOrNull())
-                l.name.text = String.format("%-14.14s", p.name)
-                l.pct.text = String.format("%5.1f%%", p.cpuPct)
-                val c = if (p.cpuPct > 50f) ORANGE else WHITE
-                l.name.setTextColor(c); l.pct.setTextColor(c)
+                l.name.text = p.name
+                // Metric pc1.n: CPU% 统一 "%.1f%%", 白 74%, 不做阈值变色
+                l.pct.text = String.format(java.util.Locale.US, "%.1f%%", p.cpuPct)
             }
         }
         if (appsOnly && ps.isEmpty()) {
@@ -1324,18 +1361,30 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
  */
 class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
-    private val card = verticalCard()
-    private val tHead = title("线程")
+    private val card = verticalCard().apply {
+        setPadding(px(8), px(8), px(8), px(8))   // Metric ya0: 8dp 内边距
+    }
+    // Metric ya0 标题: 前台应用名, 11sp jetbrains-mono 粗体纯白, weight(1), 最多两行
+    private val tHead = mono(11f).apply {
+        text = "线程"
+        maxLines = 2
+        ellipsize = android.text.TextUtils.TruncateAt.END
+    }
+    // Metric ph2.m: "PID %d" 徽标(7sp, 白74)
+    private val tPid = mono(7f, WHITE74).apply { visibility = View.GONE }
     private val header = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(tHead)
-        addView(closeButton(), LinearLayout.LayoutParams(
+        addView(tHead, LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addView(tPid, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(10) })
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6) })
+        addView(circleBtn("✕") { onCloseRequest?.invoke() },
+            LinearLayout.LayoutParams(px(30), px(30)).apply { marginStart = px(6) })
     }
-    private val tSub = row(textSp - 3f, GREY).apply { visibility = View.GONE }
-    private val tCols = row(textSp - 2f, GREY).apply {
+    // Metric ph2.i 表头: 7sp 白80; 列宽比照 26/34/30dp+weight 的等宽近似
+    private val tCols = mono(7f, WHITE80).apply {
         text = String.format("%5s %-9s %6s %s", "CPU%", "CPUS", "TID", "COMM")
     }
     private val lines = ArrayList<TextView>()
@@ -1345,22 +1394,26 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
     }
     override val root: View = card
     init {
-        card.addView(header)
-        card.addView(tSub)
-        card.addView(tCols)
-        repeat(24) { val r = row(textSp - 1f); lines.add(r); listBox.addView(r) }
-        card.addView(MaxHeightScrollView(ctx, px(126)).apply { addView(listBox) })
+        card.addView(header, LinearLayout.LayoutParams(
+            px(176), LinearLayout.LayoutParams.WRAP_CONTENT))
+        card.addView(tCols, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(5) })
+        // Metric ph2.g 数据行: 7sp 白74 统一色(不做 R 态变绿)
+        repeat(24) { val r = mono(7f, WHITE74); lines.add(r); listBox.addView(r) }
+        card.addView(MaxHeightScrollView(ctx, px(126)).apply { addView(listBox) },
+            LinearLayout.LayoutParams(px(176), LinearLayout.LayoutParams.WRAP_CONTENT))
     }
 
     override fun onTick(t: TickData) {
         // 表头(前台应用)每拍都可刷新, 与线程表是否采到无关
         runCatching {
             tHead.text = t.fgLabel.ifEmpty { t.fgPkg.ifEmpty { "线程" } }
-            if (t.fgPkg.isNotEmpty()) {
-                tSub.text = t.fgPkg + (if (t.fgPid > 0) "  PID ${t.fgPid}" else "")
-                tSub.visibility = View.VISIBLE
+            if (t.fgPid > 0) {
+                tPid.text = "PID ${t.fgPid}"
+                tPid.visibility = View.VISIBLE
             } else {
-                tSub.visibility = View.GONE
+                tPid.visibility = View.GONE
             }
         }
         val ts = t.threads ?: return   // null=本拍未采, 保持上次
@@ -1375,10 +1428,9 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
             val th = ts.getOrNull(i)
             if (th == null) { tv.visibility = View.GONE } else {
                 tv.visibility = View.VISIBLE
-                val cpus = if (th.affinity.isEmpty()) "--"
+                val cpus = if (th.affinity.isEmpty()) "-"
                     else th.affinity + (if (th.core >= 0) "[${th.core}]" else "")
                 tv.text = String.format("%5.1f %-9.9s %6d %-14.14s", th.cpuPct, cpus, th.tid, th.name)
-                tv.setTextColor(if (th.state == 'R') GREEN else WHITE)
             }
         }
     }
