@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.runtime.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,6 +25,7 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.license.Pro
+import com.ktwo.cts.ui.docs.DocsScreen
 import com.ktwo.cts.ui.fpsrecord.FpsRecordDetailScreen
 import com.ktwo.cts.ui.fpsrecord.FpsRecordListScreen
 import com.ktwo.cts.ui.fpsrecord.ThreadLoadScreen
@@ -60,7 +62,7 @@ private val FULLSCREEN_ROUTES =
     setOf(
         "about", "automode", "pro", "perfmon", "fpsrecord",
         "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
-        "memory", "governor",
+        "memory", "governor", "docs",
     )
 
 @Composable
@@ -87,6 +89,11 @@ fun AppRoot() {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { runCatching { Pro.sync(ctx) } }
     }
+
+    // 首启引导: docs_seen=false 时弹一次「先看文档」。initial=true 防止 DataStore 加载前误闪弹窗;
+    // 无论选「查看文档」还是「稍后」都置 true, 只打扰这一次。
+    val scope = rememberCoroutineScope()
+    val docsSeen by Prefs.docsSeenFlow(ctx).collectAsState(initial = true)
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
         val curDestRoute = entry?.destination?.route
@@ -166,10 +173,14 @@ fun AppRoot() {
                         SettingsScreen(
                             onOpenAbout = { nav.navigate("about") },
                             onOpenPro = { nav.navigate("pro") },
+                            onOpenDocs = { nav.navigate("docs") },
                         )
                     }
                     composable("about") {
                         AboutScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("docs") {
+                        DocsScreen(onBack = { nav.popBackStack() })
                     }
                     composable("automode") {
                         AutoModeScreen(
@@ -225,6 +236,33 @@ fun AppRoot() {
                             onBack = { nav.popBackStack() },
                         )
                     }
+                }
+
+                // 首次使用引导弹窗(只弹一次, 不阻塞主流程)
+                if (!docsSeen) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            scope.launch { Prefs.setDocsSeen(ctx, true) }
+                        },
+                        title = { Text("欢迎使用 CTS") },
+                        text = {
+                            Text(
+                                "首次使用建议先阅读使用文档, 了解各功能的作用与所需权限。" +
+                                    "之后也可以随时在「设置 → 使用文档」中查看。"
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                scope.launch { Prefs.setDocsSeen(ctx, true) }
+                                nav.navigate("docs")
+                            }) { Text("查看文档") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                scope.launch { Prefs.setDocsSeen(ctx, true) }
+                            }) { Text("稍后") }
+                        },
+                    )
                 }
             }
         }

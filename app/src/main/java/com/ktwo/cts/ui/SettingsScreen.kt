@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,7 +35,11 @@ import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
+fun SettingsScreen(
+    onOpenAbout: () -> Unit = {},
+    onOpenPro: () -> Unit = {},
+    onOpenDocs: () -> Unit = {},
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -400,6 +405,34 @@ fun SettingsScreen(onOpenAbout: () -> Unit = {}, onOpenPro: () -> Unit = {}) {
             // 同 SukiSU 设置页: 关于作为入口行, 点开展示图标/版本/GitHub 链接
             SectionTitle("其他")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenDocs)
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.MenuBook,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("使用文档", fontWeight = FontWeight.Medium)
+                        Text(
+                            "功能说明 · 常见问题",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                 Row(
                     Modifier
                         .fillMaxWidth()

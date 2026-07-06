@@ -229,6 +229,14 @@ object Prefs {
             it[CELL_CALIBRATED_KEY] = true
         }
     }
+
+    // 使用文档已读标记:首次启动若为 false, AppRoot 弹一次「先看文档」提示; 无论选什么都置 true 不再打扰。
+    private val DOCS_SEEN_KEY = booleanPreferencesKey("docs_seen")
+    fun docsSeenFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[DOCS_SEEN_KEY] ?: false }
+    suspend fun setDocsSeen(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[DOCS_SEEN_KEY] = b }
+    }
 }
 
 private val BLACKLIST_KEY   = stringPreferencesKey("blacklist_json")
