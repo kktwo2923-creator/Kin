@@ -21,7 +21,6 @@ import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.ScheduleService
-import com.ktwo.cts.ui.metric.HomeDashboard
 import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,10 +107,6 @@ fun HomeScreen() {
                     )
                 }
             )
-
-            // Metric 仪表盘(内存环/GPU环/进程+CPU直方图/每簇网格): 全局玻璃下也常驻展示。
-            // 内部卡片用 TonalCard 玻璃卡, 与玻璃主题观感一致, 不再受 UiStyle 门控。
-            HomeDashboard(Modifier.fillMaxWidth())
 
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 StatCard(
