@@ -45,6 +45,8 @@ class FloatWindowService : Service() {
     private var cellCount = 1
     // 系统支持跨窗口模糊时: 窗背景模糊 290(Metric 同值), 卡底同步调透接近 surface@0.55
     private var blurOn = false
+    // Prefs(透明度/字号/簇数)载入完成门闩: 未就绪时 show 请求排队等待, 避免用默认值建窗
+    private val prefsReady = CompletableDeferred<Unit>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -58,9 +60,12 @@ class FloatWindowService : Service() {
         MetricReader.fallbackHz = runCatching { wm.defaultDisplay.refreshRate.toInt() }.getOrDefault(-1)
         startForeground(NOTIF_ID, buildNotification())
         scope.launch {
-            cellCount = Prefs.cellCount(this@FloatWindowService)
-            alpha = (Prefs.monOpacity(this@FloatWindowService).coerceIn(20, 100) * 255 / 100)
-            textSp = Prefs.monTextSize(this@FloatWindowService).toFloat().coerceIn(9f, 22f)
+            runCatching {
+                cellCount = Prefs.cellCount(this@FloatWindowService)
+                alpha = (Prefs.monOpacity(this@FloatWindowService).coerceIn(20, 100) * 255 / 100)
+                textSp = Prefs.monTextSize(this@FloatWindowService).toFloat().coerceIn(9f, 22f)
+            }
+            prefsReady.complete(Unit)
             sampleLoop()
         }
     }
@@ -164,12 +169,23 @@ class FloatWindowService : Service() {
 
     private fun showWindow(type: OverlayType) {
         if (windows.containsKey(type)) return
+        if (!prefsReady.isCompleted) {
+            // 设置未载入完 → 排队, 载入后回主线程再建(避免用默认透明度/字号建窗)
+            scope.launch {
+                prefsReady.await()
+                withContext(Dispatchers.Main) { showWindow(type) }
+            }
+            return
+        }
         val win = factory(type)
         val dlg = buildDialog(type, win)
         val fixed = type == OverlayType.MINI   // 迷你条固定顶部居中, 点击穿透不可拖
         if (!fixed) attachDrag(type, win, dlg)
         val ok = runCatching { dlg.show() }.isSuccess
-        if (!ok) return
+        if (!ok) {
+            if (windows.isEmpty()) stopSelf()
+            return
+        }
         // 入场动画作用在 decorView 上(窗背景玻璃随内容一起缩放/淡入):
         // 普通窗缩放 0.85→1+淡入(带回弹); 迷你条从状态栏上方滑入
         dlg.window?.decorView?.let { d ->
@@ -178,19 +194,39 @@ class FloatWindowService : Service() {
             d.animate()
                 .alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
                 .setDuration(280)
-                .setInterpolator(OvershootInterpolator(1.1f))
+                .setInterpolator(android.view.animation.DecelerateInterpolator(1.6f))
                 .start()
         }
         windows[type] = Holder(win, dlg)
         activeTypes = windows.keys.toSet()
         updateNotification()
-        // 异步应用存档落点(迷你条不落点, 恒定顶部居中)
+        // 展开/收起等导致窗口变大时自动钳回屏幕内(Metric xb1.d 语义: 展开不许伸出屏)
+        if (!fixed) dlg.window?.decorView?.addOnLayoutChangeListener { _, l, tt, r, bb, ol, ot, or2, ob ->
+            val wPx = r - l; val hPx = bb - tt
+            if (wPx == or2 - ol && hPx == ob - ot) return@addOnLayoutChangeListener
+            runCatching {
+                val w = dlg.window ?: return@runCatching
+                val lp = w.attributes
+                val dm = resources.displayMetrics
+                val nx = lp.x.coerceIn(0, (dm.widthPixels - wPx).coerceAtLeast(0))
+                val ny = lp.y.coerceIn(0, (dm.heightPixels - hPx).coerceAtLeast(0))
+                if (nx != lp.x || ny != lp.y) { lp.x = nx; lp.y = ny; w.attributes = lp }
+            }
+        }
+        // 异步应用存档落点(迷你条不落点): 带屏幕钳制; 用户已开始拖动则放弃恢复, 不从手上抢窗
         if (!fixed) scope.launch {
             val (sx, sy) = Prefs.ovlPos(this@FloatWindowService, type)
             if (sx != Int.MIN_VALUE && sy != Int.MIN_VALUE) withContext(Dispatchers.Main) {
                 runCatching {
+                    if (win.userTouched) return@runCatching
                     dlg.window?.let { w ->
-                        val lp = w.attributes; lp.x = sx; lp.y = sy; w.attributes = lp
+                        val lp = w.attributes
+                        val dm = resources.displayMetrics
+                        val vw = w.decorView.width
+                        val vh = w.decorView.height
+                        lp.x = sx.coerceIn(0, (dm.widthPixels - vw).coerceAtLeast(0))
+                        lp.y = sy.coerceIn(0, (dm.heightPixels - vh).coerceAtLeast(0))
+                        w.attributes = lp
                     }
                 }
             }
@@ -211,17 +247,21 @@ class FloatWindowService : Service() {
             return
         }
         leaving.add(dlg)
-        // 退场动画: 缩小+淡出后再真正关闭; 全部关完才停服务
+        // 摘掉触摸监听: 退场期间触摸不再触发拿起/回弹动画(它们会顶掉 withEndAction 导致永不 dismiss)
+        h.win.root.setOnTouchListener(null)
+        val finish = Runnable {
+            if (!leaving.remove(dlg)) return@Runnable
+            runCatching { dlg.dismiss() }
+            if (windows.isEmpty()) { ProcSampler.reset(); stopSelf() } else updateNotification()
+        }
+        // 退场动画: 缩小+淡出后再真正关闭; 300ms 兜底保证动画被打断也一定关窗
         d.animate()
             .alpha(0f).scaleX(0.85f).scaleY(0.85f)
             .setDuration(180)
             .setInterpolator(AccelerateInterpolator())
-            .withEndAction {
-                leaving.remove(dlg)
-                runCatching { dlg.dismiss() }
-                if (windows.isEmpty()) { ProcSampler.reset(); stopSelf() } else updateNotification()
-            }
+            .withEndAction { finish.run() }
             .start()
+        d.postDelayed(finish, 300)
     }
 
     private fun syncFromPrefs() {
@@ -247,8 +287,8 @@ class FloatWindowService : Service() {
 
         fun settle() {
             window()?.decorView?.animate()?.scaleX(1f)?.scaleY(1f)
-                ?.setDuration(220)
-                ?.setInterpolator(OvershootInterpolator(1.5f))
+                ?.setDuration(200)
+                ?.setInterpolator(android.view.animation.DecelerateInterpolator())
                 ?.start()
         }
 
@@ -264,6 +304,7 @@ class FloatWindowService : Service() {
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     snapAnim?.cancel(); snapAnim = null   // 吸边动画途中再抓住 → 停在手上
+                    win.userTouched = true                // 存档落点恢复见此放弃, 不从手上抢窗
                     downX = ev.rawX; downY = ev.rawY; startX = lp.x; startY = lp.y
                     moved = false; longPressed = false
                     view.postDelayed(longPress, 500)
@@ -274,8 +315,8 @@ class FloatWindowService : Service() {
                     if (!moved && (kotlin.math.abs(dx) > px(3) || kotlin.math.abs(dy) > px(3))) {
                         moved = true
                         view.removeCallbacks(longPress)
-                        // 越过拖动阈值才"拿起", 避免单击也闪一下
-                        w.decorView.animate().scaleX(1.05f).scaleY(1.05f)
+                        // 越过拖动阈值轻微"按压"(缩小; 放大会被 WRAP 窗口表面裁剪出切边)
+                        w.decorView.animate().scaleX(0.965f).scaleY(0.965f)
                             .setDuration(120).setInterpolator(AccelerateInterpolator()).start()
                     }
                     // 实时钳制在屏幕范围内, 拖不出去
@@ -372,7 +413,9 @@ class FloatWindowService : Service() {
                 runCatching { ProcSampler.topThreads(24) }.getOrNull() else null
             if (activeTypes.contains(OverlayType.THREAD)) refreshForeground(tick)
             val data = TickData(snap, batt, procs, thrs, fgPkg, fgLabel, fgPid)
-            withContext(Dispatchers.Main) { windows.values.forEach { it.win.onTick(data) } }
+            withContext(Dispatchers.Main) {
+                windows.values.forEach { runCatching { it.win.onTick(data) } }
+            }
             tick++
             delay(1000)
         }

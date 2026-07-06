@@ -56,6 +56,9 @@ abstract class OverlayWindow(
     /** 关闭请求回调: 由服务注入(点击窗内 ✕ 时调用, 停掉该类型窗并持久化关闭)。 */
     var onCloseRequest: (() -> Unit)? = null
 
+    /** 用户是否已触摸过本窗(服务拖动侧置位): 异步存档落点恢复见此放弃, 不从手上抢窗。 */
+    @Volatile var userTouched = false
+
     /** 整窗单击(服务在拖动阈值内的 ACTION_UP 回调)。默认不响应, 子类按需覆写。 */
     open fun onTap() {}
 
@@ -333,9 +336,11 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         (detail.layoutParams as? LinearLayout.LayoutParams)?.width = detail.measuredWidth
         expandedBox.measure(ws, ws)
         val lp = expandedBox.layoutParams as FrameLayout.LayoutParams
-        lp.width = expandedBox.measuredWidth
-        lp.height = expandedBox.measuredHeight
-        expandedBox.layoutParams = lp
+        if (lp.width != expandedBox.measuredWidth || lp.height != expandedBox.measuredHeight) {
+            lp.width = expandedBox.measuredWidth
+            lp.height = expandedBox.measuredHeight
+            expandedBox.layoutParams = lp
+        }
     }
 
     private fun setExpanded(want: Boolean) {
@@ -371,7 +376,10 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
                 hide.alpha = 1f - f
             }
             addListener(object : android.animation.AnimatorListenerAdapter() {
+                private var canceled = false
+                override fun onAnimationCancel(a: android.animation.Animator) { canceled = true }
                 override fun onAnimationEnd(a: android.animation.Animator) {
+                    if (canceled) return   // 被反向形变打断时由新动画接管, 不做收尾跳变
                     hide.visibility = View.GONE
                     hide.alpha = 1f
                     lpS.width = FrameLayout.LayoutParams.WRAP_CONTENT
@@ -405,8 +413,9 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         val battArc = batt.coerceAtLeast(0)
         val battColor = loadColor(if (batt >= 0) 100 - batt else 0)
         val battCenter = if (batt >= 0) "$batt%" else "--"
-        val temp = s?.tempC ?: -999
-        val battBelow = if (temp > -100) "$temp℃" else "--"
+        // Metric: 电量环下小字是电池温度(截图 49℃, 与 #CPU 66℃ 不同源), 不能用 SoC 温度
+        val bt = t.battTempC
+        val battBelow = if (bt > -100) String.format(java.util.Locale.US, "%.1f℃", bt) else "--"
 
         listOf(hCpu to vCpu, hGpu to vGpu, hBat to vBat).forEachIndexed { i, (h, v) ->
             val (arc, color, below) = when (i) {
@@ -419,10 +428,11 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
             if (i == 2) { h.center.text = battCenter; v.center.text = battCenter }
         }
 
-        if (expanded) {
+        // 形变期间不动内容(改文本会在锁定宽度内重新折行), 结束后下一拍自然刷新
+        if (expanded && morph?.isRunning != true) {
             runCatching {
                 renderDetail(t)
-                if (morph?.isRunning != true) sizeExpandedBox()
+                sizeExpandedBox()
             }
         }
     }
@@ -470,7 +480,7 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         sb.append("#FPS ").append(if (fps >= 0)
             String.format(java.util.Locale.US, "%.1f", fps.toFloat()) else "--").append('\n')
         val w = s?.watt ?: 0.0
-        sb.append("#PWR ").append(if (w > 0.0)
+        sb.append("#PWR ").append(if (w != 0.0 && w.isFinite())
             String.format(java.util.Locale.US, "%+.2fW", w) else "--W")
         detail.text = sb.toString()
     }
@@ -819,12 +829,15 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
 
     private fun setExpanded(want: Boolean) {
         if (expandedState == want) return
+        val fromC = currentTint()   // 必须在翻转状态前取, 否则底色渐变退化为瞬跳
         expandedState = want
         morphAnim?.cancel()
 
         val show: View = if (want) panel else capsule
         val hide: View = if (want) capsule else panel
         show.visibility = View.VISIBLE
+        // 面板锁定量测尺寸: 形变期间 shell 收窄时内容只被裁剪, 不重新折行
+        if (want) lockPanelSize()
 
         // 量出目标尺寸(以 shell 现尺寸为起点)
         val ws = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
@@ -833,7 +846,6 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         val toW = show.measuredWidth; val toH = show.measuredHeight
         val fromR = shellBg.cornerRadius
         val toR = if (want) px(18).toFloat() else toH / 2f
-        val fromC = currentTint()
         val toC = if (want) panelTint else recordingTint()
         val lpS = shell.layoutParams as FrameLayout.LayoutParams
         val ev = android.animation.ArgbEvaluator()
@@ -852,7 +864,10 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
                 hide.alpha = 1f - f
             }
             addListener(object : android.animation.AnimatorListenerAdapter() {
+                private var canceled = false
+                override fun onAnimationCancel(a: android.animation.Animator) { canceled = true }
                 override fun onAnimationEnd(a: android.animation.Animator) {
+                    if (canceled) return   // 被反向形变打断时由新动画接管
                     hide.visibility = View.GONE
                     hide.alpha = 1f
                     lpS.width = FrameLayout.LayoutParams.WRAP_CONTENT
@@ -862,6 +877,18 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
                 }
             })
             start()
+        }
+    }
+
+    /** 面板锁定为自然量测像素尺寸(形变/裁剪期间不重排); 内容变化时尺寸没变则不触发重布局。 */
+    private fun lockPanelSize() {
+        val ws = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        panel.measure(ws, ws)
+        val lp = panel.layoutParams as FrameLayout.LayoutParams
+        if (lp.width != panel.measuredWidth || lp.height != panel.measuredHeight) {
+            lp.width = panel.measuredWidth
+            lp.height = panel.measuredHeight
+            panel.layoutParams = lp
         }
     }
 
@@ -917,10 +944,17 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         if (fps >= 0) chart.push(fps)
 
         val st = recState()
+        // 时长限制到点自动停 —— 与面板展开与否无关, 必须最先判
+        if (st.recording && limitMin > 0 && st.elapsedSec >= limitMin * 60) {
+            runCatching { com.ktwo.cts.service.FpsRecordService.stop(ctx) }
+        }
         // 胶囊底色跟随录制态(未展开时)
         if (!expandedState && morphAnim?.isRunning != true) shellBg.setColor(recordingTint())
 
-        if (!expandedState) return   // 面板收起时不必刷新面板内文本
+        if (!expandedState) {
+            setDotBreathing(false)   // 面板收起时停掉呼吸点动画, 不空转
+            return
+        }
 
         tBig.text = fpsStr
         val temp = t.snap?.tempC ?: -999
@@ -950,10 +984,8 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
             recBtn.text = "开始录制"
             (recBtn.background as GradientDrawable).setColor(recGreen)
         }
-        // 时长限制到点自动停
-        if (st.recording && limitMin > 0 && st.elapsedSec >= limitMin * 60) {
-            runCatching { com.ktwo.cts.service.FpsRecordService.stop(ctx) }
-        }
+        // 本拍所有文本已就位, 统一重锁面板尺寸(尺寸未变则无操作)
+        if (morphAnim?.isRunning != true) runCatching { lockPanelSize() }
     }
 }
 
@@ -1329,12 +1361,16 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
         }
         val ts = t.threads ?: return   // null=本拍未采, 保持上次
         if (ts.isEmpty()) {
-            lines.forEachIndexed { i, tv -> tv.text = if (i == 0) "需要 Root / 采样中…" else "" }
+            lines.forEachIndexed { i, tv ->
+                tv.visibility = if (i == 0) View.VISIBLE else View.GONE
+                if (i == 0) tv.text = "需要 Root / 采样中…"
+            }
             return
         }
         lines.forEachIndexed { i, tv ->
             val th = ts.getOrNull(i)
-            if (th == null) { tv.text = "" } else {
+            if (th == null) { tv.visibility = View.GONE } else {
+                tv.visibility = View.VISIBLE
                 val cpus = if (th.affinity.isEmpty()) "--"
                     else th.affinity + (if (th.core >= 0) "[${th.core}]" else "")
                 tv.text = String.format("%5.1f %-9.9s %6d %-14.14s", th.cpuPct, cpus, th.tid, th.name)
