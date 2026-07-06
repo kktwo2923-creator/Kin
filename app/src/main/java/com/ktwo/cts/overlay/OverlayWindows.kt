@@ -70,10 +70,19 @@ abstract class OverlayWindow(
         setStroke(1, Color.argb(18, 255, 255, 255))
     }
 
+    private val defaultBg by lazy { cardBg(18) }
+
+    /**
+     * 窗背景玻璃(装在 Dialog Window 上, 而不是内容 View 上):
+     * Metric 的背景模糊(Window.setBackgroundBlurRadius)只作用在窗背景 Drawable 的圆角轮廓内,
+     * 所以玻璃底必须上移到窗口层。子类如需自定圆角/形变(负载 16dp、FPS 双态), 覆写返回自己的实例。
+     */
+    open fun windowBackground(): GradientDrawable? = defaultBg
+
     protected fun verticalCard(cornerDp: Int = 18): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(px(11), px(8), px(11), px(8))
-        background = cardBg(cornerDp)
+        // 玻璃底不在这画(见 windowBackground), 内容容器保持透明
     }
 
     protected fun row(sizeSp: Float = textSp, color: Int = WHITE): TextView = TextView(ctx).apply {
@@ -181,24 +190,30 @@ class RingView(ctx: Context, strokePx: Float) : View(ctx) {
 }
 
 /**
- * 负载监视器: 横向灰玻璃胶囊, 内含三个环形表(CPU / GPU / 电量)。
- * 环 = 进度弧, 环心 = 主标签, 环下 = 频率/温度小字 —— 对齐 Metric 观感。
+ * 负载监视器(对齐 Metric 原版):
+ *  - 收起 = 横排三环胶囊(CPU/GPU/电量, 环下频率/温度小字), 16dp 圆角玻璃;
+ *  - 单击展开: 三环转为左侧竖排, 右侧等宽参数列(#RAM/ DDR/#CPU/每簇每核/#FPS/#PWR),
+ *    形变为整卡裁剪缩放 + 两态交叉淡化(Metric 420ms 展开/360ms 收起, 强调缓出),
+ *    内容在动画期间保持固定量测尺寸, 只裁剪不重排 —— 修复收窄时文本重新折行导致的竖向拉伸;
+ *  - 长按关闭(Metric 语义)。电量环画剩余电量, 颜色按耗电程度(低电量红)。
  */
 class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
 
+    private val bg = cardBg(16)   // Metric 负载窗圆角 16dp
+    override fun windowBackground(): GradientDrawable = bg
+
     /** 一列环形表的视图引用: 竖直列容器 + 环 + 环心字 + 环下字。 */
-    private class RingColumn(
+    private class RingCol(
         val col: LinearLayout,
         val ring: RingView,
         val center: TextView,
         val below: TextView,
     )
 
-    // Metric 原版: 环 32dp/描边 4dp、环心 7sp、环下 6sp —— 取 34dp 环 + 稍大字保持可读
     private val ringSize = px(34)
 
-    private fun ringColumn(centerText: String, belowText: String): RingColumn {
+    private fun ringCol(centerText: String): RingCol {
         val ring = RingView(ctx, px(4).toFloat())
         val center = row((textSp - 4f).coerceAtLeast(7f)).apply {
             text = centerText
@@ -212,8 +227,9 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER))
         }
-        val below = row((textSp - 5f).coerceAtLeast(6f), GREY).apply {
-            text = belowText
+        // Metric 环下小字: 白色全亮(f:4118), 非弱化灰
+        val below = row((textSp - 5f).coerceAtLeast(6f), WHITE).apply {
+            text = "--"
             gravity = Gravity.CENTER_HORIZONTAL
         }
         val col = LinearLayout(ctx).apply {
@@ -222,129 +238,148 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
             addView(frame, LinearLayout.LayoutParams(ringSize, ringSize))
             addView(below, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(3) })
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(2) })
         }
-        return RingColumn(col, ring, center, below)
+        return RingCol(col, ring, center, below)
     }
 
-    private val cpuCol = ringColumn("CPU", "--")
-    private val gpuCol = ringColumn("GPU", "--")
-    private val battCol = ringColumn("--", "--")
+    // 两套环: 收起横排一套 / 展开竖排一套, 数据每拍双写, 切换走交叉淡化
+    private val hCpu = ringCol("CPU"); private val hGpu = ringCol("GPU"); private val hBat = ringCol("--")
+    private val vCpu = ringCol("CPU"); private val vGpu = ringCol("GPU"); private val vBat = ringCol("--")
 
-    // 展开态右侧等宽文本面板(RAM/DDR/CPU温/每簇每核/FPS/PWR), 默认收起(GONE)。
-    private var expanded = false
-    private var lastTick: TickData? = null
-    private val detail = row((textSp - 2f).coerceAtLeast(8f)).apply {
-        visibility = View.GONE
-    }
-
-    private val ringsRow = LinearLayout(ctx).apply {
+    private val collapsedRow = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        addView(cpuCol.col)
-        addView(gpuCol.col, LinearLayout.LayoutParams(
+        setPadding(px(10), px(6), px(10), px(6))
+        addView(hCpu.col)
+        addView(hGpu.col, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             marginStart = px(8); marginEnd = px(8)   // Metric: 环间距 8dp
         })
-        addView(battCol.col)
+        addView(hBat.col)
     }
 
-    private val pill = LinearLayout(ctx).apply {
+    private val detail = row((textSp - 2f).coerceAtLeast(8f))
+
+    private val ringsColV = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_HORIZONTAL
+        addView(vCpu.col)
+        addView(vGpu.col, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(5) })
+        addView(vBat.col, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(5) })
+    }
+
+    private val expandedBox = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(px(10), px(6), px(10), px(6))   // Metric: 外边距 6dp 档
-        background = cardBg(16)                     // Metric 负载窗圆角 16dp
-        addView(ringsRow)
+        setPadding(px(12), px(10), px(12), px(10))
+        addView(ringsColV)
         addView(detail, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(14) })
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(12) })
+        visibility = View.GONE
+        this.alpha = 0f
     }
-    override val root: View = pill
 
-    // 展开/收起补间: 逐帧改 detail 宽度+透明度+左边距, 每帧 requestLayout 使
-    // WRAP_CONTENT 的悬浮窗跟着平滑伸缩(Compose AnimatedVisibility 的观感)。
-    private var detailAnim: ValueAnimator? = null
+    // shell: clipChildren 裁剪容器, 形变时按目标尺寸补间宽高, 内容只被裁剪不被压缩
+    private val shell = FrameLayout(ctx).apply {
+        clipChildren = true
+        clipToPadding = true
+        addView(collapsedRow, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT))
+        addView(expandedBox, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT))
+    }
+    override val root: View = FrameLayout(ctx).apply {
+        clipChildren = true
+        addView(shell, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT))
+    }
+
+    private var expanded = false
+    private var lastTick: TickData? = null
+    private var morph: ValueAnimator? = null
+    private val morphEase = android.view.animation.PathInterpolator(0.15f, 1f, 0.3f, 1f)
 
     init {
-        // 窗被 removeView 时兜底停掉进行中的展开/收起动画
-        pill.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v: View) {}
-            override fun onViewDetachedFromWindow(v: View) { detailAnim?.cancel(); detailAnim = null }
+            override fun onViewDetachedFromWindow(v: View) { morph?.cancel(); morph = null }
         })
     }
 
-    /** 整窗单击: 收起/展开切换(拖动由服务的移动阈值区分, 不冲突)。带宽度+淡入淡出过渡。 */
-    override fun onTap() {
-        expanded = !expanded
-        if (expanded) {
-            runCatching { renderDetail(lastTick) }
-            animateDetail(show = true)
-        } else {
-            animateDetail(show = false)
-        }
-    }
+    /** 整窗单击: 收起/展开切换(拖动由服务的移动阈值区分, 不冲突)。 */
+    override fun onTap() = setExpanded(!expanded)
 
     /** 长按关闭(Metric 负载窗语义: 单击展开/收起, 长按移除)。 */
     override fun onLongPress() {
         onCloseRequest?.invoke()
     }
 
-    private fun animateDetail(show: Boolean) {
-        val lpD = detail.layoutParams as LinearLayout.LayoutParams
-        detailAnim?.cancel()
-        if (show) {
-            detail.visibility = View.VISIBLE
-            detail.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-            val target = detail.measuredWidth
-            lpD.width = 0; lpD.marginStart = 0
-            detail.alpha = 0f
-            detail.layoutParams = lpD
-            detailAnim = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 420   // Metric loadOverlayWidth/Height: 展开 420ms
-                interpolator = android.view.animation.PathInterpolator(0.15f, 1f, 0.3f, 1f)
-                addUpdateListener {
-                    val f = it.animatedFraction
-                    lpD.width = (target * f).toInt()
-                    lpD.marginStart = (px(14) * f).toInt()
-                    detail.alpha = f
-                    detail.layoutParams = lpD
-                }
-                addListener(object : android.animation.AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(a: android.animation.Animator) {
-                        // 恢复 WRAP_CONTENT, 让展开态的文本刷新能自适应宽度
-                        lpD.width = LinearLayout.LayoutParams.WRAP_CONTENT
-                        lpD.marginStart = px(14)
-                        detail.alpha = 1f
-                        detail.layoutParams = lpD
-                    }
-                })
-                start()
+    /** 量出展开态自然尺寸并把 detail/expandedBox 锁死为像素尺寸(动画/裁剪期间不再重排折行)。 */
+    private fun sizeExpandedBox() {
+        val ws = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        (detail.layoutParams as? LinearLayout.LayoutParams)?.width =
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        detail.measure(ws, ws)
+        (detail.layoutParams as? LinearLayout.LayoutParams)?.width = detail.measuredWidth
+        expandedBox.measure(ws, ws)
+        val lp = expandedBox.layoutParams as FrameLayout.LayoutParams
+        lp.width = expandedBox.measuredWidth
+        lp.height = expandedBox.measuredHeight
+        expandedBox.layoutParams = lp
+    }
+
+    private fun setExpanded(want: Boolean) {
+        if (expanded == want) return
+        expanded = want
+        morph?.cancel()
+
+        if (want) {
+            runCatching { renderDetail(lastTick) }
+            sizeExpandedBox()
+        }
+        val show: View = if (want) expandedBox else collapsedRow
+        val hide: View = if (want) collapsedRow else expandedBox
+        show.visibility = View.VISIBLE
+
+        val ws = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        if (show === collapsedRow) show.measure(ws, ws)
+        val toW = if (show === expandedBox) expandedBox.layoutParams.width else show.measuredWidth
+        val toH = if (show === expandedBox) expandedBox.layoutParams.height else show.measuredHeight
+        val fromW = if (shell.width > 0) shell.width else toW
+        val fromH = if (shell.height > 0) shell.height else toH
+        val lpS = shell.layoutParams as FrameLayout.LayoutParams
+
+        morph = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = if (want) 420 else 360   // Metric loadOverlay 尺寸补间节奏
+            interpolator = morphEase
+            addUpdateListener {
+                val f = it.animatedFraction
+                lpS.width = (fromW + (toW - fromW) * f).toInt()
+                lpS.height = (fromH + (toH - fromH) * f).toInt()
+                shell.layoutParams = lpS
+                show.alpha = f
+                hide.alpha = 1f - f
             }
-        } else {
-            val from = if (detail.width > 0) detail.width else detail.measuredWidth
-            val fromMargin = lpD.marginStart
-            detailAnim = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 360   // Metric: 收起 360ms
-                interpolator = android.view.animation.PathInterpolator(0.15f, 1f, 0.3f, 1f)
-                addUpdateListener {
-                    val f = it.animatedFraction
-                    lpD.width = (from * (1f - f)).toInt()
-                    lpD.marginStart = (fromMargin * (1f - f)).toInt()
-                    detail.alpha = 1f - f
-                    detail.layoutParams = lpD
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    hide.visibility = View.GONE
+                    hide.alpha = 1f
+                    lpS.width = FrameLayout.LayoutParams.WRAP_CONTENT
+                    lpS.height = FrameLayout.LayoutParams.WRAP_CONTENT
+                    shell.layoutParams = lpS
                 }
-                addListener(object : android.animation.AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(a: android.animation.Animator) {
-                        detail.visibility = View.GONE
-                        lpD.width = LinearLayout.LayoutParams.WRAP_CONTENT
-                        lpD.marginStart = px(14)
-                        detail.alpha = 1f
-                        detail.layoutParams = lpD
-                    }
-                })
-                start()
-            }
+            })
+            start()
         }
     }
 
@@ -359,44 +394,61 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         lastTick = t
         val s = t.snap
 
-        val cpu = s?.cpuLoadPct ?: -1
-        cpuCol.ring.set(cpu.coerceAtLeast(0), loadColor(cpu.coerceAtLeast(0)))
+        val cpu = (s?.cpuLoadPct ?: -1).coerceAtLeast(0)
         val topMhz = s?.clusters?.maxOfOrNull { it.mhz } ?: -1
-        cpuCol.below.text = if (topMhz > 0) "${topMhz}MHz" else "--"
-
-        val gpu = s?.gpuLoadPct ?: -1
-        gpuCol.ring.set(gpu.coerceAtLeast(0), loadColor(gpu.coerceAtLeast(0)))
+        val cpuBelow = if (topMhz > 0) "${topMhz}MHz" else "--"
+        val gpu = (s?.gpuLoadPct ?: -1).coerceAtLeast(0)
         val gpuMhz = s?.gpuMhz ?: -1
-        gpuCol.below.text = if (gpuMhz > 0) "${gpuMhz}MHz" else "--"
-
-        // 电量环画"已消耗"占比(Metric: 1-电量), 电量越低弧越满、越红
+        val gpuBelow = if (gpuMhz > 0) "${gpuMhz}MHz" else "--"
+        // 电量环 = 剩余电量占比(对照 Metric 截图), 颜色按耗电程度: 电量越低越红
         val batt = s?.battPct ?: -1
-        val drained = if (batt >= 0) 100 - batt else 0
-        battCol.ring.set(drained, loadColor(drained))
-        battCol.center.text = if (batt >= 0) "$batt%" else "--"
+        val battArc = batt.coerceAtLeast(0)
+        val battColor = loadColor(if (batt >= 0) 100 - batt else 0)
+        val battCenter = if (batt >= 0) "$batt%" else "--"
         val temp = s?.tempC ?: -999
-        battCol.below.text = if (temp > -100) "$temp℃" else "--"
+        val battBelow = if (temp > -100) "$temp℃" else "--"
 
-        if (expanded) runCatching { renderDetail(t) }
+        listOf(hCpu to vCpu, hGpu to vGpu, hBat to vBat).forEachIndexed { i, (h, v) ->
+            val (arc, color, below) = when (i) {
+                0 -> Triple(cpu, loadColor(cpu), cpuBelow)
+                1 -> Triple(gpu, loadColor(gpu), gpuBelow)
+                else -> Triple(battArc, battColor, battBelow)
+            }
+            h.ring.set(arc, color); v.ring.set(arc, color)
+            h.below.text = below; v.below.text = below
+            if (i == 2) { h.center.text = battCenter; v.center.text = battCenter }
+        }
+
+        if (expanded) {
+            runCatching {
+                renderDetail(t)
+                if (morph?.isRunning != true) sizeExpandedBox()
+            }
+        }
     }
 
-    /** 展开面板文本(仿 Metric): 全部字段取不到显示 --, 不抛异常。 */
+    /**
+     * 展开面板参数列(对齐 Metric 原版截图格式):
+     *   #RAM 88%  148%
+     *    DDR 2706
+     *   #CPU 66℃
+     *   #0-5 1670MHz
+     *    55% 1055M IPC0.92   ← 本机无 perf 计数, IPC 恒显 "--"(同 Metric 空闲核)
+     *   #FPS 50.1
+     *   #PWR +69.40W
+     */
     private fun renderDetail(t: TickData?) {
         val s = t?.snap
         val sb = StringBuilder()
-        // #RAM 物理% 合计%(物理+swap)
         val ram = s?.ramUsedPct ?: -1
         val comb = s?.ramCombinedPct ?: -1
         sb.append("#RAM ").append(if (ram >= 0) "$ram%" else "--")
-        if (comb >= 0) sb.append(" $comb%")
+        if (comb >= 0) sb.append("  ").append("$comb%")
         sb.append('\n')
-        // DDR 频率(MHz, 裸数字对齐截图)
         val ddr = s?.ddrMhz ?: -1
-        sb.append("DDR ").append(if (ddr > 0) "$ddr" else "--").append('\n')
-        // #CPU 最高温
+        sb.append(" DDR ").append(if (ddr > 0) "$ddr" else "--").append('\n')
         val tc = s?.tempC ?: -999
         sb.append("#CPU ").append(if (tc > -100) "${tc}℃" else "--").append('\n')
-        // 每簇 + 每核(簇行: #核范围 簇频率; 核行: 负载% + 该核频率)
         val loads = s?.coreLoadPct.orEmpty()
         val freqs = s?.coreMhz.orEmpty()
         val clusters = s?.clusters.orEmpty().filter { it.cpus.isNotEmpty() }
@@ -414,18 +466,20 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
             val n = maxOf(loads.size, freqs.size)
             for (cpu in 0 until n) appendCoreLine(sb, loads.getOrNull(cpu), freqs.getOrNull(cpu))
         }
-        // #FPS / #PWR
         val fps = s?.fps ?: -1
-        sb.append("#FPS ").append(if (fps >= 0) String.format("%.1f", fps.toFloat()) else "--").append('\n')
+        sb.append("#FPS ").append(if (fps >= 0)
+            String.format(java.util.Locale.US, "%.1f", fps.toFloat()) else "--").append('\n')
         val w = s?.watt ?: 0.0
-        sb.append("#PWR ").append(if (w > 0.0) String.format("%.2fW", w) else "--")
+        sb.append("#PWR ").append(if (w > 0.0)
+            String.format(java.util.Locale.US, "%+.2fW", w) else "--W")
         detail.text = sb.toString()
     }
 
+    // Metric 每核行: " 55% 1055M IPC0.92" —— 负载% + 核频(M) + IPC(无 perf 数据时同 Metric 显 --)
     private fun appendCoreLine(sb: StringBuilder, load: Int?, mhz: Int?) {
         val l = if (load != null && load >= 0) "$load%" else "--"
-        val f = if (mhz != null && mhz > 0) "${mhz}MHz" else "--"
-        sb.append(String.format(" %-4s %s", l, f)).append('\n')
+        val f = if (mhz != null && mhz > 0) "${mhz}M" else "0M"
+        sb.append(String.format(" %-4s %-6s IPC--", l, f)).append('\n')
     }
 }
 
@@ -460,14 +514,16 @@ class MiniOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     private val lPwr = cell(segPink)
     private val vPwr = cell(ink, 36)
 
+    private val barBg = GradientDrawable().apply {
+        cornerRadius = px(8).toFloat()
+        setColor(Color.argb(217, 27, 29, 34))   // Metric #D91B1D22
+    }
+    override fun windowBackground(): GradientDrawable = barBg
+
     private val bar = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(px(8), px(3), px(8), px(3))
-        background = GradientDrawable().apply {
-            cornerRadius = px(8).toFloat()
-            setColor(Color.argb(217, 27, 29, 34))   // Metric #D91B1D22
-        }
     }
     override val root: View = bar
 
@@ -723,8 +779,10 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         setColor(idleTint)
         setStroke(1, Color.argb(18, 255, 255, 255))
     }
+    override fun windowBackground(): GradientDrawable = shellBg
+
     private val shell = FrameLayout(ctx).apply {
-        background = shellBg
+        clipChildren = true
         addView(capsule, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))

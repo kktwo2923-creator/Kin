@@ -4,12 +4,12 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
+import android.graphics.drawable.ColorDrawable
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
-import android.view.View
+import android.view.Window
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.OvershootInterpolator
@@ -26,12 +26,14 @@ import com.ktwo.cts.service.ForegroundDetector
 import kotlinx.coroutines.*
 
 /**
- * 悬浮窗管理器的后端: 单前台服务, 用 WindowManager 同时管理多个命名监视悬浮窗(仿 Metric)。
+ * 悬浮窗管理器的后端: 单前台服务, 同时管理多个命名监视悬浮窗(对齐 Metric 原版架构)。
+ * 每个悬浮窗宿主在一个 TYPE_APPLICATION_OVERLAY 的 Dialog 窗口里(Metric 同款),
+ * 玻璃模糊用 Window.setBackgroundBlurRadius —— 只糊窗背景圆角内, 绝不糊整屏。
  * 每个 OverlayType 一个独立可拖动浮窗, 各自开关/落点; 单采样循环喂所有窗。
  */
 class FloatWindowService : Service() {
 
-    private class Holder(val win: OverlayWindow, val lp: WindowManager.LayoutParams)
+    private class Holder(val win: OverlayWindow, val dlg: Dialog)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var wm: WindowManager
@@ -41,7 +43,7 @@ class FloatWindowService : Service() {
     @Volatile private var alpha = 217
     @Volatile private var textSp = 12f
     private var cellCount = 1
-    // 系统支持跨窗口模糊时启用 Metric 同款背景模糊(290), 此时卡底调透(≈0.55)更接近原版玻璃
+    // 系统支持跨窗口模糊时: 窗背景模糊 290(Metric 同值), 卡底同步调透接近 surface@0.55
     private var blurOn = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -78,12 +80,12 @@ class FloatWindowService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel()
-        windows.values.forEach { runCatching { wm.removeView(it.win.root) } }
+        windows.values.forEach { runCatching { it.dlg.dismiss() } }
         windows.clear()
-        // 退场动画中的窗也一并移除, 防 View 泄漏
-        leaving.forEach { v ->
-            v.animate().cancel()
-            runCatching { wm.removeView(v) }
+        // 退场动画中的窗也一并关掉, 防泄漏
+        leaving.forEach { d ->
+            runCatching { d.window?.decorView?.animate()?.cancel() }
+            runCatching { d.dismiss() }
         }
         leaving.clear()
     }
@@ -93,7 +95,7 @@ class FloatWindowService : Service() {
     private fun factory(type: OverlayType): OverlayWindow {
         val a = type.accent.toInt()
         // 有真模糊时玻璃调透(Metric: surface@0.55+blur); 无模糊按用户不透明度直出
-        val ea = if (blurOn) (alpha * 0.65f).toInt().coerceAtLeast(64) else alpha
+        val ea = if (blurOn) (alpha * 0.62f).toInt().coerceAtLeast(64) else alpha
         val win = when (type) {
             OverlayType.LOAD    -> LoadOverlayWindow(this, a, ea, textSp)
             OverlayType.PROCESS -> ProcessOverlayWindow(this, a, ea, textSp)
@@ -114,101 +116,109 @@ class FloatWindowService : Service() {
         }
     }
 
-    private fun defaultParams(type: OverlayType): WindowManager.LayoutParams {
-        val winType = if (Build.VERSION.SDK_INT >= 26)
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else
-            @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-        // 迷你监视器对齐 Metric 原版: 顶部居中贴挖孔区, 点击穿透(NOT_TOUCHABLE), 不可拖动
-        if (type == OverlayType.MINI) {
-            return WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                winType,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT,
-            ).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                x = 0; y = px(2)
-                layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-        }
-        val idx = OverlayType.entries.indexOf(type).coerceAtLeast(0)
-        return WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            winType,
+    /**
+     * 每个悬浮窗一个 Dialog 宿主(Metric 原版做法):
+     * 窗背景 = 该窗的玻璃 Drawable(圆角+半透明深底), 模糊裁剪在这个背景的圆角内。
+     */
+    private fun buildDialog(type: OverlayType, win: OverlayWindow): Dialog {
+        val dlg = Dialog(this, android.R.style.Theme_Panel)
+        dlg.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dlg.setCancelable(false)
+        dlg.setCanceledOnTouchOutside(false)
+        dlg.setContentView(win.root)
+        val w = dlg.window ?: return dlg
+        val lp = w.attributes
+        lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        lp.format = PixelFormat.TRANSLUCENT
+        lp.width = WindowManager.LayoutParams.WRAP_CONTENT
+        lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+        lp.flags = lp.flags or
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = (resources.displayMetrics.widthPixels - px(150)).coerceAtLeast(0)
-            y = px(48 + 90 * idx)
-            // Metric 同款背景模糊: 悬浮窗窗体就是卡片本身, blurBehind 只糊卡片正后方那块,
-            // 不会糊整屏。仅在系统开启跨窗口模糊时启用(关闭时靠半透明深底兜底)。
-            if (blurOn) {
-                flags = flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
-                blurBehindRadius = 290   // Metric setBackgroundBlurRadius(290)
-            }
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        lp.dimAmount = 0f
+        if (type == OverlayType.MINI) {
+            // 迷你条: 顶部居中贴挖孔区, 点击穿透
+            lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            lp.x = 0; lp.y = px(2)
+            lp.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        } else {
+            val idx = OverlayType.entries.indexOf(type).coerceAtLeast(0)
+            lp.gravity = Gravity.TOP or Gravity.START
+            lp.x = (resources.displayMetrics.widthPixels - px(180)).coerceAtLeast(0)
+            lp.y = px(48 + 90 * idx)
         }
+        w.attributes = lp
+        w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        w.setBackgroundDrawable(win.windowBackground() ?: ColorDrawable(0))
+        w.decorView.setPadding(0, 0, 0, 0)
+        // Metric 玻璃: 模糊只作用在窗背景圆角内(Window.setBackgroundBlurRadius(290)),
+        // 与 FLAG_BLUR_BEHIND 不同, 不会糊到卡片外的整屏。迷你条恒定深色不模糊。
+        if (blurOn && type != OverlayType.MINI) {
+            runCatching { w.setBackgroundBlurRadius(290) }
+        }
+        return dlg
     }
 
     private fun showWindow(type: OverlayType) {
         if (windows.containsKey(type)) return
         val win = factory(type)
-        val lp = defaultParams(type)
+        val dlg = buildDialog(type, win)
         val fixed = type == OverlayType.MINI   // 迷你条固定顶部居中, 点击穿透不可拖
-        if (!fixed) attachDrag(type, win, lp)
-        // 入场动画: 普通窗缩放 0.85→1+淡入(带回弹); 迷你条从状态栏上方滑入+淡入
-        win.root.alpha = 0f
-        if (fixed) {
-            win.root.translationY = -px(16).toFloat()
-        } else {
-            win.root.scaleX = 0.85f
-            win.root.scaleY = 0.85f
-        }
-        val ok = runCatching { wm.addView(win.root, lp) }.isSuccess
+        if (!fixed) attachDrag(type, win, dlg)
+        val ok = runCatching { dlg.show() }.isSuccess
         if (!ok) return
-        win.root.animate()
-            .alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
-            .setDuration(280)
-            .setInterpolator(OvershootInterpolator(1.1f))
-            .start()
-        windows[type] = Holder(win, lp)
+        // 入场动画作用在 decorView 上(窗背景玻璃随内容一起缩放/淡入):
+        // 普通窗缩放 0.85→1+淡入(带回弹); 迷你条从状态栏上方滑入
+        dlg.window?.decorView?.let { d ->
+            d.alpha = 0f
+            if (fixed) d.translationY = -px(16).toFloat() else { d.scaleX = 0.85f; d.scaleY = 0.85f }
+            d.animate()
+                .alpha(1f).scaleX(1f).scaleY(1f).translationY(0f)
+                .setDuration(280)
+                .setInterpolator(OvershootInterpolator(1.1f))
+                .start()
+        }
+        windows[type] = Holder(win, dlg)
         activeTypes = windows.keys.toSet()
         updateNotification()
         // 异步应用存档落点(迷你条不落点, 恒定顶部居中)
         if (!fixed) scope.launch {
             val (sx, sy) = Prefs.ovlPos(this@FloatWindowService, type)
             if (sx != Int.MIN_VALUE && sy != Int.MIN_VALUE) withContext(Dispatchers.Main) {
-                lp.x = sx; lp.y = sy
-                runCatching { wm.updateViewLayout(win.root, lp) }
+                runCatching {
+                    dlg.window?.let { w ->
+                        val lp = w.attributes; lp.x = sx; lp.y = sy; w.attributes = lp
+                    }
+                }
             }
         }
     }
 
-    // 正在做退场动画、还挂在 WindowManager 上的窗根 View(onDestroy 兜底移除, 防泄漏)
-    private val leaving = ArrayList<View>()
+    // 正在做退场动画、还未 dismiss 的 Dialog(onDestroy 兜底关闭, 防泄漏)
+    private val leaving = ArrayList<Dialog>()
 
     private fun hideWindow(type: OverlayType) {
         val h = windows.remove(type) ?: return
         activeTypes = windows.keys.toSet()
-        val v = h.win.root
-        leaving.add(v)
-        // 退场动画: 缩小+淡出后再真正移除; 全部关完才停服务
-        v.animate()
+        val dlg = h.dlg
+        val d = dlg.window?.decorView
+        if (d == null) {
+            runCatching { dlg.dismiss() }
+            if (windows.isEmpty()) { ProcSampler.reset(); stopSelf() } else updateNotification()
+            return
+        }
+        leaving.add(dlg)
+        // 退场动画: 缩小+淡出后再真正关闭; 全部关完才停服务
+        d.animate()
             .alpha(0f).scaleX(0.85f).scaleY(0.85f)
             .setDuration(180)
             .setInterpolator(AccelerateInterpolator())
             .withEndAction {
-                leaving.remove(v)
-                runCatching { wm.removeView(v) }
+                leaving.remove(dlg)
+                runCatching { dlg.dismiss() }
                 if (windows.isEmpty()) { ProcSampler.reset(); stopSelf() } else updateNotification()
             }
             .start()
@@ -224,20 +234,22 @@ class FloatWindowService : Service() {
         }
     }
 
-    // 拖动 + 单击分发: 移动阈值(3dp)内抬手视为 tap, 回调窗体 onTap(负载窗用它做收起/展开)。
+    // 拖动 + 单击分发: 移动阈值(3dp)内抬手视为 tap, 回调窗体 onTap(负载/帧率窗用它展开收起)。
     // 带点击监听的子 View(✕/标签)会自行消费触摸, 不会走到这里, 天然不冲突。
     // 手感对齐 Metric: 按下轻微放大"拿起", 拖动实时钳在屏幕内, 松手回弹落下。
-    private fun attachDrag(type: OverlayType, win: OverlayWindow, lp: WindowManager.LayoutParams) {
+    private fun attachDrag(type: OverlayType, win: OverlayWindow, dlg: Dialog) {
         val view = win.root
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         var moved = false; var longPressed = false
         var snapAnim: android.animation.ValueAnimator? = null
 
+        fun window(): Window? = dlg.window
+
         fun settle() {
-            view.animate().scaleX(1f).scaleY(1f)
-                .setDuration(220)
-                .setInterpolator(OvershootInterpolator(1.5f))
-                .start()
+            window()?.decorView?.animate()?.scaleX(1f)?.scaleY(1f)
+                ?.setDuration(220)
+                ?.setInterpolator(OvershootInterpolator(1.5f))
+                ?.start()
         }
 
         // 长按(500ms 内未拖动): 回调窗体 onLongPress(负载窗用它关闭, Metric 语义)
@@ -247,6 +259,8 @@ class FloatWindowService : Service() {
         }
 
         view.setOnTouchListener { _, ev ->
+            val w = window() ?: return@setOnTouchListener false
+            val lp = w.attributes
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     snapAnim?.cancel(); snapAnim = null   // 吸边动画途中再抓住 → 停在手上
@@ -261,16 +275,18 @@ class FloatWindowService : Service() {
                         moved = true
                         view.removeCallbacks(longPress)
                         // 越过拖动阈值才"拿起", 避免单击也闪一下
-                        view.animate().scaleX(1.05f).scaleY(1.05f)
+                        w.decorView.animate().scaleX(1.05f).scaleY(1.05f)
                             .setDuration(120).setInterpolator(AccelerateInterpolator()).start()
                     }
                     // 实时钳制在屏幕范围内, 拖不出去
                     val dm = resources.displayMetrics
-                    val maxX = (dm.widthPixels - view.width).coerceAtLeast(0)
-                    val maxY = (dm.heightPixels - view.height).coerceAtLeast(0)
+                    val vw = w.decorView.width
+                    val vh = w.decorView.height
+                    val maxX = (dm.widthPixels - vw).coerceAtLeast(0)
+                    val maxY = (dm.heightPixels - vh).coerceAtLeast(0)
                     lp.x = (startX + dx).coerceIn(0, maxX)
                     lp.y = (startY + dy).coerceIn(0, maxY)
-                    runCatching { wm.updateViewLayout(view, lp) }
+                    runCatching { w.attributes = lp }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
@@ -280,14 +296,15 @@ class FloatWindowService : Service() {
                         // Metric: 仅帧率窗松手吸附到最近的左右屏边(lb0 FPS 分支带 edge-snap)
                         if (type == OverlayType.FPS) {
                             val dm = resources.displayMetrics
-                            val maxX = (dm.widthPixels - view.width).coerceAtLeast(0)
-                            val toX = if (lp.x + view.width / 2 < dm.widthPixels / 2) 0 else maxX
+                            val vw = w.decorView.width
+                            val maxX = (dm.widthPixels - vw).coerceAtLeast(0)
+                            val toX = if (lp.x + vw / 2 < dm.widthPixels / 2) 0 else maxX
                             snapAnim = android.animation.ValueAnimator.ofInt(lp.x, toX).apply {
                                 duration = 300
                                 interpolator = android.view.animation.PathInterpolator(0.15f, 1f, 0.3f, 1f)
                                 addUpdateListener {
                                     lp.x = it.animatedValue as Int
-                                    runCatching { wm.updateViewLayout(view, lp) }
+                                    runCatching { w.attributes = lp }
                                 }
                                 addListener(object : android.animation.AnimatorListenerAdapter() {
                                     override fun onAnimationEnd(a: android.animation.Animator) {
