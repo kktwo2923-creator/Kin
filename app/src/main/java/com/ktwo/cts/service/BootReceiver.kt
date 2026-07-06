@@ -27,6 +27,11 @@ class BootReceiver : BroadcastReceiver() {
                     if (Prefs.enabled(ctx) && !RootShell.daemonAlive()) ScheduleService.start(ctx)
                     if (Prefs.notifyEnabled(ctx)) NotifyService.start(ctx)
                 }
+                // 悬浮监视器: 开机若有已启用的窗且有悬浮窗权限, 拉起服务恢复
+                if (Prefs.enabledOverlayTypes(ctx).isNotEmpty() &&
+                    android.provider.Settings.canDrawOverlays(ctx)) {
+                    com.ktwo.cts.overlay.FloatWindowService.sync(ctx)
+                }
             } finally { pending.finish() }
         }
     }

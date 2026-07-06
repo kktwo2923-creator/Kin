@@ -8,3 +8,7 @@ captures/
 .externalNativeBuild/
 .cxx/
 .kotlin/
+
+# Rust native 采样库产物: CI 现编, 不入库
+app/src/main/jniLibs/
+rust/ctssampler/target/

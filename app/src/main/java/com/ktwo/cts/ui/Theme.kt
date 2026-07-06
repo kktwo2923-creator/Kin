@@ -88,6 +88,7 @@ enum class ThemeMode(val key: String, val label: String) {
 @Composable
 fun AppTheme(
     mode: ThemeMode = ThemeMode.SYSTEM,
+    uiStyle: UiStyle = UiStyle.GLASS,
     content: @Composable () -> Unit,
 ) {
     val sysDark = isSystemInDarkTheme()
@@ -96,8 +97,12 @@ fun AppTheme(
         ThemeMode.DARK -> true
         ThemeMode.SYSTEM -> sysDark
     }
+    // 全风格统一液态玻璃配色: uiStyle 只决定主页是否显示 Metric 仪表盘布局, 不再切换配色。
     val scheme: ColorScheme = if (dark) DarkScheme else LightScheme
-    CompositionLocalProvider(LocalDarkMode provides dark) {
+    CompositionLocalProvider(
+        LocalDarkMode provides dark,
+        LocalUiStyle provides uiStyle,
+    ) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }

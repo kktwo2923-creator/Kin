@@ -28,6 +28,17 @@ object Prefs {
         ctx.dataStore.edit { it[SMART_KEY] = b }
     }
 
+    // 付费解锁(Pro/智能版)是否已解锁。缓存本地供 UI 秒读, 真正的来源是 License.state()==VALID:
+    // App 启动 / 激活成功时由 Pro.sync() 从 License 同步写入。智能模式与「系统优化」相关功能受它门控。
+    private val PRO_KEY = booleanPreferencesKey("pro_unlocked")
+    fun proUnlockedFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[PRO_KEY] ?: false }
+    suspend fun proUnlocked(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[PRO_KEY] ?: false
+    suspend fun setProUnlocked(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[PRO_KEY] = b }
+    }
+
     fun notifyEnabledFlow(ctx: Context): Flow<Boolean> =
         ctx.dataStore.data.map { it[NOTIFY_KEY] ?: false }
     suspend fun notifyEnabled(ctx: Context): Boolean =
@@ -58,6 +69,14 @@ object Prefs {
         ctx.dataStore.data.map { it[ENABLE_FLOATING_BAR_BLUR_KEY] ?: true }
     suspend fun setEnableFloatingBottomBarBlur(ctx: Context, b: Boolean) {
         ctx.dataStore.edit { it[ENABLE_FLOATING_BAR_BLUR_KEY] = b }
+    }
+
+    // 界面风格: glass(液态玻璃, 默认现状) / metric(Metric 浅色仪表盘)
+    private val UI_STYLE_KEY = stringPreferencesKey("ui_style")
+    fun uiStyleFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[UI_STYLE_KEY] ?: "glass" }
+    suspend fun setUiStyle(ctx: Context, k: String) {
+        ctx.dataStore.edit { it[UI_STYLE_KEY] = k }
     }
 
     fun themeModeFlow(ctx: Context): Flow<String> =
@@ -94,6 +113,77 @@ object Prefs {
         ctx.dataStore.data.first()[AUTOSTART_KEY] ?: true
     suspend fun setAutostart(ctx: Context, b: Boolean) {
         ctx.dataStore.edit { it[AUTOSTART_KEY] = b }
+    }
+
+    // ── 悬浮性能监控窗(仿 Metric)──
+    // 开关 / 显示项(csv, 见 MonitorItems) / 透明度(0-100) / 字号(sp) / 落点(px)
+    private val MON_ENABLED_KEY  = booleanPreferencesKey("monitor_overlay_enabled")
+    private val MON_ITEMS_KEY    = stringPreferencesKey("monitor_items")
+    private val MON_OPACITY_KEY  = intPreferencesKey("monitor_opacity")
+    private val MON_TEXTSIZE_KEY = intPreferencesKey("monitor_text_size")
+    private val MON_POSX_KEY     = intPreferencesKey("monitor_pos_x")
+    private val MON_POSY_KEY     = intPreferencesKey("monitor_pos_y")
+    // 默认显示: 帧率 / CPU频率 / GPU频率 / 温度 / 电量
+    const val MON_ITEMS_DEFAULT = "fps,cpu,gpu,temp,batt"
+
+    fun monEnabledFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[MON_ENABLED_KEY] ?: false }
+    suspend fun monEnabled(ctx: Context): Boolean =
+        ctx.dataStore.data.first()[MON_ENABLED_KEY] ?: false
+    suspend fun setMonEnabled(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[MON_ENABLED_KEY] = b }
+    }
+    fun monItemsFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[MON_ITEMS_KEY] ?: MON_ITEMS_DEFAULT }
+    suspend fun monItems(ctx: Context): String =
+        ctx.dataStore.data.first()[MON_ITEMS_KEY] ?: MON_ITEMS_DEFAULT
+    suspend fun setMonItems(ctx: Context, csv: String) {
+        ctx.dataStore.edit { it[MON_ITEMS_KEY] = csv }
+    }
+    fun monOpacityFlow(ctx: Context): Flow<Int> =
+        ctx.dataStore.data.map { it[MON_OPACITY_KEY] ?: 85 }
+    suspend fun monOpacity(ctx: Context): Int =
+        ctx.dataStore.data.first()[MON_OPACITY_KEY] ?: 85
+    suspend fun setMonOpacity(ctx: Context, v: Int) {
+        ctx.dataStore.edit { it[MON_OPACITY_KEY] = v }
+    }
+    fun monTextSizeFlow(ctx: Context): Flow<Int> =
+        ctx.dataStore.data.map { it[MON_TEXTSIZE_KEY] ?: 12 }
+    suspend fun monTextSize(ctx: Context): Int =
+        ctx.dataStore.data.first()[MON_TEXTSIZE_KEY] ?: 12
+    suspend fun setMonTextSize(ctx: Context, v: Int) {
+        ctx.dataStore.edit { it[MON_TEXTSIZE_KEY] = v }
+    }
+    suspend fun monPos(ctx: Context): Pair<Int, Int> {
+        val p = ctx.dataStore.data.first()
+        return (p[MON_POSX_KEY] ?: Int.MIN_VALUE) to (p[MON_POSY_KEY] ?: Int.MIN_VALUE)
+    }
+    suspend fun setMonPos(ctx: Context, x: Int, y: Int) {
+        ctx.dataStore.edit { it[MON_POSX_KEY] = x; it[MON_POSY_KEY] = y }
+    }
+
+    // ── 悬浮窗管理器: 六个独立监视器各自开关 + 各自落点(仿 Metric)──
+    // key 动态生成 ovl_{id}_enabled / ovl_{id}_x / ovl_{id}_y。默认关、落点 MIN_VALUE(用错开默认)。
+    private fun ovlEnabledKey(t: OverlayType) = booleanPreferencesKey("ovl_${t.id}_enabled")
+    private fun ovlXKey(t: OverlayType) = intPreferencesKey("ovl_${t.id}_x")
+    private fun ovlYKey(t: OverlayType) = intPreferencesKey("ovl_${t.id}_y")
+
+    fun ovlEnabledFlow(ctx: Context, t: OverlayType): Flow<Boolean> =
+        ctx.dataStore.data.map { it[ovlEnabledKey(t)] ?: false }
+    suspend fun setOvlEnabled(ctx: Context, t: OverlayType, b: Boolean) {
+        ctx.dataStore.edit { it[ovlEnabledKey(t)] = b }
+    }
+    /** 一次读出所有已开启的监视器(服务恢复 / 开机同步用)。 */
+    suspend fun enabledOverlayTypes(ctx: Context): Set<OverlayType> {
+        val p = ctx.dataStore.data.first()
+        return OverlayType.entries.filter { p[ovlEnabledKey(it)] == true }.toSet()
+    }
+    suspend fun ovlPos(ctx: Context, t: OverlayType): Pair<Int, Int> {
+        val p = ctx.dataStore.data.first()
+        return (p[ovlXKey(t)] ?: Int.MIN_VALUE) to (p[ovlYKey(t)] ?: Int.MIN_VALUE)
+    }
+    suspend fun setOvlPos(ctx: Context, t: OverlayType, x: Int, y: Int) {
+        ctx.dataStore.edit { it[ovlXKey(t)] = x; it[ovlYKey(t)] = y }
     }
 
     // 用户是否要求开启无障碍前台推送(root 授权): 开机由 BootReceiver 重新断言, 防 ROM 重启掉权限
@@ -138,6 +228,14 @@ object Prefs {
             it[CELL_COUNT_KEY] = cells
             it[CELL_CALIBRATED_KEY] = true
         }
+    }
+
+    // 使用文档已读标记:首次启动若为 false, AppRoot 弹一次「先看文档」提示; 无论选什么都置 true 不再打扰。
+    private val DOCS_SEEN_KEY = booleanPreferencesKey("docs_seen")
+    fun docsSeenFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[DOCS_SEEN_KEY] ?: false }
+    suspend fun setDocsSeen(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[DOCS_SEEN_KEY] = b }
     }
 }
 

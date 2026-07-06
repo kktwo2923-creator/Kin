@@ -56,6 +56,36 @@
                 android:value="Persistent status notification showing current power mode and battery, with a floating quick mode switcher" />
         </service>
 
+        <!-- 悬浮性能监控窗(仿 Metric):实时显示 CPU/GPU/温度/帧率 -->
+        <service
+            android:name=".service.MonitorOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Floating performance monitor overlay showing realtime CPU/GPU/temperature/FPS" />
+        </service>
+
+        <!-- 悬浮窗管理器后端(仿 Metric):同时管理多个命名监视悬浮窗 -->
+        <service
+            android:name=".overlay.FloatWindowService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Multiple floating monitor overlays: load/process/thread/mini/fps/temperature" />
+        </service>
+
+        <!-- 帧率录制服务:锁定前台应用, 每秒采样 FPS/帧时间/功耗并生成会话报告 -->
+        <service
+            android:name=".service.FpsRecordService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="FPS recording session: samples framerate/frametime/power of the foreground app once per second" />
+        </service>
+
         <!-- 无障碍服务:把前台包名推给 daemon(dumpsys 轮询的加速器,可选启用) -->
         <service
             android:name=".service.AppSwitchService"

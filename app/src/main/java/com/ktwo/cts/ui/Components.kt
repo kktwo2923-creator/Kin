@@ -78,7 +78,6 @@ fun WallpaperBackground(
     wallpaperUri: String = "",
     modifier: Modifier = Modifier,
 ) {
-
     val ctx = LocalContext.current
     val bitmap = remember(wallpaperUri) {
         if (wallpaperUri.isBlank()) null

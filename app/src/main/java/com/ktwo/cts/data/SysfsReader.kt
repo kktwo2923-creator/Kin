@@ -63,6 +63,15 @@ object SysfsReader {
         return if (k > 0) (k / 1000).toInt() else -1
     }
 
+    /** 该簇的硬件频率范围(MHz)。读不到返回 0 to 0。 */
+    fun minMaxFreqMhz(policy: Int): Pair<Int, Int> {
+        val mn = readFileOrRoot("$CPUFREQ/policy$policy/cpuinfo_min_freq")?.toLongOrNull() ?: 0L
+        val mx = readFileOrRoot("$CPUFREQ/policy$policy/cpuinfo_max_freq")?.toLongOrNull() ?: 0L
+        val mnMhz = if (mn > 0) (mn / 1000).toInt() else 0
+        val mxMhz = if (mx > 0) (mx / 1000).toInt() else 0
+        return mnMhz to mxMhz
+    }
+
     fun governor(policy: Int): String =
         readFileOrRoot("$CPUFREQ/policy$policy/scaling_governor") ?: ""
 
