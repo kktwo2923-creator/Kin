@@ -11,6 +11,8 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import androidx.core.app.NotificationCompat
 import com.ktwo.cts.R
 import com.ktwo.cts.data.MetricReader
@@ -75,6 +77,12 @@ class FloatWindowService : Service() {
         scope.cancel()
         windows.values.forEach { runCatching { wm.removeView(it.win.root) } }
         windows.clear()
+        // 退场动画中的窗也一并移除, 防 View 泄漏
+        leaving.forEach { v ->
+            v.animate().cancel()
+            runCatching { wm.removeView(v) }
+        }
+        leaving.clear()
     }
 
     private fun px(v: Int) = (v * dp).toInt()
@@ -129,8 +137,17 @@ class FloatWindowService : Service() {
         val win = factory(type)
         val lp = defaultParams(type)
         attachDrag(type, win, lp)
+        // 入场动画: 缩放 0.85→1 + 淡入, 带一点回弹(Metric/Compose spring 观感)
+        win.root.alpha = 0f
+        win.root.scaleX = 0.85f
+        win.root.scaleY = 0.85f
         val ok = runCatching { wm.addView(win.root, lp) }.isSuccess
         if (!ok) return
+        win.root.animate()
+            .alpha(1f).scaleX(1f).scaleY(1f)
+            .setDuration(280)
+            .setInterpolator(OvershootInterpolator(1.1f))
+            .start()
         windows[type] = Holder(win, lp)
         activeTypes = windows.keys.toSet()
         updateNotification()
@@ -144,11 +161,25 @@ class FloatWindowService : Service() {
         }
     }
 
+    // 正在做退场动画、还挂在 WindowManager 上的窗根 View(onDestroy 兜底移除, 防泄漏)
+    private val leaving = ArrayList<View>()
+
     private fun hideWindow(type: OverlayType) {
         val h = windows.remove(type) ?: return
-        runCatching { wm.removeView(h.win.root) }
         activeTypes = windows.keys.toSet()
-        if (windows.isEmpty()) { ProcSampler.reset(); stopSelf() } else updateNotification()
+        val v = h.win.root
+        leaving.add(v)
+        // 退场动画: 缩小+淡出后再真正移除; 全部关完才停服务
+        v.animate()
+            .alpha(0f).scaleX(0.85f).scaleY(0.85f)
+            .setDuration(180)
+            .setInterpolator(AccelerateInterpolator())
+            .withEndAction {
+                leaving.remove(v)
+                runCatching { wm.removeView(v) }
+                if (windows.isEmpty()) { ProcSampler.reset(); stopSelf() } else updateNotification()
+            }
+            .start()
     }
 
     private fun syncFromPrefs() {
@@ -163,23 +194,50 @@ class FloatWindowService : Service() {
 
     // 拖动 + 单击分发: 移动阈值(3dp)内抬手视为 tap, 回调窗体 onTap(负载窗用它做收起/展开)。
     // 带点击监听的子 View(✕/标签)会自行消费触摸, 不会走到这里, 天然不冲突。
+    // 手感对齐 Metric: 按下轻微放大"拿起", 拖动实时钳在屏幕内, 松手回弹落下。
     private fun attachDrag(type: OverlayType, win: OverlayWindow, lp: WindowManager.LayoutParams) {
         val view = win.root
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
+
+        fun settle() {
+            view.animate().scaleX(1f).scaleY(1f)
+                .setDuration(220)
+                .setInterpolator(OvershootInterpolator(1.5f))
+                .start()
+        }
+
         view.setOnTouchListener { _, ev ->
-            when (ev.action) {
+            when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    downX = ev.rawX; downY = ev.rawY; startX = lp.x; startY = lp.y; moved = false; true
+                    downX = ev.rawX; downY = ev.rawY; startX = lp.x; startY = lp.y; moved = false
+                    true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (ev.rawX - downX).toInt(); val dy = (ev.rawY - downY).toInt()
-                    if (kotlin.math.abs(dx) > px(3) || kotlin.math.abs(dy) > px(3)) moved = true
-                    lp.x = startX + dx; lp.y = startY + dy
-                    runCatching { wm.updateViewLayout(view, lp) }; true
+                    if (!moved && (kotlin.math.abs(dx) > px(3) || kotlin.math.abs(dy) > px(3))) {
+                        moved = true
+                        // 越过拖动阈值才"拿起", 避免单击也闪一下
+                        view.animate().scaleX(1.05f).scaleY(1.05f)
+                            .setDuration(120).setInterpolator(AccelerateInterpolator()).start()
+                    }
+                    // 实时钳制在屏幕范围内, 拖不出去
+                    val dm = resources.displayMetrics
+                    val maxX = (dm.widthPixels - view.width).coerceAtLeast(0)
+                    val maxY = (dm.heightPixels - view.height).coerceAtLeast(0)
+                    lp.x = (startX + dx).coerceIn(0, maxX)
+                    lp.y = (startY + dy).coerceIn(0, maxY)
+                    runCatching { wm.updateViewLayout(view, lp) }
+                    true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (moved) scope.launch { Prefs.setOvlPos(this@FloatWindowService, type, lp.x, lp.y) }
-                    else runCatching { win.onTap() }
+                    if (moved) {
+                        settle()
+                        scope.launch { Prefs.setOvlPos(this@FloatWindowService, type, lp.x, lp.y) }
+                    } else runCatching { win.onTap() }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    if (moved) settle()
                     true
                 }
                 else -> false

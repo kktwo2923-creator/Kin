@@ -1,5 +1,6 @@
 package com.ktwo.cts.overlay
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Canvas
@@ -12,6 +13,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -105,9 +107,12 @@ abstract class OverlayWindow(
 /**
  * 环形进度表(纯自绘): 浅色整圈轨道 + 彩色进度弧。
  * 环心/环下文字不在这里画, 由外层 FrameLayout 叠 TextView 实现。
+ * 进度变化带补间动画(仿 Metric/Compose 的 animateFloatAsState 观感), 不是瞬跳。
  */
 class RingView(ctx: Context, strokePx: Float) : View(ctx) {
-    private var pct = 0
+    private var shownPct = 0f      // 当前绘制值(动画中间态)
+    private var targetPct = 0f
+    private var anim: ValueAnimator? = null
     private val inset = strokePx / 2f + 1f
     private val bounds = RectF()
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -122,11 +127,24 @@ class RingView(ctx: Context, strokePx: Float) : View(ctx) {
         color = GREEN
     }
 
-    /** 更新进度与弧色并重绘。pct 会被夹到 0..100。 */
+    /** 更新进度与弧色: 从当前显示值平滑补间到新值(约 450ms 减速曲线)。 */
     fun set(pct: Int, arcColor: Int) {
-        this.pct = pct.coerceIn(0, 100)
         arcPaint.color = arcColor
-        invalidate()
+        val to = pct.coerceIn(0, 100).toFloat()
+        if (to == targetPct) return
+        targetPct = to
+        anim?.cancel()
+        anim = ValueAnimator.ofFloat(shownPct, to).apply {
+            duration = 450
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { shownPct = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        anim?.cancel(); anim = null
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -136,7 +154,7 @@ class RingView(ctx: Context, strokePx: Float) : View(ctx) {
     override fun onDraw(canvas: Canvas) {
         if (bounds.isEmpty) return
         canvas.drawArc(bounds, 0f, 360f, false, trackPaint)
-        if (pct > 0) canvas.drawArc(bounds, -90f, pct / 100f * 360f, false, arcPaint)
+        if (shownPct > 0f) canvas.drawArc(bounds, -90f, shownPct / 100f * 360f, false, arcPaint)
     }
 }
 
@@ -221,11 +239,85 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     }
     override val root: View = pill
 
-    /** 整窗单击: 收起/展开切换(拖动由服务的移动阈值区分, 不冲突)。 */
+    // 展开/收起补间: 逐帧改 detail 宽度+透明度+左边距, 每帧 requestLayout 使
+    // WRAP_CONTENT 的悬浮窗跟着平滑伸缩(Compose AnimatedVisibility 的观感)。
+    private var detailAnim: ValueAnimator? = null
+
+    init {
+        // 窗被 removeView 时兜底停掉进行中的展开/收起动画
+        pill.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {}
+            override fun onViewDetachedFromWindow(v: View) { detailAnim?.cancel(); detailAnim = null }
+        })
+    }
+
+    /** 整窗单击: 收起/展开切换(拖动由服务的移动阈值区分, 不冲突)。带宽度+淡入淡出过渡。 */
     override fun onTap() {
         expanded = !expanded
-        detail.visibility = if (expanded) View.VISIBLE else View.GONE
-        if (expanded) runCatching { renderDetail(lastTick) }
+        if (expanded) {
+            runCatching { renderDetail(lastTick) }
+            animateDetail(show = true)
+        } else {
+            animateDetail(show = false)
+        }
+    }
+
+    private fun animateDetail(show: Boolean) {
+        val lpD = detail.layoutParams as LinearLayout.LayoutParams
+        detailAnim?.cancel()
+        if (show) {
+            detail.visibility = View.VISIBLE
+            detail.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            val target = detail.measuredWidth
+            lpD.width = 0; lpD.marginStart = 0
+            detail.alpha = 0f
+            detail.layoutParams = lpD
+            detailAnim = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 240
+                interpolator = DecelerateInterpolator()
+                addUpdateListener {
+                    val f = it.animatedFraction
+                    lpD.width = (target * f).toInt()
+                    lpD.marginStart = (px(14) * f).toInt()
+                    detail.alpha = f
+                    detail.layoutParams = lpD
+                }
+                addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(a: android.animation.Animator) {
+                        // 恢复 WRAP_CONTENT, 让展开态的文本刷新能自适应宽度
+                        lpD.width = LinearLayout.LayoutParams.WRAP_CONTENT
+                        lpD.marginStart = px(14)
+                        detail.alpha = 1f
+                        detail.layoutParams = lpD
+                    }
+                })
+                start()
+            }
+        } else {
+            val from = if (detail.width > 0) detail.width else detail.measuredWidth
+            val fromMargin = lpD.marginStart
+            detailAnim = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 200
+                interpolator = DecelerateInterpolator()
+                addUpdateListener {
+                    val f = it.animatedFraction
+                    lpD.width = (from * (1f - f)).toInt()
+                    lpD.marginStart = (fromMargin * (1f - f)).toInt()
+                    detail.alpha = 1f - f
+                    detail.layoutParams = lpD
+                }
+                addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(a: android.animation.Animator) {
+                        detail.visibility = View.GONE
+                        lpD.width = LinearLayout.LayoutParams.WRAP_CONTENT
+                        lpD.marginStart = px(14)
+                        detail.alpha = 1f
+                        detail.layoutParams = lpD
+                    }
+                })
+                start()
+            }
+        }
     }
 
     // 三环弧色对齐 Metric: 按指标固定色(CPU 恒绿 / GPU 恒橙 / 电量恒绿), 不随负载值变色。
