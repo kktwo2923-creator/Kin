@@ -21,6 +21,12 @@
 -keep class dev.chrisbanes.haze.** { *; }
 -dontwarn dev.chrisbanes.haze.**
 
+# ============ Rust native 采样库(libctssampler.so)JNI 桥 ============
+# JNI 按「全限定类名 + 方法名」绑定符号(Java_com_ktwo_cts_nativebridge_NativeSampler_*),
+# R8 改名会导致 UnsatisfiedLinkError, 故整类保留。
+-keep class com.ktwo.cts.nativebridge.NativeSampler { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+
 # ============ 防破解:JNI 绑定 + 混淆强化 ============
 # JNI 通过「全限定类名 + 方法名」绑定 C 符号(Java_com_ktwo_cts_license_Integrity_nativeVerify),
 # 因此 Integrity 类名与其 native 方法名必须保留,否则 native 层失效。

@@ -1,5 +1,6 @@
 package com.ktwo.cts.data
 
+import com.ktwo.cts.nativebridge.NativeSampler
 import com.ktwo.cts.root.RootShell
 import java.io.File
 
@@ -56,6 +57,13 @@ object MetricReader {
     }
 
     private fun readProcStatCpuLoad(): Int {
+        // 优先 Rust native 采样(NativeSampler 差分基线由 Rust 侧自持)。
+        // 成功即直接 return, 不再跑下面的 Kotlin 差分, 避免两套 prev 状态互相污染;
+        // 失败(-1: .so 缺失 / SELinux 挡 /proc/stat / 首帧)则完整走原有 Kotlin 路径。
+        if (NativeSampler.available) {
+            val n = runCatching { NativeSampler.cpuLoadPercent() }.getOrDefault(-1)
+            if (n in 0..100) return n
+        }
         val line = procStatCpuLine() ?: return -1
         if (!line.startsWith("cpu ")) return -1
         val parts = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
@@ -156,7 +164,7 @@ object MetricReader {
         }
         val total = kb("MemTotal")
         val avail = kb("MemAvailable")
-        val pct: Int
+        var pct: Int
         val usedGb: Double
         val totalGb: Double
         if (total <= 0 || avail < 0) {
@@ -165,6 +173,12 @@ object MetricReader {
             usedGb = (total - avail) / 1024.0 / 1024.0
             totalGb = total / 1024.0 / 1024.0
             pct = (((total - avail).toDouble() / total) * 100.0).toInt().coerceIn(0, 100)
+        }
+        // Rust native 可用时优先用它算的内存占用 %(无差分状态, 覆盖无副作用);
+        // 仅覆盖 pct 这一项, usedGb/totalGb/swap 仍用上面的 Kotlin 解析, 字段保持完整。
+        if (NativeSampler.available) {
+            val n = runCatching { NativeSampler.memUsedPercent() }.getOrDefault(-1)
+            if (n in 0..100) pct = n
         }
         val swapTotal = kb("SwapTotal")
         val swapFree = kb("SwapFree")

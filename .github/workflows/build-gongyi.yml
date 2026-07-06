@@ -35,6 +35,20 @@ jobs:
         with:
           gradle-version: '9.5.1'
 
+      # 可选: 编 Rust native 采样库(libctssampler.so)进 jniLibs。
+      # continue-on-error: 即使 Rust 没编成也不挡 APK——没有 .so 时
+      # Kotlin 侧 NativeSampler.available=false, 自动退回纯 Kotlin 实现。
+      - name: Build Rust native sampler (optional)
+        id: rustlib
+        continue-on-error: true
+        run: |
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --locked
+          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_NDK_LATEST_HOME}}"
+          echo "NDK=$ANDROID_NDK_HOME"
+          ( cd rust/ctssampler && cargo ndk -t arm64-v8a -o ../../app/src/main/jniLibs build --release )
+          ls -R app/src/main/jniLibs || true
+
       # 可选:有配置发布密钥库的 secret 才解码;没有则跳过,release 自动回退 debug 签名。
       - name: Decode release keystore (optional)
         if: ${{ env.CTS_KEYSTORE_BASE64 != '' }}

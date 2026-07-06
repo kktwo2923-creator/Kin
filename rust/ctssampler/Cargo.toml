@@ -1,0 +1,8 @@
+[package]
+name = "ctssampler"
+version = "0.1.0"
+edition = "2021"
+
+# 无任何第三方依赖: 纯 std, 最小化 CI 失败面, 编译最快。
+[lib]
+crate-type = ["cdylib"]
