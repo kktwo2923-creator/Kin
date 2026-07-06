@@ -220,7 +220,8 @@ class FloatWindowService : Service() {
     // 手感对齐 Metric: 按下轻微放大"拿起", 拖动实时钳在屏幕内, 松手回弹落下。
     private fun attachDrag(type: OverlayType, win: OverlayWindow, lp: WindowManager.LayoutParams) {
         val view = win.root
-        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
+        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
+        var moved = false; var longPressed = false
 
         fun settle() {
             view.animate().scaleX(1f).scaleY(1f)
@@ -229,16 +230,25 @@ class FloatWindowService : Service() {
                 .start()
         }
 
+        // 长按(500ms 内未拖动): 回调窗体 onLongPress(负载窗用它关闭, Metric 语义)
+        val longPress = Runnable {
+            longPressed = true
+            runCatching { win.onLongPress() }
+        }
+
         view.setOnTouchListener { _, ev ->
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    downX = ev.rawX; downY = ev.rawY; startX = lp.x; startY = lp.y; moved = false
+                    downX = ev.rawX; downY = ev.rawY; startX = lp.x; startY = lp.y
+                    moved = false; longPressed = false
+                    view.postDelayed(longPress, 500)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (ev.rawX - downX).toInt(); val dy = (ev.rawY - downY).toInt()
                     if (!moved && (kotlin.math.abs(dx) > px(3) || kotlin.math.abs(dy) > px(3))) {
                         moved = true
+                        view.removeCallbacks(longPress)
                         // 越过拖动阈值才"拿起", 避免单击也闪一下
                         view.animate().scaleX(1.05f).scaleY(1.05f)
                             .setDuration(120).setInterpolator(AccelerateInterpolator()).start()
@@ -253,13 +263,15 @@ class FloatWindowService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
+                    view.removeCallbacks(longPress)
                     if (moved) {
                         settle()
                         scope.launch { Prefs.setOvlPos(this@FloatWindowService, type, lp.x, lp.y) }
-                    } else runCatching { win.onTap() }
+                    } else if (!longPressed) runCatching { win.onTap() }
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    view.removeCallbacks(longPress)
                     if (moved) settle()
                     true
                 }
@@ -302,10 +314,11 @@ class FloatWindowService : Service() {
             val batt = runCatching { SysfsReader.batteryTempC() }.getOrDefault(-999.0)
             val needProc = tick % 2 == 0L &&
                 activeTypes.any { it == OverlayType.PROCESS || it == OverlayType.THREAD }
+            // Metric: 进程窗最多 30 行 / 线程窗 96~126dp 滚动列表, 采样条数跟上
             val procs = if (needProc && activeTypes.contains(OverlayType.PROCESS))
-                runCatching { ProcSampler.topProcesses(8) }.getOrNull() else null
+                runCatching { ProcSampler.topProcesses(30) }.getOrNull() else null
             val thrs = if (needProc && activeTypes.contains(OverlayType.THREAD))
-                runCatching { ProcSampler.topThreads(8) }.getOrNull() else null
+                runCatching { ProcSampler.topThreads(24) }.getOrNull() else null
             if (activeTypes.contains(OverlayType.THREAD)) refreshForeground(tick)
             val data = TickData(snap, batt, procs, thrs, fgPkg, fgLabel, fgPid)
             withContext(Dispatchers.Main) { windows.values.forEach { it.win.onTick(data) } }
