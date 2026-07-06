@@ -511,57 +511,463 @@ class MiniSparkView(ctx: Context, lineColor: Int) : View(ctx) {
     }
 }
 
-/** 帧率记录器: 当前 FPS + min/avg/max + 折线。 */
+/**
+ * 帧率记录器(对齐 Metric 原版): 双态悬浮窗。
+ *  - 收起 = 小胶囊只显当前帧率(空闲琥珀色 / 录制中红色, 同 Metric 0xB7D29A04 / 0xB7D32F2F);
+ *  - 单击胶囊以 Metric 同款 420ms CubicBezier(0.15,1,0.3,1) 强调缓出展开为完整面板:
+ *    收起/关闭按钮、录制状态丸(呼吸点+时长)、录制/停止按钮(绿/红)、时长限制片(不限/5/10/15/30m)、
+ *    大号当前帧率、温度(琥珀)/平均/最低/最高四格统计、74dp 高发光平滑曲线图; 收起 360ms。
+ * 录制走已有 FpsRecordService(状态 StateFlow 每拍读取, 时长限制到点自动停)。
+ */
 class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
-    private val card = verticalCard()
-    private val tHead = title("帧率记录器")
-    private val tCur = row(textSp + 6f, accent).apply {
+
+    private val idleTint = Color.argb(0xB7, 0xD2, 0x9A, 0x04)   // Metric 胶囊空闲色
+    private val recTint = Color.argb(0xB7, 0xD3, 0x2F, 0x2F)    // Metric 胶囊录制色
+    private val panelTint = Color.argb(alpha, 226, 229, 234)     // 展开面板 = 家族灰玻璃
+    private val amber = Color.parseColor("#FFA726")              // Metric 温度标签琥珀
+    private val recGreen = Color.argb(0x80, 0x4C, 0xAF, 0x50)    // 录制按钮绿(@~0.5)
+    private val recRed = Color.argb(0x94, 0xD3, 0x2F, 0x2F)      // 停止按钮红(@~0.58)
+    private val morphEase = android.view.animation.PathInterpolator(0.15f, 1f, 0.3f, 1f)
+
+    // ── 收起态胶囊 ──
+    private val capsule = TextView(ctx).apply {
+        text = "--"
+        setTextColor(Color.WHITE)
+        textSize = 12f
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        includeFontPadding = false
+        gravity = Gravity.CENTER
+        setPadding(px(10), px(5), px(10), px(5))
+        minimumWidth = px(40)
     }
-    private val tStat = row(textSp - 2f, GREY)
-    private val graph = FpsGraphView(ctx, accent).apply {
-        layoutParams = LinearLayout.LayoutParams(px(120), px(36))
+
+    // ── 展开态面板 ──
+    private fun iconBtn(glyph: String, onClick: () -> Unit) = TextView(ctx).apply {
+        text = glyph
+        setTextColor(WHITE)
+        textSize = 13f
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        includeFontPadding = false
+        gravity = Gravity.CENTER
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.argb(26, 20, 30, 45))   // Metric: onSurface 10% 圆形底
+        }
+        layoutParams = LinearLayout.LayoutParams(px(30), px(30))
+        setOnClickListener { runCatching { onClick() } }
     }
-    private var mn = Int.MAX_VALUE; private var mx = 0; private var sum = 0L; private var cnt = 0L
-    override val root: View = card
-    init { card.addView(tHead); card.addView(tCur); card.addView(tStat); card.addView(graph) }
+
+    private fun pillText(sizeSp: Float, color: Int = Color.WHITE) = TextView(ctx).apply {
+        setTextColor(color)
+        textSize = sizeSp
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        includeFontPadding = false
+        gravity = Gravity.CENTER
+    }
+
+    private val btnCollapse = iconBtn("⌄") { setExpanded(false) }
+    private val btnClose = iconBtn("✕") { onCloseRequest?.invoke() }
+
+    // 录制状态丸: 6dp 呼吸圆点 + "录制中/等待中 时长"
+    private val statusDot = View(ctx).apply {
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(GREEN) }
+    }
+    private val statusText = pillText(10f, WHITE)
+    private val statusPill = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumWidth = px(50)
+        setPadding(px(7), px(3), px(7), px(3))
+        background = GradientDrawable().apply {
+            cornerRadius = px(11).toFloat()
+            setColor(Color.argb(30, 20, 30, 45))
+        }
+        addView(statusDot, LinearLayout.LayoutParams(px(6), px(6)))
+        addView(statusText, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(5) })
+        visibility = View.GONE
+    }
+    private var dotAnim: ValueAnimator? = null
+
+    private val recBtn = pillText(10f).apply {
+        text = "开始录制"
+        setPadding(px(9), px(4), px(9), px(4))
+        background = GradientDrawable().apply {
+            cornerRadius = px(11).toFloat()
+            setColor(recGreen)
+        }
+        setOnClickListener { runCatching { toggleRecord() } }
+    }
+
+    // 时长限制片: 0=不限
+    private val limits = intArrayOf(0, 5, 10, 15, 30)
+    private var limitMin = 0
+    private val chipViews = ArrayList<TextView>()
+    private val chipsRow = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        limits.forEach { m ->
+            val chip = pillText(9f, WHITE).apply {
+                text = if (m == 0) "不限" else "${m}m"
+                setPadding(px(8), px(3), px(8), px(3))
+                background = GradientDrawable().apply { cornerRadius = px(11).toFloat() }
+                setOnClickListener { limitMin = m; refreshChips() }
+            }
+            chipViews.add(chip)
+            addView(chip, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginStart = if (childCount == 0) 0 else px(4)
+            })
+        }
+    }
+
+    private val tCurLabel = pillText(9f, GREY).apply { text = "当前帧率" }
+    private val tBig = pillText(22f, accent)
+    private fun statCell(label: String, labelColor: Int): Pair<LinearLayout, TextView> {
+        val l = pillText(9f, labelColor).apply { text = label }
+        val v = pillText(13f, WHITE)
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            addView(l)
+            addView(v, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(1) })
+        }
+        return col to v
+    }
+    private val cTemp = statCell("温度", amber)
+    private val cAvg = statCell("平均", GREY)
+    private val cMin = statCell("最低", GREY)
+    private val cMax = statCell("最高", GREY)
+
+    private val chart = FpsChartView(ctx, accent)
+
+    private val panel = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(px(9), px(9), px(9), px(9))
+        // 顶排: 收起 + 关闭(间距 4dp, Metric 顶排双圆钮)
+        addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(btnCollapse)
+            addView(btnClose, LinearLayout.LayoutParams(px(30), px(30)).apply { marginStart = px(4) })
+            addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f))
+            addView(statusPill, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, px(22)))
+        })
+        addView(recBtn, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, px(22)).apply { topMargin = px(7) })
+        addView(chipsRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, px(22)).apply { topMargin = px(5) })
+        addView(tCurLabel, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(7) })
+        addView(tBig)
+        addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(cTemp.first)
+            listOf(cAvg, cMin, cMax).forEach {
+                addView(it.first, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(14) })
+            }
+        }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(6) })
+        addView(chart, LinearLayout.LayoutParams(px(250), px(74)).apply { topMargin = px(7) })
+        visibility = View.GONE
+        this.alpha = 0f   // 明确指 View.alpha(外层类有同名 Int 属性 alpha)
+    }
+
+    // shell 承载玻璃底, 尺寸/圆角/底色随展开态补间; 外层 root 透明仅作窗根
+    private val shellBg = GradientDrawable().apply {
+        setColor(idleTint)
+        setStroke(1, Color.argb(24, 20, 30, 45))
+    }
+    private val shell = FrameLayout(ctx).apply {
+        background = shellBg
+        addView(capsule, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        addView(panel, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT))
+        clipToOutline = false
+    }
+    override val root: View = FrameLayout(ctx).apply {
+        addView(shell, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT))
+    }
+
+    private var expandedState = false
+    private var morphAnim: ValueAnimator? = null
+
+    init {
+        shell.post { shellBg.cornerRadius = shell.height / 2f }   // 初始胶囊 = 全圆角
+        refreshChips()
+        (root as FrameLayout).addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {}
+            override fun onViewDetachedFromWindow(v: View) {
+                morphAnim?.cancel(); morphAnim = null
+                dotAnim?.cancel(); dotAnim = null
+            }
+        })
+    }
+
+    /** 单击整窗: 收起态展开(展开态内部按钮各管各的, 单击不响应)。 */
+    override fun onTap() {
+        if (!expandedState) setExpanded(true)
+    }
+
+    private fun setExpanded(want: Boolean) {
+        if (expandedState == want) return
+        expandedState = want
+        morphAnim?.cancel()
+
+        val show: View = if (want) panel else capsule
+        val hide: View = if (want) capsule else panel
+        show.visibility = View.VISIBLE
+
+        // 量出目标尺寸(以 shell 现尺寸为起点)
+        val ws = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        show.measure(ws, ws)
+        val fromW = shell.width; val fromH = shell.height
+        val toW = show.measuredWidth; val toH = show.measuredHeight
+        val fromR = shellBg.cornerRadius
+        val toR = if (want) px(18).toFloat() else toH / 2f
+        val fromC = currentTint()
+        val toC = if (want) panelTint else recordingTint()
+        val lpS = shell.layoutParams as FrameLayout.LayoutParams
+        val ev = android.animation.ArgbEvaluator()
+
+        morphAnim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = if (want) 420 else 360   // Metric: 展开 420ms / 收起 360ms
+            interpolator = morphEase
+            addUpdateListener {
+                val f = it.animatedFraction
+                lpS.width = (fromW + (toW - fromW) * f).toInt()
+                lpS.height = (fromH + (toH - fromH) * f).toInt()
+                shell.layoutParams = lpS
+                shellBg.cornerRadius = fromR + (toR - fromR) * f
+                shellBg.setColor(ev.evaluate(f, fromC, toC) as Int)
+                show.alpha = f
+                hide.alpha = 1f - f
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    hide.visibility = View.GONE
+                    hide.alpha = 1f
+                    lpS.width = FrameLayout.LayoutParams.WRAP_CONTENT
+                    lpS.height = FrameLayout.LayoutParams.WRAP_CONTENT
+                    shell.layoutParams = lpS
+                    if (!want) shell.post { shellBg.cornerRadius = shell.height / 2f }
+                }
+            })
+            start()
+        }
+    }
+
+    // ── 录制联动(读 FpsRecordService.state, 每拍一次) ──
+    private fun recState() = com.ktwo.cts.service.FpsRecordService.state.value
+
+    private fun currentTint(): Int =
+        if (expandedState) panelTint else recordingTint()
+
+    private fun recordingTint(): Int = if (recState().recording) recTint else idleTint
+
+    private fun toggleRecord() {
+        val st = recState()
+        if (st.active) com.ktwo.cts.service.FpsRecordService.stop(ctx)
+        else com.ktwo.cts.service.FpsRecordService.start(ctx)
+    }
+
+    private fun refreshChips() {
+        chipViews.forEachIndexed { i, chip ->
+            val sel = limits[i] == limitMin
+            (chip.background as GradientDrawable).setColor(
+                if (sel) (accent and 0x00FFFFFF) or (0xBD shl 24)   // 选中: accent @0.74
+                else Color.argb(0x30, 20, 30, 45))
+            chip.setTextColor(if (sel) Color.WHITE else WHITE)
+        }
+    }
+
+    private fun fmtElapsed(sec: Int): String {
+        val h = sec / 3600; val m = sec % 3600 / 60; val s = sec % 60
+        return if (h > 0) String.format("%02d:%02d:%02d", h, m, s)
+            else String.format("%02d:%02d", m, s)
+    }
+
+    private fun setDotBreathing(on: Boolean) {
+        if (on && dotAnim == null) {
+            dotAnim = ValueAnimator.ofFloat(1f, 0.25f).apply {
+                duration = 700
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                addUpdateListener { statusDot.alpha = it.animatedValue as Float }
+                start()
+            }
+        } else if (!on) {
+            dotAnim?.cancel(); dotAnim = null
+            statusDot.alpha = 1f
+        }
+    }
+
     override fun onTick(t: TickData) {
         val fps = t.snap?.fps ?: -1
-        tCur.text = if (fps >= 0) "$fps FPS" else "-- FPS"
-        tCur.setTextColor(if (fps in 0..44) RED else accent)
-        if (fps >= 0) {
-            mn = minOf(mn, fps); mx = maxOf(mx, fps); sum += fps; cnt++
-            val avg = if (cnt > 0) (sum / cnt).toInt() else 0
-            tStat.text = "min ${if (mn == Int.MAX_VALUE) "--" else mn} · avg $avg · max $mx"
-            graph.push(fps)
+        val fpsStr = if (fps >= 0) String.format(java.util.Locale.US, "%.1f", fps.toFloat()) else "--"
+        capsule.text = fpsStr
+        if (fps >= 0) chart.push(fps)
+
+        val st = recState()
+        // 胶囊底色跟随录制态(未展开时)
+        if (!expandedState && morphAnim?.isRunning != true) shellBg.setColor(recordingTint())
+
+        if (!expandedState) return   // 面板收起时不必刷新面板内文本
+
+        tBig.text = fpsStr
+        val temp = t.snap?.tempC ?: -999
+        cTemp.second.text = if (temp > -100) String.format(java.util.Locale.US, "%.1f℃", temp.toFloat()) else "--℃"
+        val pts = chart.values()
+        cAvg.second.text = if (pts.isEmpty()) "--" else String.format(java.util.Locale.US, "%.1f", pts.average())
+        cMin.second.text = if (pts.isEmpty()) "--" else "${pts.min()}"
+        cMax.second.text = if (pts.isEmpty()) "--" else "${pts.max()}"
+
+        // 录制状态丸 + 按钮
+        if (st.active) {
+            statusPill.visibility = View.VISIBLE
+            if (st.recording) {
+                (statusDot.background as GradientDrawable).setColor(RED)
+                statusText.text = "录制中 " + fmtElapsed(st.elapsedSec) +
+                    (if (st.appName.isNotEmpty()) " · ${st.appName}" else "")
+            } else {
+                (statusDot.background as GradientDrawable).setColor(ORANGE)
+                statusText.text = "等待进入目标应用…"
+            }
+            setDotBreathing(true)
+            recBtn.text = "停止录制"
+            (recBtn.background as GradientDrawable).setColor(recRed)
+        } else {
+            statusPill.visibility = View.GONE
+            setDotBreathing(false)
+            recBtn.text = "开始录制"
+            (recBtn.background as GradientDrawable).setColor(recGreen)
+        }
+        // 时长限制到点自动停
+        if (st.recording && limitMin > 0 && st.elapsedSec >= limitMin * 60) {
+            runCatching { com.ktwo.cts.service.FpsRecordService.stop(ctx) }
         }
     }
 }
 
-/** FPS 折线自绘 View。 */
-class FpsGraphView(ctx: Context, lineColor: Int) : View(ctx) {
+/**
+ * 帧率曲线图(对齐 Metric 观感): 10dp 圆角深色底 + 自动量程 Y 轴刻度 +
+ * 中点二次贝塞尔平滑折线 + 主色渐变填充 + 多层描边霓虹辉光 + 端点圆点。
+ */
+class FpsChartView(ctx: Context, private val accent: Int) : View(ctx) {
     private val data = ArrayDeque<Int>()
-    private val cap = 60
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = lineColor; style = Paint.Style.STROKE; strokeWidth = 3f; strokeCap = Paint.Cap.ROUND
+    private val cap = 120
+    private val dp = ctx.resources.displayMetrics.density
+    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(22, 20, 30, 45) }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(110, 20, 30, 45)
+        textSize = 8 * dp
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        textAlign = Paint.Align.RIGHT
     }
+    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
-    fun push(v: Int) { if (data.size >= cap) data.removeFirst(); data.addLast(v); invalidate() }
+    private val fillPath = Path()
+    private val bgRect = RectF()
+
+    // Metric eb1 的辉光层(取 3 层, 控制过度绘制): (宽度倍率, 透明度)
+    private val glow = arrayOf(3.2f to 0.08f, 2.1f to 0.145f, 1.35f to 0.22f)
+
+    fun push(v: Int) {
+        if (data.size >= cap) data.removeFirst()
+        data.addLast(v.coerceAtLeast(0))
+        invalidate()
+    }
+
+    fun values(): List<Int> = data.toList()
+
     override fun onDraw(canvas: Canvas) {
-        if (data.size < 2) return
         val w = width.toFloat(); val h = height.toFloat()
-        val maxV = maxOf(120, data.maxOrNull() ?: 120).toFloat()
-        val stepX = w / (cap - 1)
-        path.reset()
-        var started = false
-        val start = cap - data.size
-        data.forEachIndexed { i, v ->
-            val x = (start + i) * stepX
-            val y = h - (v.coerceAtLeast(0) / maxV) * h
-            if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
+        bgRect.set(0f, 0f, w, h)
+        canvas.drawRoundRect(bgRect, 10 * dp, 10 * dp, bgPaint)
+        if (data.size < 2) return
+
+        // 自动量程(Metric 支持到 185Hz 的阶梯)
+        val maxV = (data.maxOrNull() ?: 60)
+        val top = when {
+            maxV <= 60 -> 60; maxV <= 90 -> 90; maxV <= 120 -> 120
+            maxV <= 144 -> 144; maxV <= 165 -> 165; else -> 185
+        }.toFloat()
+
+        // Y 轴刻度(0 与 top 之间四档)
+        val leftPad = 18 * dp; val vPad = 6 * dp
+        val chartH = h - vPad * 2
+        for (i in 0..3) {
+            val v = top / 3f * i
+            val y = h - vPad - v / top * chartH
+            canvas.drawText("${v.toInt()}", leftPad - 4 * dp, y + 3 * dp, labelPaint)
         }
-        canvas.drawPath(path, paint)
+
+        // 数据点 → 坐标(右端对齐最新点)
+        val stepX = (w - leftPad - 6 * dp) / (cap - 1)
+        val start = cap - data.size
+        val xs = FloatArray(data.size); val ys = FloatArray(data.size)
+        data.forEachIndexed { i, v ->
+            xs[i] = leftPad + (start + i) * stepX
+            ys[i] = h - vPad - (v.coerceAtMost(top.toInt()) / top) * chartH
+        }
+
+        // 中点二次贝塞尔平滑(Metric qb1.e 同法)
+        path.reset()
+        path.moveTo(xs[0], ys[0])
+        for (i in 1 until data.size) {
+            val mx = (xs[i - 1] + xs[i]) / 2f
+            val my = (ys[i - 1] + ys[i]) / 2f
+            path.quadTo(xs[i - 1], ys[i - 1], mx, my)
+        }
+        path.lineTo(xs.last(), ys.last())
+
+        // 渐变填充(accent 25% → 透明)
+        fillPath.set(path)
+        fillPath.lineTo(xs.last(), h - vPad)
+        fillPath.lineTo(xs[0], h - vPad)
+        fillPath.close()
+        fillPaint.shader = android.graphics.LinearGradient(
+            0f, 0f, 0f, h,
+            (accent and 0x00FFFFFF) or (0x40 shl 24), Color.TRANSPARENT,
+            android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawPath(fillPath, fillPaint)
+
+        // 霓虹辉光(粗→细多层低透明描边) + 主线
+        val base = 2f * dp
+        glow.forEach { (mul, a) ->
+            linePaint.strokeWidth = base * mul
+            linePaint.color = (accent and 0x00FFFFFF) or ((a * 255).toInt() shl 24)
+            canvas.drawPath(path, linePaint)
+        }
+        linePaint.strokeWidth = base
+        linePaint.color = accent
+        canvas.drawPath(path, linePaint)
+
+        // 端点圆点(外圈 60% + 内圈 90%)
+        dotPaint.color = (accent and 0x00FFFFFF) or (0x99 shl 24)
+        canvas.drawCircle(xs.last(), ys.last(), 4.5f * dp, dotPaint)
+        dotPaint.color = (accent and 0x00FFFFFF) or (0xE6 shl 24)
+        canvas.drawCircle(xs.last(), ys.last(), 2.7f * dp, dotPaint)
     }
 }
 
