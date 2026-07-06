@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Insights
@@ -43,6 +44,7 @@ fun FeaturesScreen(
     onOpenThreadAlloc: () -> Unit = {},
     onOpenMemory: () -> Unit = {},
     onOpenGovernor: () -> Unit = {},
+    onOpenColorOs: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
@@ -138,6 +140,12 @@ fun FeaturesScreen(
                         Icons.Outlined.Tune, "调速器参数",
                         "每簇 governor 可调参数精细编辑",
                         onClick = onOpenGovernor,
+                    )
+                    HorizontalDivider()
+                    FeatureRow(
+                        Icons.Outlined.Bolt, "ColorOS 专属",
+                        "OnePlus/OPPO 满血·游戏触控·温控",
+                        onClick = onOpenColorOs,
                     )
                     HorizontalDivider()
                     FeatureRow(

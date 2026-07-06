@@ -25,6 +25,7 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.license.Pro
+import com.ktwo.cts.ui.coloros.ColorOsScreen
 import com.ktwo.cts.ui.docs.DocsScreen
 import com.ktwo.cts.ui.fpsrecord.FpsRecordDetailScreen
 import com.ktwo.cts.ui.fpsrecord.FpsRecordListScreen
@@ -63,7 +64,7 @@ private val FULLSCREEN_ROUTES =
     setOf(
         "about", "automode", "pro", "perfmon", "fpsrecord",
         "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
-        "threadalloc_manual", "memory", "governor", "docs",
+        "threadalloc_manual", "memory", "governor", "docs", "coloros",
     )
 
 @Composable
@@ -163,6 +164,7 @@ fun AppRoot() {
                             onOpenThreadAlloc = { nav.navigate("threadalloc") },
                             onOpenMemory = { nav.navigate("memory") },
                             onOpenGovernor = { nav.navigate("governor") },
+                            onOpenColorOs = { nav.navigate("coloros") },
                         )
                     }
                     composable("cpu")      { CpuControlScreen() }
@@ -201,6 +203,9 @@ fun AppRoot() {
                     }
                     composable("governor") {
                         GovernorParamsScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("coloros") {
+                        ColorOsScreen(onBack = { nav.popBackStack() })
                     }
                     composable("threadalloc") {
                         ThreadAllocScreen(
