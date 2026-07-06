@@ -41,6 +41,8 @@ class FloatWindowService : Service() {
     @Volatile private var alpha = 217
     @Volatile private var textSp = 12f
     private var cellCount = 1
+    // 系统支持跨窗口模糊时启用 Metric 同款背景模糊(290), 此时卡底调透(≈0.55)更接近原版玻璃
+    private var blurOn = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -48,6 +50,7 @@ class FloatWindowService : Service() {
         super.onCreate()
         dp = resources.displayMetrics.density
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        blurOn = runCatching { wm.isCrossWindowBlurEnabled }.getOrDefault(false)
         // 屏幕刷新率作为 FPS 兜底(实测帧率取不到时退回它)
         @Suppress("DEPRECATION")
         MetricReader.fallbackHz = runCatching { wm.defaultDisplay.refreshRate.toInt() }.getOrDefault(-1)
@@ -89,13 +92,15 @@ class FloatWindowService : Service() {
 
     private fun factory(type: OverlayType): OverlayWindow {
         val a = type.accent.toInt()
+        // 有真模糊时玻璃调透(Metric: surface@0.55+blur); 无模糊按用户不透明度直出
+        val ea = if (blurOn) (alpha * 0.65f).toInt().coerceAtLeast(64) else alpha
         val win = when (type) {
-            OverlayType.LOAD    -> LoadOverlayWindow(this, a, alpha, textSp)
-            OverlayType.PROCESS -> ProcessOverlayWindow(this, a, alpha, textSp)
-            OverlayType.THREAD  -> ThreadOverlayWindow(this, a, alpha, textSp)
-            OverlayType.MINI    -> MiniOverlayWindow(this, a, alpha, textSp)
-            OverlayType.FPS     -> FpsOverlayWindow(this, a, alpha, textSp)
-            OverlayType.TEMP    -> TempOverlayWindow(this, a, alpha, textSp)
+            OverlayType.LOAD    -> LoadOverlayWindow(this, a, ea, textSp)
+            OverlayType.PROCESS -> ProcessOverlayWindow(this, a, ea, textSp)
+            OverlayType.THREAD  -> ThreadOverlayWindow(this, a, ea, textSp)
+            OverlayType.MINI    -> MiniOverlayWindow(this, a, alpha, textSp)   // 迷你条恒定深色, 不透化
+            OverlayType.FPS     -> FpsOverlayWindow(this, a, ea, textSp)
+            OverlayType.TEMP    -> TempOverlayWindow(this, a, ea, textSp)
         }
         // 窗内 ✕: 移除该窗并持久化关闭(防 START_STICKY 重建 syncFromPrefs 复活)
         win.onCloseRequest = { requestClose(type) }
@@ -145,8 +150,12 @@ class FloatWindowService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = (resources.displayMetrics.widthPixels - px(150)).coerceAtLeast(0)
             y = px(48 + 90 * idx)
-            // 注意: 不用 FLAG_BLUR_BEHIND —— 它会把整块桌面/壁纸都模糊(不是只糊卡片)。
-            // 玻璃质感靠卡片本身的半透明磨砂底(cardBg)呈现, 不动背后画面。
+            // Metric 同款背景模糊: 悬浮窗窗体就是卡片本身, blurBehind 只糊卡片正后方那块,
+            // 不会糊整屏。仅在系统开启跨窗口模糊时启用(关闭时靠半透明深底兜底)。
+            if (blurOn) {
+                flags = flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+                blurBehindRadius = 290   // Metric setBackgroundBlurRadius(290)
+            }
         }
     }
 

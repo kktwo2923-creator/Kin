@@ -32,13 +32,13 @@ data class TickData(
     val fgPid: Int = -1,
 )
 
-// 悬浮窗容器为 Metric 风格灰玻璃(中性浅灰半透明), 文本用深色墨。
-// 命名沿用 WHITE 以缩小改动面 —— 它现在代表"浅灰玻璃底上的主文本色(深墨)"。
-private val WHITE = Color.parseColor("#141A24")
-private val GREY = Color.parseColor("#5F6B7A")
-private val ORANGE = Color.parseColor("#E8760F")
-private val RED = Color.parseColor("#E5484D")
-private val GREEN = Color.parseColor("#2FA65A")
+// 悬浮窗配色对齐 Metric 原版: 深色玻璃底(#1B1D22 半透明, 支持时叠背景模糊) + 白字分层。
+// Metric 文字层级: 主文 white、次级 white@0.74、弱化 white@0.62(见反编译 ph2/qb2/pc1)。
+private val WHITE = Color.WHITE
+private val GREY = Color.argb(158, 255, 255, 255)   // white @0.62
+private val ORANGE = Color.parseColor("#FFB300")     // Metric 琥珀(r30.e)
+private val RED = Color.parseColor("#EF5350")        // Metric 红(r30.f)
+private val GREEN = Color.parseColor("#00E676")      // Metric 绿(r30.d)
 
 /** 悬浮窗抽象基类: 提供近黑玻璃卡背景、monospace 文本行等公共构件。 */
 abstract class OverlayWindow(
@@ -62,14 +62,15 @@ abstract class OverlayWindow(
     /** 整窗长按(服务 500ms 未动回调)。默认不响应; 负载窗按 Metric 语义用它关闭。 */
     open fun onLongPress() {}
 
-    // Metric 风格灰玻璃胶囊: 中性浅灰半透明底 + 大圆角(~20dp), 描边仅留极弱的深色细线。
-    protected fun cardBg(cornerDp: Int = 20) = GradientDrawable().apply {
+    // Metric 深色玻璃卡: #1B1D22 半透明(有背景模糊时服务会调低 alpha 更透) + 18dp 圆角,
+    // 描边仅留极弱的白色细线勾边。
+    protected fun cardBg(cornerDp: Int = 18) = GradientDrawable().apply {
         cornerRadius = px(cornerDp).toFloat()
-        setColor(Color.argb(alpha, 226, 229, 234))
-        setStroke(1, Color.argb(24, 20, 30, 45))
+        setColor(Color.argb(alpha, 27, 29, 34))
+        setStroke(1, Color.argb(18, 255, 255, 255))
     }
 
-    protected fun verticalCard(cornerDp: Int = 20): LinearLayout = LinearLayout(ctx).apply {
+    protected fun verticalCard(cornerDp: Int = 18): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(px(11), px(8), px(11), px(8))
         background = cardBg(cornerDp)
@@ -139,7 +140,7 @@ class RingView(ctx: Context, strokePx: Float) : View(ctx) {
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = strokePx
-        color = Color.argb(60, 20, 30, 45)
+        color = Color.argb(51, 255, 255, 255)   // Metric 轨道: white @0.2
     }
     private val arcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -194,11 +195,12 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         val below: TextView,
     )
 
-    private val ringSize = px(46)
+    // Metric 原版: 环 32dp/描边 4dp、环心 7sp、环下 6sp —— 取 34dp 环 + 稍大字保持可读
+    private val ringSize = px(34)
 
     private fun ringColumn(centerText: String, belowText: String): RingColumn {
         val ring = RingView(ctx, px(4).toFloat())
-        val center = row((textSp - 3f).coerceAtLeast(8f)).apply {
+        val center = row((textSp - 4f).coerceAtLeast(7f)).apply {
             text = centerText
             gravity = Gravity.CENTER
             typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
@@ -210,7 +212,7 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER))
         }
-        val below = row((textSp - 4f).coerceAtLeast(8f), GREY).apply {
+        val below = row((textSp - 5f).coerceAtLeast(6f), GREY).apply {
             text = belowText
             gravity = Gravity.CENTER_HORIZONTAL
         }
@@ -243,7 +245,7 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         addView(gpuCol.col, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            marginStart = px(12); marginEnd = px(12)
+            marginStart = px(8); marginEnd = px(8)   // Metric: 环间距 8dp
         })
         addView(battCol.col)
     }
@@ -251,8 +253,8 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     private val pill = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(px(14), px(9), px(14), px(9))
-        background = cardBg(20)
+        setPadding(px(10), px(6), px(10), px(6))   // Metric: 外边距 6dp 档
+        background = cardBg(16)                     // Metric 负载窗圆角 16dp
         addView(ringsRow)
         addView(detail, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -558,7 +560,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
 
     private val idleTint = Color.argb(0xB7, 0xD2, 0x9A, 0x04)   // Metric 胶囊空闲色
     private val recTint = Color.argb(0xB7, 0xD3, 0x2F, 0x2F)    // Metric 胶囊录制色
-    private val panelTint = Color.argb(alpha, 226, 229, 234)     // 展开面板 = 家族灰玻璃
+    private val panelTint = Color.argb(alpha, 27, 29, 34)        // 展开面板 = 家族深色玻璃
     private val amber = Color.parseColor("#FFA726")              // Metric 温度标签琥珀
     private val recGreen = Color.argb(0x80, 0x4C, 0xAF, 0x50)    // 录制按钮绿(@~0.5)
     private val recRed = Color.argb(0x94, 0xD3, 0x2F, 0x2F)      // 停止按钮红(@~0.58)
@@ -586,7 +588,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         gravity = Gravity.CENTER
         background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(Color.argb(26, 20, 30, 45))   // Metric: onSurface 10% 圆形底
+            setColor(Color.argb(26, 255, 255, 255))   // Metric: 白 10% 圆形底
         }
         layoutParams = LinearLayout.LayoutParams(px(30), px(30))
         setOnClickListener { runCatching { onClick() } }
@@ -615,7 +617,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         setPadding(px(7), px(3), px(7), px(3))
         background = GradientDrawable().apply {
             cornerRadius = px(11).toFloat()
-            setColor(Color.argb(30, 20, 30, 45))
+            setColor(Color.argb(30, 255, 255, 255))
         }
         addView(statusDot, LinearLayout.LayoutParams(px(6), px(6)))
         addView(statusText, LinearLayout.LayoutParams(
@@ -719,7 +721,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     // shell 承载玻璃底, 尺寸/圆角/底色随展开态补间; 外层 root 透明仅作窗根
     private val shellBg = GradientDrawable().apply {
         setColor(idleTint)
-        setStroke(1, Color.argb(24, 20, 30, 45))
+        setStroke(1, Color.argb(18, 255, 255, 255))
     }
     private val shell = FrameLayout(ctx).apply {
         background = shellBg
@@ -824,8 +826,8 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
             val sel = limits[i] == limitMin
             (chip.background as GradientDrawable).setColor(
                 if (sel) (accent and 0x00FFFFFF) or (0xBD shl 24)   // 选中: accent @0.74
-                else Color.argb(0x30, 20, 30, 45))
-            chip.setTextColor(if (sel) Color.WHITE else WHITE)
+                else Color.argb(0x1F, 255, 255, 255))   // 未选中: 白 12%
+            chip.setTextColor(if (sel) Color.WHITE else GREY)
         }
     }
 
@@ -905,9 +907,9 @@ class FpsChartView(ctx: Context, private val accent: Int) : View(ctx) {
     private val data = ArrayDeque<Int>()
     private val cap = 120
     private val dp = ctx.resources.displayMetrics.density
-    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(22, 20, 30, 45) }
+    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(90, 10, 12, 16) }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(110, 20, 30, 45)
+        color = Color.argb(120, 255, 255, 255)
         textSize = 8 * dp
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         textAlign = Paint.Align.RIGHT
@@ -1067,7 +1069,7 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
 
     // 筛选片(Metric ProcessFilterTransition): 胶囊底 + 180ms 选中过渡
     private fun chipBgColor(sel: Boolean) =
-        if (sel) Color.argb(46, 20, 30, 45) else Color.TRANSPARENT
+        if (sel) Color.argb(46, 255, 255, 255) else Color.TRANSPARENT
 
     private fun tab(label: String, sel: Boolean, onClick: () -> Unit) = row(textSp - 2f).apply {
         text = label
