@@ -40,27 +40,12 @@ android {
         // 防破解:编译期固定签名指纹 + native 层开关,供 Integrity.kt 读取
         buildConfigField("String", "SIGNING_CERT_SHA256", "\"$ctsCertSha256\"")
         buildConfigField("boolean", "NATIVE_GUARD", ctsNative.toString())
-    }
 
-    // ---- 版本变体 ----
-    // 已【去掉卡密验证】: 两个 flavor 的 NO_LICENSE 均为 true —— App 打开即用、不做任何卡密/联网/激活校验。
-    // (NO_LICENSE=true 时 MainActivity 直接进主界面、不登记自动复验; ScheduleService 也跳过授权块。)
-    flavorDimensions += "edition"
-    productFlavors {
-        // 原捐赠版: 现同样免授权(卡密验证已去除), 仅保留变体名以兼容既有构建/CI。
-        create("juanzeng") {
-            dimension = "edition"
-            buildConfigField("boolean", "NO_LICENSE", "true")
-            buildConfigField("String", "EDITION", "\"捐赠版\"")
-            versionNameSuffix = "-juanzeng"
-        }
-        // 公益版:免授权,打开即用,无任何卡密/联网/校验
-        create("gongyi") {
-            dimension = "edition"
-            buildConfigField("boolean", "NO_LICENSE", "true")
-            buildConfigField("String", "EDITION", "\"公益版\"")
-            versionNameSuffix = "-gongyi"
-        }
+        // ---- 单一版本(已合并原 公益版/捐赠版 两个 flavor)----
+        // App 打开即用、不做整机卡密/联网/激活校验(NO_LICENSE=true);
+        // 付费点仅为【功能级】的「智能版 Pro」解锁,走在线支付。EDITION 留空 = 不显示版本后缀。
+        buildConfigField("boolean", "NO_LICENSE", "true")
+        buildConfigField("String", "EDITION", "\"\"")
     }
 
     signingConfigs {

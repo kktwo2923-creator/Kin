@@ -57,7 +57,7 @@ fun HomeScreen() {
         topBar = {
             TopAppBar(
                 title = {
-                    Text("OnePlus V Pro", fontWeight = FontWeight.Bold)
+                    Text("kin", fontWeight = FontWeight.Bold)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,

@@ -13,5 +13,5 @@ dependencyResolutionManagement {
         maven(url = "https://jitpack.io")
     }
 }
-rootProject.name = "OnePlusVPro"
+rootProject.name = "kin"
 include(":app")

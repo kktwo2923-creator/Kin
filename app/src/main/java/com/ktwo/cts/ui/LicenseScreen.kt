@@ -177,7 +177,7 @@ private fun LicenseScreen(onActivated: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(48.dp))
-            Text("OnePlus V Pro", style = MaterialTheme.typography.headlineSmall)
+            Text("kin", style = MaterialTheme.typography.headlineSmall)
             Text(
                 "授权激活",
                 style = MaterialTheme.typography.titleMedium,

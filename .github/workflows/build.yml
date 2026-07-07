@@ -1,4 +1,4 @@
-name: Build 捐赠版 (juanzeng)
+name: Build kin
 
 on:
   push:
@@ -6,12 +6,12 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 仅本(捐赠版)工作流负责发布滚动 Release(避免与公益版重复发布 latest tag)
+# 本工作流负责发布滚动 "latest" Release(仅手动触发),需要写权限。
 permissions:
   contents: write
 
 concurrency:
-  group: build-juanzeng-${{ github.ref }}
+  group: build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -35,6 +35,20 @@ jobs:
         with:
           gradle-version: '9.5.1'
 
+      # 可选: 编 Rust native 采样库(libctssampler.so)进 jniLibs。
+      # continue-on-error: 即使 Rust 没编成也不挡 APK——没有 .so 时
+      # Kotlin 侧 NativeSampler.available=false, 自动退回纯 Kotlin 实现。
+      - name: Build Rust native sampler (optional)
+        id: rustlib
+        continue-on-error: true
+        run: |
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --locked
+          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-$ANDROID_NDK_LATEST_HOME}}"
+          echo "NDK=$ANDROID_NDK_HOME"
+          ( cd rust/ctssampler && cargo ndk -t arm64-v8a -o ../../app/src/main/jniLibs build --release )
+          ls -R app/src/main/jniLibs || true
+
       # 可选:有配置发布密钥库的 secret 才解码;没有则跳过,release 自动回退 debug 签名。
       - name: Decode release keystore (optional)
         if: ${{ env.CTS_KEYSTORE_BASE64 != '' }}
@@ -42,38 +56,35 @@ jobs:
           echo "$CTS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "CTS_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
-      # 只构建 捐赠版(juanzeng) 这一个 flavor
-      - name: Build Debug APK (juanzeng)
-        run: gradle :app:assembleJuanzengDebug --no-daemon
+      # 单一版本:直接构建默认 variant(无 flavor)
+      - name: Build Debug APK
+        run: gradle :app:assembleDebug --no-daemon
 
-      - name: Build Release APK (juanzeng)
+      - name: Build Release APK
         env:
           CTS_KEYSTORE_PASSWORD: ${{ secrets.CTS_KEYSTORE_PASSWORD }}
           CTS_KEY_ALIAS: ${{ secrets.CTS_KEY_ALIAS }}
           CTS_KEY_PASSWORD: ${{ secrets.CTS_KEY_PASSWORD }}
-        run: gradle :app:assembleJuanzengRelease --no-daemon -PctsCertSha256="${{ secrets.CTS_CERT_SHA256 }}"
+        run: gradle :app:assembleRelease --no-daemon -PctsCertSha256="${{ secrets.CTS_CERT_SHA256 }}"
 
       - name: Collect & rename APKs
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/juanzeng/release/app-juanzeng-release.apk dist/CTS-juanzeng-release.apk
-          cp app/build/outputs/apk/juanzeng/debug/app-juanzeng-debug.apk     dist/CTS-juanzeng-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/kin-release.apk
+          cp app/build/outputs/apk/debug/app-debug.apk     dist/kin-debug.apk
           ls -la dist/
 
-      # 捐赠版(juanzeng):卡密授权
-      - name: Upload 捐赠版 APKs (juanzeng)
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         continue-on-error: true       # 产物上传失败(配额满)不算编译失败
         with:
-          name: CTS-juanzeng
+          name: kin
           path: |
-            dist/CTS-juanzeng-release.apk
-            dist/CTS-juanzeng-debug.apk
+            dist/kin-release.apk
+            dist/kin-debug.apk
           retention-days: 2          # APK 较大, 短期保留, 避免占满 Actions 存储配额
 
-      # 滚动 "latest" Release 由本(捐赠版)工作流统一负责, 且仅手动触发:
-      #   1) 避免推送时自动覆盖对外发售的正版 APK;
-      #   2) 避免与公益版工作流重复发布同一个 latest tag。
+      # 滚动 "latest" Release 仅手动触发, 避免推送时自动覆盖对外发售的正版 APK。
       - name: Publish to rolling "latest" Release
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -81,12 +92,12 @@ jobs:
           tag_name: latest
           name: "最新构建 (latest)"
           body: |
-            自动构建的 捐赠版 APK，直接下载安装:
-            - **CTS-juanzeng-release.apk** — 捐赠版(卡密授权)
-            - **CTS-juanzeng-debug.apk** — 捐赠版调试版
+            自动构建的 kin APK，直接下载安装:
+            - **kin-release.apk** — 正式版
+            - **kin-debug.apk** — 调试版
 
             提交: ${{ github.sha }}
           prerelease: true
           files: |
-            dist/CTS-juanzeng-release.apk
-            dist/CTS-juanzeng-debug.apk
+            dist/kin-release.apk
+            dist/kin-debug.apk
