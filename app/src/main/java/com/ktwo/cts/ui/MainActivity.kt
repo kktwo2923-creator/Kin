@@ -29,6 +29,11 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 if (Prefs.notifyEnabled(this@MainActivity)) NotifyService.start(this@MainActivity)
             }
+            // 已配置线程规则 → 拉起规则守护(重启/重进恢复)
+            runCatching {
+                if (com.ktwo.cts.data.ThreadAllocRuleStore.all(this@MainActivity).isNotEmpty())
+                    com.ktwo.cts.service.ThreadRuleService.start(this@MainActivity)
+            }
         }
         // 捐赠版:打开即验(LicenseGate 负责)+ 联网恢复立刻验(下面登记);离线不锁,被吊销则红屏锁定并停守护。
         // 公益版(NO_LICENSE):彻底跳过,不登记自动复验。

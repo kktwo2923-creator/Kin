@@ -78,6 +78,7 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
                                 .getOrDefault(linkedMapOf())
                             if (parsed.isEmpty()) { toast("剪贴板内容不是有效的 AppOpt 配置"); return@launch }
                             val n = ThreadAllocRuleStore.importRules(ctx, parsed)
+                            if (n > 0) com.ktwo.cts.service.ThreadRuleService.start(ctx)
                             toast("已导入 $n 个应用的规则")
                         }
                     }) { Icon(Icons.Outlined.ContentPaste, contentDescription = "从剪贴板导入") }
@@ -218,6 +219,7 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
             onSave = { newRules ->
                 scope.launch {
                     ThreadAllocRuleStore.put(ctx, pkg, newRules)
+                    if (newRules.isNotEmpty()) com.ktwo.cts.service.ThreadRuleService.start(ctx)
                     editPkg = null
                 }
             },
