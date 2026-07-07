@@ -1498,11 +1498,11 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
 }
 
 /**
- * 线程监视器(对齐 Metric ya0/ph2 版式 + Scene 思路): padding 8×8;
- * 监视【渲染/显示管线】关键进程线程 —— 前台应用 + 高通显示 HAL(surfaceflinger / composer HAL /
- * crtc_commit 内核线程)+ Framework(system_server), 每行 COMM 前缀标注所属进程(owner)。
- * 表头 = "线程·渲染管线" + 正在观察的应用 + 监视范围; 右上 30dp 圆形关闭钮;
- * 列宽 CPU% 26 / CPUS 34 / TID 30 / COMM weight; 列表 96~126dp 滚动; 空态 96dp 居中双行。
+ * 线程监视器(1:1 对齐 Metric ya0/ph2): padding 8×8;
+ * 锁定【前台 App 自身进程】(PID 固定, 由无障碍拿到前台包名后解析), 下面列的都是它内部的 TID 子线程。
+ * 表头左列竖排 = 前台应用名(11sp 纯白粗体, 最多2行) + 包名行 + 'PID %d' 行(7sp 白74);
+ * 右上 30dp 圆形关闭钮; 列宽 CPU% 26 / CPUS 34 / TID 30 / COMM weight(表头 7sp 白80, 行 7sp 白74);
+ * 列表 96~126dp 滚动; 空态 96dp 居中双行(未开无障碍/无前台应用时提示)。
  */
 class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
@@ -1570,7 +1570,7 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
         setPadding(px(12), 0, px(12), 0)
         addView(mono(9f).apply { text = "无线程数据"; gravity = Gravity.CENTER })
         addView(mono(7f, GREY).apply {
-            text = "目标进程可能已退出, 或尚未产生采样"
+            text = "需开启无障碍权限识别前台应用; 或切到目标应用后再看"
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1599,15 +1599,13 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
     }
 
     override fun onTick(t: TickData) {
-        // 表头: 线程窗监视【渲染/显示管线】关键进程线程(应用 + 高通显示 HAL + Framework),
-        // 每行按所属进程标注 owner。表头给出正在观察的前台应用 + 监视范围。
+        // 表头 = 前台应用名 + 包名 + 固定 PID(下面列的都是这个进程内部的 TID 子线程)
         runCatching {
-            tHead.text = "线程 · 渲染管线"
-            val app = t.fgLabel.ifEmpty { t.fgPkg }
-            if (app.isNotEmpty()) { tPkg.text = "应用: $app"; tPkg.visibility = View.VISIBLE }
+            tHead.text = t.fgLabel.ifEmpty { t.fgPkg.ifEmpty { "线程" } }
+            if (t.fgPkg.isNotEmpty()) { tPkg.text = t.fgPkg; tPkg.visibility = View.VISIBLE }
             else tPkg.visibility = View.GONE
-            tPid.text = "范围 应用·SF·HAL·SYS·内核"
-            tPid.visibility = View.VISIBLE
+            if (t.fgPid > 0) { tPid.text = "PID ${t.fgPid}"; tPid.visibility = View.VISIBLE }
+            else tPid.visibility = View.GONE
         }
         val ts = t.threads ?: return   // null=本拍未采, 保持上次
         val empty = ts.isEmpty()
@@ -1623,9 +1621,7 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
                 r.c[1].text = if (th.affinity.isEmpty()) "-"
                     else th.affinity + (if (th.core >= 0) "[${th.core}]" else "")
                 r.c[2].text = "${th.tid}"
-                // COMM 前缀标注所属进程(SF/HAL/SYS/内核/应用), 实现"按进程分别统计"
-                val comm = th.name.ifEmpty { "-" }
-                r.c[3].text = if (th.owner.isEmpty()) comm else "${th.owner}·$comm"
+                r.c[3].text = th.name.ifEmpty { "-" }
             }
         }
     }

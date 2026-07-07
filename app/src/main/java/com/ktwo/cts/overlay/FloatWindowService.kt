@@ -325,10 +325,10 @@ class FloatWindowService : Service() {
             // Metric: 进程窗定高列表 top-30 / 线程窗 96~126dp 滚动列表
             val procs = if (needProc && activeTypes.contains(OverlayType.PROCESS))
                 runCatching { ProcSampler.topProcesses(30) }.getOrNull() else null
-            // 先刷新前台 pkg/pid, 再采【渲染/显示管线】关键进程线程(SF/HAL/system_server/crtc_commit + 前台App)
+            // 先用无障碍刷新前台 pkg/pid, 再列该前台 App 自身进程(pid 固定)的内部 TID 线程
             if (activeTypes.contains(OverlayType.THREAD)) refreshForeground(tick)
             val thrs = if (needProc && activeTypes.contains(OverlayType.THREAD))
-                runCatching { ProcSampler.topThreads(24, fgPkg, fgPid) }.getOrNull() else null
+                runCatching { ProcSampler.topThreads(24, fgPid) }.getOrNull() else null
             val data = TickData(snap, batt, procs, thrs, fgPkg, fgLabel, fgPid)
             withContext(Dispatchers.Main) {
                 windows.values.forEach { runCatching { it.win.onTick(data) } }
