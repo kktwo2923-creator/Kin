@@ -110,6 +110,7 @@ object ProcSampler {
             val out = RootShell.exec(cmd.toString())
             val cores = HashMap<Int, Int>()
             val affs = HashMap<Int, String>()
+            val comms = HashMap<Int, String>()   // 每线程自身的 comm(Met COMM 列显示它, 非进程名)
             var cur = -1
             for (raw in out.lineSequence()) {
                 val line = raw.trim()
@@ -117,8 +118,12 @@ object ProcSampler {
                     line.startsWith("@I ") ->
                         cur = line.removePrefix("@I ").trim().toIntOrNull() ?: -1
                     line.startsWith("@S ") && cur > 0 -> {
-                        // comm 在括号里可含空格, 取最后一个 ')' 之后; 去 pid+comm 后 0-based 36=processor
-                        val tail = line.removePrefix("@S ").substringAfterLast(')', "").trim()
+                        val body = line.removePrefix("@S ")
+                        // 线程名 = stat 第 2 字段(第一个 '(' 与最后一个 ')' 之间, 可含空格)
+                        val lp = body.indexOf('('); val rp = body.lastIndexOf(')')
+                        if (lp in 0 until rp) comms[cur] = body.substring(lp + 1, rp).take(20)
+                        // comm 后 0-based 36=processor
+                        val tail = body.substringAfterLast(')', "").trim()
                         val f = tail.split(Regex("\\s+"))
                         f.getOrNull(36)?.toIntOrNull()?.let { if (it >= 0) cores[cur] = it }
                     }
@@ -129,7 +134,13 @@ object ProcSampler {
                     }
                 }
             }
-            rows.map { it.copy(affinity = affs[it.tid] ?: "", core = cores[it.tid] ?: -1) }
+            rows.map {
+                it.copy(
+                    name = comms[it.tid] ?: it.name,   // 用线程 comm 覆盖进程名(对齐 Met COMM 列)
+                    affinity = affs[it.tid] ?: "",
+                    core = cores[it.tid] ?: -1,
+                )
+            }
         }.getOrDefault(rows)
     }
 

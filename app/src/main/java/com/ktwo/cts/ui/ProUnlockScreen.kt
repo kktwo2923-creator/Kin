@@ -60,6 +60,48 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
         }
     }
 
+    // 在线支付(对齐 Metric 0.4.3): 下单 → 打开支付宝/微信收银台 → 轮询查询到账 → 自动激活。
+    fun doOnlinePay(payType: String) {
+        if (busy) return
+        msg = ""; busy = true
+        scope.launch {
+            val order = withContext(Dispatchers.IO) { License.createPayOrder(payType) }
+            if (order == null) {
+                busy = false; msgOk = false
+                msg = "下单失败, 请检查网络(需加速器/梯子)或稍后重试"
+                return@launch
+            }
+            // 打开收银台(外部浏览器/支付宝)
+            runCatching {
+                ctx.startActivity(
+                    android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse(order.payUrl))
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            msgOk = true; msg = "已打开收银台, 付款后自动到账(约 5 分钟内轮询)…"
+            // 轮询查询: 每 3s 一次, 最多 ~5 分钟
+            val r = withContext(Dispatchers.IO) {
+                var res = License.Result(false, "PENDING")
+                repeat(100) {
+                    res = License.queryPayAndActivate(order.outTradeNo)
+                    if (res.ok || res.message != "PENDING") return@withContext res
+                    kotlinx.coroutines.delay(3000)
+                }
+                res
+            }
+            if (r.ok) Pro.markUnlocked(ctx)
+            busy = false
+            msgOk = r.ok
+            msg = when {
+                r.ok -> "解锁成功, 感谢支持!"
+                r.message == "PENDING" -> "还没查到付款。付了但没到账? 用账单里的订单号在下方'订单号'激活。"
+                else -> r.message
+            }
+            if (r.ok) onUnlocked()
+        }
+    }
+
     // 激活:卡密优先, 否则用订单号自动取卡再激活。成功即置解锁缓存并回调。
     fun doActivate() {
         if (busy) return
@@ -181,6 +223,33 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
+                    )
+                }
+            }
+
+            // ── 在线支付(支付宝/微信, 下单跳收银台, 付款后自动到账激活) ──
+            SectionTitle("在线支付")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("直接付款, 到账后自动解锁, 无需手填订单号。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = { doOnlinePay("alipay") },
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("支付宝支付") }
+                        OutlinedButton(
+                            onClick = { doOnlinePay("wxpay") },
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("微信支付") }
+                    }
+                    Text(
+                        "⚠️ 服务器在境外, 下单/到账需联网(开加速器/梯子)。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

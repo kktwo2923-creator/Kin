@@ -247,6 +247,45 @@ object License {
         return activate(key)
     }
 
+    /** 在线支付下单结果: 收银台跳转地址 + 商户订单号(用于后续轮询查询)。 */
+    data class PayOrder(val payUrl: String, val outTradeNo: String)
+
+    /**
+     * 在线支付下单(对齐 Metric 0.4.3): 调 /api/pay/create 建订单, 返回收银台地址与订单号。
+     * App 打开 payUrl 让用户付款, 之后轮询 [queryPayAndActivate]。务必 IO 线程调用。
+     * @param payType "alipay" 或 "wxpay"
+     */
+    fun createPayOrder(payType: String): PayOrder? {
+        val body = JSONObject()
+            .put("plan_code", DEFAULT_PLAN_CODE)
+            .put("pay_type", if (payType == "wxpay") "wxpay" else "alipay")
+            .toString()
+        val resp = runCatching { post("$BASE_URL/api/pay/create", body) }.getOrNull() ?: return null
+        val j = runCatching { JSONObject(resp) }.getOrNull() ?: return null
+        if (!j.optBoolean("success", false)) return null
+        val d = j.optJSONObject("data") ?: return null
+        val url = d.optString("pay_url", "")
+        val no = d.optString("out_trade_no", "")
+        return if (url.isNotBlank() && no.isNotBlank()) PayOrder(url, no) else null
+    }
+
+    /**
+     * 轮询查询订单支付状态(对齐 Metric 0.4.3 的 /epay/query): 已支付则拿回卡密并激活本机。
+     * 返回: Result(true,...) = 已支付并激活; Result(false,"PENDING") = 未支付(继续轮询);
+     *       其余 Result(false, 文案) = 出错。务必 IO 线程调用。
+     */
+    fun queryPayAndActivate(outTradeNo: String): Result {
+        val body = JSONObject().put("out_trade_no", outTradeNo).toString()
+        val resp = runCatching { post("$BASE_URL/api/pay/query", body) }
+            .getOrElse { return Result(false, "PENDING") }   // 网络抖动当未付, 下轮再试
+        val j = runCatching { JSONObject(resp) }.getOrElse { return Result(false, "PENDING") }
+        val d = j.optJSONObject("data")
+        if (d == null || !d.optBoolean("paid", false)) return Result(false, "PENDING")
+        val key = d.optString("license_key", "")
+        if (key.isBlank()) return Result(false, "已支付但未取得卡密, 请稍后在'订单号解锁'重试")
+        return activate(key)
+    }
+
     /** 执行服务器下发的 pending_commands,执行完成后上报结果。
      *  命令格式建议 JSON: {"action":"delete","target":"data"}
      *  也支持纯文本 shell 命令(需 Root)。
