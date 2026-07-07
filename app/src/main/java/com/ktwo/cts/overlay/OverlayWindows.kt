@@ -105,11 +105,12 @@ abstract class OverlayWindow(
         setLineSpacing(px(2).toFloat(), 1f)
     }
 
-    /** Metric 固定字号等宽文本(1:1 还原用, 不随用户字号设置缩放)。 */
+    /** Metric 固定字号等宽文本(1:1 还原用): DIP 单位, 不随系统/用户字号缩放,
+     * 保证固定 dp 行高/单元格在大字体设置下也不裁字。 */
     protected fun mono(sizeSp: Float, color: Int = WHITE, bold: Boolean = true): TextView =
         TextView(ctx).apply {
             setTextColor(color)
-            textSize = sizeSp
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, sizeSp)
             typeface = if (bold) Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
                 else Typeface.MONOSPACE
             includeFontPadding = false
@@ -121,7 +122,7 @@ abstract class OverlayWindow(
         TextView(ctx).apply {
             text = glyph
             setTextColor(WHITE74)
-            textSize = sizeSp
+            setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, sizeSp)
             typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
             includeFontPadding = false
             gravity = Gravity.CENTER
@@ -581,7 +582,7 @@ class MiniOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
 
     private fun cell(color: Int = WHITE) = TextView(ctx).apply {
         setTextColor(color)
-        textSize = 7f   // Metric kg2.c: 7sp/8lh
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 7f)   // Metric kg2.c: 7sp/8lh
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         includeFontPadding = false
         maxLines = 1
@@ -627,8 +628,8 @@ class MiniOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     init {
         seg(54, cell(segGreen).apply { text = "CPU" }, bars, vCpu)
         seg(32, cell(segBlue).apply { text = "GPU" }, vGpu)
-        seg(30, cell(segGold).apply { text = "FPS" }, vFps)
-        seg(38, cell(segPink).apply { text = "PWR" }, vPwr)
+        seg(35, cell(segGold).apply { text = "FPS" }, vFps)   // 文本标签比原版图标宽, 30->35 装下 '120.0'
+        seg(40, cell(segPink).apply { text = "PWR" }, vPwr)   // 38->40 装下 '12.34W'
     }
 
     private var tick = 0L
@@ -712,7 +713,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     private val capsule = TextView(ctx).apply {
         text = "0.0"
         setTextColor(Color.WHITE)
-        textSize = 12f
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 12f)
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         includeFontPadding = false
         gravity = Gravity.CENTER
@@ -723,7 +724,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     private fun iconBtn(glyph: String, onClick: () -> Unit) = TextView(ctx).apply {
         text = glyph
         setTextColor(WHITE74)
-        textSize = 13f
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 13f)
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         includeFontPadding = false
         gravity = Gravity.CENTER
@@ -736,7 +737,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
 
     private fun pillText(sizeSp: Float, color: Int = Color.WHITE) = TextView(ctx).apply {
         setTextColor(color)
-        textSize = sizeSp
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, sizeSp)
         typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         includeFontPadding = false
         gravity = Gravity.CENTER
@@ -869,7 +870,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         clipChildren = true
         background = shellBg
         addView(capsule, FrameLayout.LayoutParams(px(40), px(26), Gravity.CENTER))
-        addView(panel, FrameLayout.LayoutParams(px(268), px(202)))
+        addView(panel, FrameLayout.LayoutParams(px(268), FrameLayout.LayoutParams.WRAP_CONTENT))
     }
     override val root: View = FrameLayout(ctx).apply {
         clipChildren = true
@@ -933,7 +934,19 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         show.visibility = View.VISIBLE
 
         val toW = if (want) px(268) else px(40)
-        val toH = if (want) px(202) else px(26)
+        // 展开高按内容实测(View 排版比 Metric Compose 松, 硬锁原版 202 会把图表整块裁掉);
+        // 量完锁定为像素高, 形变期间只裁剪不重排
+        val toH: Int
+        if (want) {
+            panel.measure(
+                View.MeasureSpec.makeMeasureSpec(px(268), View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            toH = maxOf(panel.measuredHeight, px(202))
+            val lpP = panel.layoutParams as FrameLayout.LayoutParams
+            if (lpP.height != toH) { lpP.height = toH; panel.layoutParams = lpP }
+        } else {
+            toH = px(26)
+        }
         val fromW = if (shell.width > 0) shell.width else px(40)
         val fromH = if (shell.height > 0) shell.height else px(26)
         val fromR = shellBg.cornerRadius

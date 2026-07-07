@@ -21,6 +21,9 @@ object PerfIpcSampler {
     @Volatile private var wanted = false
     @Volatile private var launchedAt = 0L
     @Volatile private var perfShell: Shell? = null
+    // 当前会话 simpleperf 的实际 pid(由命令回报 __PERFPID:), stop 时按此 pid 精确杀,
+    // 避免 pkill 按名误伤紧随其后 start() 新起的会话(guarded by this)
+    private var perfPid = -1
 
     /** 核号 → 最近一秒 IPC; 未知(未采到/不支持)返回 NaN。 */
     fun ipcOf(core: Int): Double = if (core in ipc.indices) ipc[core] else Double.NaN
@@ -46,16 +49,20 @@ object PerfIpcSampler {
     /** 停止采样并清空数据。后台线程调用。stop 后立即可再次 start(不依赖回调复位)。 */
     fun stop() {
         val sh: Shell?
+        val pid: Int
         synchronized(this) {
             wanted = false
             gen++              // 作废在跑/在启的会话
             sh = perfShell
+            pid = perfPid
             perfShell = null
+            perfPid = -1
             running = false    // 立即可重启; 旧回调按代际号自弃
         }
         ipc = DoubleArray(0)
         runCatching { sh?.close() }   // 关掉专用会话, simpleperf 随会话终止
-        runCatching { RootShell.execSilent("pkill -f 'simpleperf stat -a --per-core' 2>/dev/null") }
+        // 精确杀本会话 pid(而非 pkill 按名), 绝不误伤紧接着 start 新起的 simpleperf
+        if (pid > 0) runCatching { RootShell.execSilent("kill $pid 2>/dev/null") }
     }
 
     private fun launch(myGen: Int) {
@@ -100,6 +107,12 @@ object PerfIpcSampler {
         val sink = object : CallbackList<String>() {
             override fun onAddElement(line: String) {
                 runCatching {
+                    // 命令回报的 simpleperf pid: 记进本会话(供 stop 精确杀)
+                    if (line.startsWith("__PERFPID:")) {
+                        val pid = line.substringAfter("__PERFPID:").trim().toIntOrNull() ?: return@runCatching
+                        synchronized(this@PerfIpcSampler) { if (gen == myGen) perfPid = pid }
+                        return@runCatching
+                    }
                     // 新一轮报告块开始/上一块收尾 → 结算(不同版本块界行不同, 两种都认)
                     if (line.contains("Performance counter statistics") ||
                         line.startsWith("Total test time")) {
@@ -122,9 +135,11 @@ object PerfIpcSampler {
             }
         }
 
-        // --duration 3600: 一小时自续(见 submit 回调); stderr 丢弃避免污染解析
+        // --duration 3600: 一小时自续(见 submit 回调); stderr 丢弃避免污染解析。
+        // simpleperf 后台起, 先回报其 pid(供 stop 精确杀), 再 wait 让 job 常驻。
         val cmd = "simpleperf stat -a --per-core -e cpu-cycles,instructions " +
-            "--interval 1000 --duration 3600 2>/dev/null"
+            "--interval 1000 --duration 3600 2>/dev/null & " +
+            "echo __PERFPID:\$!; wait \$!"
         runCatching {
             // 独立 root 会话跑长命令(不能用 Shell.cmd —— 那是共享主 shell 的串行队列)
             val sh = Shell.Builder.create().build("su")

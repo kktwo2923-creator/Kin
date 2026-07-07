@@ -48,6 +48,8 @@ class FpsRecordService : Service() {
     private val stopReasonReq = AtomicReference<String?>(null)
     // 录制时长限制(秒, 0=不限): 由启动方(帧率悬浮窗时长片)传入, 服务内自守
     @Volatile private var limitSec = 0
+    // 重启待处理: 旧循环收尾时若为 true, finishAndStop 只保存不停服务(等重启协程接管)
+    @Volatile private var restartPending = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -81,7 +83,10 @@ class FpsRecordService : Service() {
     private fun beginRecording(targetPkg: String?) {
         val old = loopJob
         if (old?.isActive == true) {
-            // 旧循环还在收尾(最长 1s): 请求其停止, 等 join 后重启, 不再吞掉本次开始请求
+            // 旧循环还在收尾(最长 1s): 请求其停止, 等 join 后重启, 不再吞掉本次开始请求。
+            // 置 restartPending 让旧循环收尾走的 finishAndStop 跳过 stopSelf(否则会杀掉整个服务,
+            // 把正在等 join 的重启协程一并 cancel, 新录制永远不会开始)。
+            restartPending = true
             stopReasonReq.compareAndSet(null, "手动停止")
             scope.launch {
                 runCatching { old.join() }
@@ -89,6 +94,7 @@ class FpsRecordService : Service() {
             }
             return
         }
+        restartPending = false
         stopReasonReq.set(null)
         loopJob = scope.launch {
             val cellCount = runCatching { Prefs.cellCount(this@FpsRecordService) }.getOrDefault(1)
@@ -166,6 +172,9 @@ class FpsRecordService : Service() {
 
     private fun finishAndStop(session: FpsSession?) {
         if (session != null) runCatching { FpsRecordStore.save(this, session) }
+        // 有待重启请求 → 只保存, 不复位状态/不停前台/不停服务(新录制会接管;
+        // 否则 stopSelf → onDestroy → scope.cancel 会杀掉正在等 join 的重启协程)
+        if (restartPending) return
         _state.value = RecState()
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
         stopSelf()

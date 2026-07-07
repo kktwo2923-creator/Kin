@@ -209,7 +209,9 @@ class FloatWindowService : Service() {
     }
 
     private fun hideWindow(type: OverlayType) {
-        val h = windows.remove(type) ?: return
+        // 冷启动收到 ACTION_HIDE(startService 会把服务拉起)时该 type 无窗: 若无任何窗则停服,
+        // 否则残留一个空转的前台服务(通知不消+每秒采样)。
+        val h = windows.remove(type) ?: run { if (windows.isEmpty()) stopSelf(); return }
         activeTypes = windows.keys.toSet()
         if (type == OverlayType.LOAD) scope.launch { runCatching { PerfIpcSampler.stop() } }
         runCatching { h.dlg.dismiss() }   // Metric: 直接 dismiss, 无退场动画
@@ -262,8 +264,9 @@ class FloatWindowService : Service() {
                     // 仅 FPS 窗钳制(Metric xb1.d: 收起 40×26 / 展开 268×230)
                     if (type == OverlayType.FPS) {
                         val dm = resources.displayMetrics
+                        // FPS 钳制用窗体实际尺寸(展开高按内容量出, 不再硬编 230, 与窗体一致避免底部死区)
                         val fw = if (win.isExpandedWindow) px(268) else px(40)
-                        val fh = if (win.isExpandedWindow) px(230) else px(26)
+                        val fh = if (win.isExpandedWindow) w.decorView.height.coerceAtLeast(px(202)) else px(26)
                         lp.x = lp.x.coerceIn(0, (dm.widthPixels - fw).coerceAtLeast(0))
                         lp.y = lp.y.coerceIn(0, (dm.heightPixels - fh).coerceAtLeast(0))
                     }
