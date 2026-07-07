@@ -105,19 +105,20 @@ object SysfsReader {
     /**
      * 计算整机功耗(W)。
      *  - 单位:读数绝对值 >100000 视为 µA/µV,否则 mA/mV。
-     *  - 符号:一律取绝对值(高通/一加放电常为负,不可信)。
+     *  - 符号:由充放电状态判定(设备无关)——【充电为正(+)、放电为负(-)】。
+     *    原始电流符号各机不一(高通/一加放电常为负)不可信, 故取绝对值算功率大小, 再按状态定号。
      *  - 双芯倍率:cellCount>=2 且电压 <6V(单芯量级)时才 ×2;≥6V 说明已是整包电压。
      */
     fun computeWatt(cellCount: Int): Double {
         val i = rawCurrent() ?: return 0.0
         val v = rawVoltage() ?: return 0.0
-        // 保留电流符号(Met #PWR 带号: 充电为负、放电为正), 不再取绝对值
         val absI = abs(i)
         val absV = abs(v)
-        val currentMa = if (absI > 100_000) i / 1000.0 else i.toDouble()   // 保号
+        val currentMa = if (absI > 100_000) absI / 1000.0 else absI.toDouble()
         val voltageMv = if (absV > 100_000) absV / 1000.0 else absV.toDouble()
         val packMultiplier = if (cellCount >= 2 && voltageMv < 6000.0) 2.0 else 1.0
-        return currentMa * voltageMv / 1_000_000.0 * packMultiplier
+        val mag = currentMa * voltageMv / 1_000_000.0 * packMultiplier
+        return if (isCharging()) mag else -mag   // 充电 +, 放电 -
     }
 
     fun snapshot(cellCount: Int): LiveStatus {

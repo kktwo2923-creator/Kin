@@ -681,7 +681,7 @@ class MiniOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         if (tick % 9 < 6) {
             val w = s?.watt ?: 0.0
             vPwr.text = if (w != 0.0 && w.isFinite())
-                String.format(Locale.US, "%+.2fW", w) else "--W"   // 带正负号(充电负/放电正)
+                String.format(Locale.US, "%+.2fW", w) else "--W"   // 带正负号(充电正/放电负)
         } else {
             val c = s?.cpuTempC ?: -999.0
             vPwr.text = if (c > 0) String.format(Locale.US, "%.1f℃", c) else "--℃"
