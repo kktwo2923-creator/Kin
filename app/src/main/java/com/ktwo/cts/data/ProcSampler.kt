@@ -22,6 +22,7 @@ object ProcSampler {
         val state: Char,
         val affinity: String = "",
         val core: Int = -1,
+        val owner: String = "",   // 所属进程标签: SF/HAL/SYS/内核/应用(渲染管线线程窗按进程分别标注)
     )
 
     @Volatile private var topUsable = true
@@ -75,25 +76,48 @@ object ProcSampler {
         return procFallback(limit)
     }
 
-    // pid>0: 只采【该前台进程】的线程(与线程窗表头 'PID x' 一致, 不再混入其它进程的线程);
-    //        pid<=0(前台 pid 未解析出): 回退系统级 top -H。
-    fun topThreads(limit: Int = 8, pid: Int = -1): List<Thr> {
+    // 渲染/显示管线线程监视(对齐 Scene/Met 的"看关键进程线程"思路): 只采下列关键进程的线程,
+    // 并按所属进程分别标注 owner —— 高通显示 HAL(SF/HAL/内核) + Android Framework(SYS) + 前台应用。
+    //   SF   = surfaceflinger(合成器)
+    //   HAL  = vendor.qti.hardware.display.composer-service(高通显示 Composer HAL)
+    //   SYS  = system_server(Framework 逻辑进程)
+    //   内核 = crtc_commit(DRM 原子提交内核线程)
+    //   应用 = 当前前台 App(其 RenderThread/UI 线程等)
+    // 实现: 系统级 top -H 一次拿全, 再按进程名过滤到关注集合, 按 CPU% 排序取前 N。
+    fun topThreads(limit: Int = 24, fgPkg: String = "", fgPid: Int = -1): List<Thr> {
         if (!RootShell.isRooted()) return emptyList()
-        val pidArg = if (pid > 0) "-p $pid " else ""
         val out = runCatching {
-            RootShell.exec("top -b -H ${pidArg}-n 1 -o TID,%CPU,S,CMDLINE -s 2 2>/dev/null | head -n 40")
+            RootShell.exec("top -b -H -n 1 -o PID,TID,%CPU,S,CMDLINE -s 3 2>/dev/null | head -n 260")
         }.getOrDefault("")
         val rows = ArrayList<Thr>()
         out.lineSequence().forEach { line ->
-            val parts = line.trim().split(Regex("\\s+"), limit = 4)
-            if (parts.size < 4) return@forEach
-            val tid = parts[0].toIntOrNull() ?: return@forEach
-            val cpu = parts[1].toFloatOrNull() ?: return@forEach
-            val st = parts[2].firstOrNull() ?: 'S'
-            rows.add(Thr(tid, baseName(parts[3]), cpu, st))
+            val parts = line.trim().split(Regex("\\s+"), limit = 5)
+            if (parts.size < 5) return@forEach
+            val pid = parts[0].toIntOrNull() ?: return@forEach
+            val tid = parts[1].toIntOrNull() ?: return@forEach
+            val cpu = parts[2].toFloatOrNull() ?: return@forEach
+            val st = parts[3].firstOrNull() ?: 'S'
+            val cmd = parts[4]
+            val owner = ownerTag(cmd, pid, fgPkg, fgPid) ?: return@forEach   // 非关注进程 → 丢弃
+            rows.add(Thr(tid, baseName(cmd), cpu, st, owner = owner))
         }
         val top = rows.sortedByDescending { it.cpuPct }.take(limit)
         return enrichThreads(top)
+    }
+
+    /** 线程所属进程归类(渲染/显示管线关注集合); 返回 null = 不关注该线程。 */
+    private fun ownerTag(cmd: String, pid: Int, fgPkg: String, fgPid: Int): String? {
+        val c = cmd.trim().removeSurrounding("[", "]")   // 内核线程如 [crtc_commit]
+        val base = c.substringBefore(':')                // 进程名(去掉 :sub 子进程后缀)
+        return when {
+            c.contains("crtc_commit")                       -> "内核"
+            base.endsWith("surfaceflinger")                 -> "SF"
+            c.contains("hardware.display.composer")         -> "HAL"
+            base == "system_server"                          -> "SYS"
+            fgPid > 0 && pid == fgPid                        -> "应用"
+            fgPkg.isNotEmpty() && base == fgPkg              -> "应用"
+            else -> null
+        }
     }
 
     /**
