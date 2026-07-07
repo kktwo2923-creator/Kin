@@ -1,3 +1,6 @@
+// 「设置」页, 对齐 Metric 设置页组织: 顶部 Pro 会员卡(无组标题, 强调色),
+// 之后为「组标题 + 组内条目 + 说明文案」的分组卡片, 组序参照 Metric: 常规→外观→电池→采样→(权限)→其他。
+// 所有条目行统一为一套 preference 行规范: 行自带内距、整行点击热区、分隔线统一 16dp 缩进。
 package com.ktwo.cts.ui
 
 import android.content.Context
@@ -54,6 +57,7 @@ fun SettingsScreen(
         .collectAsState(initial = true)
     val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
     val refreshRate by Prefs.refreshRateFlow(ctx).collectAsState(initial = 0)
+    val moreLogs by Prefs.moreLogsFlow(ctx).collectAsState(initial = false)
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
     var a11yEnabled by remember { mutableStateOf(false) }
@@ -151,315 +155,243 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 付费解锁入口(仿 MetricPro): 智能模式 + 系统优化 的解锁页
-            SectionTitle("智能版")
-            TonalCard(modifier = Modifier.fillMaxWidth()) {
+            // —— 顶部 Pro 会员卡(仿 Metric Pro 卡: 无组标题, 强调色与普通组拉开) ——
+            TonalCard(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onOpenPro)
-                        .padding(16.dp),
+                        .padding(horizontal = 16.dp, vertical = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
                         Icons.Outlined.AutoAwesome,
                         contentDescription = null,
+                        modifier = Modifier.size(28.dp),
                         tint = MaterialTheme.colorScheme.primary,
                     )
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("解锁智能版 · Pro", fontWeight = FontWeight.Medium)
+                        Text(
+                            "解锁智能版 · Pro",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
                         Text(
                             if (proUnlocked) "已解锁 · 智能模式 / 系统优化 已可用"
                             else "解锁智能模式 + 系统优化(WiFi/网络/内存)",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (proUnlocked) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    else LocalContentColor.current.copy(alpha = 0.8f),
                         )
                     }
                     Icon(
                         Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = LocalContentColor.current.copy(alpha = 0.7f),
                     )
                 }
             }
 
-            Section("通用") {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    ToggleRow(
-                        title = "开机自启动",
-                        desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
-                        checked = autostart,
-                        onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } }
-                    )
-                    HorizontalDivider()
-                    ToggleRow(
-                        title = "状态栏常驻通知",
-                        desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
-                        checked = notifyEnabled,
-                        onCheckedChange = { toggleNotify(it) },
-                    )
-                }
+            // —— 常规(对齐 Metric settings_general; 「更多日志」并入常规, 避免单条目成组) ——
+            PrefGroup("常规") {
+                PrefToggleRow(
+                    title = "开机自启动",
+                    desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
+                    checked = autostart,
+                    onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } },
+                )
+                PrefDivider()
+                PrefToggleRow(
+                    title = "状态栏常驻通知",
+                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
+                    checked = notifyEnabled,
+                    onCheckedChange = { toggleNotify(it) },
+                )
+                PrefDivider()
+                PrefToggleRow(
+                    title = "更多日志",
+                    desc = "日志页默认只显示 运行/模式/前台 三个日志;开启后显示全部日志文件",
+                    checked = moreLogs,
+                    onCheckedChange = { scope.launch { Prefs.setMoreLogs(ctx, it) } },
+                )
             }
 
-            Section("外观") {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("主题", fontWeight = FontWeight.Medium)
+            // —— 外观(CTS 特有组, 位置对应 Metric 常规组内的「主题设置」) ——
+            PrefGroup("外观") {
+                PrefChipsRow(title = "主题", desc = null) {
                     val cur = ThemeMode.fromKey(themeKey)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ThemeMode.entries.forEach { tm ->
-                            FilterChip(
-                                selected = tm == cur,
-                                onClick = { scope.launch { Prefs.setThemeMode(ctx, tm.key) } },
-                                label = { Text(tm.label) },
-                                shape = RoundedCornerShape(12.dp),
-                            )
-                        }
-                    }
-                    HorizontalDivider()
-                    // 界面风格: 液态玻璃(默认) / Metric 仪表盘
-                    Row(
-                        Modifier.fillMaxWidth().clickable { showStyleDialog = true },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("界面风格", fontWeight = FontWeight.Medium)
-                            Text(
-                                "当前: ${UiStyle.fromKey(uiStyleKey).label} · 仅切换主页布局, 全局保留液态玻璃",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Icon(
-                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ThemeMode.entries.forEach { tm ->
+                        FilterChip(
+                            selected = tm == cur,
+                            onClick = { scope.launch { Prefs.setThemeMode(ctx, tm.key) } },
+                            label = { Text(tm.label) },
+                            shape = RoundedCornerShape(12.dp),
                         )
                     }
-                    HorizontalDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("自定义壁纸", fontWeight = FontWeight.Medium)
-                            Text(
-                                if (wallpaperUri.isBlank()) "当前: 默认渐变" else "当前: 自定义图片",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (wallpaperUri.isNotBlank()) {
-                            TextButton(onClick = { scope.launch { Prefs.setWallpaperUri(ctx, "") } }) {
-                                Text("重置")
-                            }
-                        }
-                        FilledTonalButton(onClick = {
-                            pickWallpaper.launch(
-                                PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly
-                                )
-                            )
-                        }) { Text("选择") }
-                    }
-                    HorizontalDivider()
-                    // SukiSU-Ultra 主题设置同款开关
-                    ToggleRow(
-                        title = "悬浮底栏",
-                        desc = "使用 Apple 风格的悬浮底栏",
-                        checked = enableFloatingBar,
-                        onCheckedChange = {
-                            scope.launch { Prefs.setEnableFloatingBottomBar(ctx, it) }
-                        },
-                    )
-                    AnimatedVisibility(visible = enableFloatingBar) {
-                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            HorizontalDivider()
-                            ToggleRow(
-                                title = "液态玻璃",
-                                desc = "启用悬浮底栏的液态玻璃效果",
-                                checked = enableFloatingBarBlur,
-                                onCheckedChange = {
-                                    scope.launch { Prefs.setEnableFloatingBottomBarBlur(ctx, it) }
-                                },
-                            )
-                        }
-                    }
                 }
-            }
-
-            Section("采样") {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("屏幕刷新率", fontWeight = FontWeight.Medium)
-                    Text(
-                        "锁定后跨重启保持(root 写系统设置)。自动 = 交还系统自适应。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(0 to "自动", 60 to "60Hz", 90 to "90Hz", 120 to "120Hz",
-                               144 to "144Hz", 165 to "165Hz").forEach { (hz, label) ->
-                            FilterChip(
-                                selected = hz == refreshRate,
-                                onClick = {
-                                    scope.launch {
-                                        Prefs.setRefreshRate(ctx, hz)
-                                        withContext(Dispatchers.IO) { RootShell.setRefreshRate(ctx, hz) }
-                                    }
-                                },
-                                label = { Text(label) },
-                                shape = RoundedCornerShape(12.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            Section("电池") {
+                PrefDivider()
+                // 界面风格: 液态玻璃(默认) / Metric 仪表盘
+                PrefNavRow(
+                    title = "界面风格",
+                    desc = "当前: ${UiStyle.fromKey(uiStyleKey).label} · 仅切换主页布局, 全局保留液态玻璃",
+                    onClick = { showStyleDialog = true },
+                )
+                PrefDivider()
                 Row(
-                    Modifier.fillMaxWidth().clickable { showCalibrate = true },
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(
-                        Icons.Outlined.BatteryFull,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("重新矫正电池", fontWeight = FontWeight.Medium)
+                        Text("自定义壁纸", fontWeight = FontWeight.Medium)
                         Text(
-                            "当前: ${if (cellCount >= 2) "双电芯" else "单电芯"} · 功率偏差一倍时来这里改",
+                            if (wallpaperUri.isBlank()) "当前: 默认渐变" else "当前: 自定义图片",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Icon(
-                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (wallpaperUri.isNotBlank()) {
+                        TextButton(onClick = { scope.launch { Prefs.setWallpaperUri(ctx, "") } }) {
+                            Text("重置")
+                        }
+                    }
+                    FilledTonalButton(onClick = {
+                        pickWallpaper.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
+                        )
+                    }) { Text("选择") }
+                }
+                PrefDivider()
+                // SukiSU-Ultra 主题设置同款开关
+                PrefToggleRow(
+                    title = "悬浮底栏",
+                    desc = "使用 Apple 风格的悬浮底栏",
+                    checked = enableFloatingBar,
+                    onCheckedChange = {
+                        scope.launch { Prefs.setEnableFloatingBottomBar(ctx, it) }
+                    },
+                )
+                AnimatedVisibility(visible = enableFloatingBar) {
+                    Column {
+                        PrefDivider()
+                        PrefToggleRow(
+                            title = "液态玻璃",
+                            desc = "启用悬浮底栏的液态玻璃效果",
+                            checked = enableFloatingBarBlur,
+                            onCheckedChange = {
+                                scope.launch { Prefs.setEnableFloatingBottomBarBlur(ctx, it) }
+                            },
+                        )
+                    }
                 }
             }
 
-            Section("权限") {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    PermRow(
-                        name = "Root 权限",
-                        granted = isRoot,
-                        desc = "调用模块 powercfg.sh 必需",
-                        icon = Icons.Outlined.Security,
-                        onAction = null,
-                    )
-                    HorizontalDivider()
-                    PermRow(
-                        name = "查看使用情况",
-                        granted = hasUsagePerm,
-                        desc = "无 root 时的前台检测兜底",
-                        icon = Icons.Outlined.Visibility,
-                        onAction = {
-                            ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }
-                    )
-                    HorizontalDivider()
-                    PermRow(
-                        name = "无障碍·前台推送",
-                        granted = a11yEnabled,
-                        desc = "识别全屏主应用推给守护进程(多窗口取最大窗口);root 一键授权、跨重启保持。可选",
-                        icon = Icons.Outlined.Bolt,
-                        onAction = {
-                            scope.launch {
-                                val ok = withContext(Dispatchers.IO) { RootShell.setAccessibility(true) }
-                                Prefs.setA11yWanted(ctx, true)
-                                if (!ok) runCatching {
-                                    ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            // —— 电池(对齐 Metric settings_battery: 串联双电芯/电流校准) ——
+            PrefGroup("电池") {
+                PrefNavRow(
+                    title = "重新矫正电池",
+                    desc = "当前: ${if (cellCount >= 2) "双电芯" else "单电芯"} · 功率偏差一倍时来这里改",
+                    onClick = { showCalibrate = true },
+                )
+            }
+
+            // —— 采样(对齐 Metric settings_realtime_fps 组位次) ——
+            PrefGroup("采样") {
+                PrefChipsRow(
+                    title = "屏幕刷新率",
+                    desc = "锁定后跨重启保持(root 写系统设置)。自动 = 交还系统自适应。",
+                ) {
+                    listOf(0 to "自动", 60 to "60Hz", 90 to "90Hz", 120 to "120Hz",
+                           144 to "144Hz", 165 to "165Hz").forEach { (hz, label) ->
+                        FilterChip(
+                            selected = hz == refreshRate,
+                            onClick = {
+                                scope.launch {
+                                    Prefs.setRefreshRate(ctx, hz)
+                                    withContext(Dispatchers.IO) { RootShell.setRefreshRate(ctx, hz) }
                                 }
-                                kotlinx.coroutines.delay(400)
-                                a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
+                            },
+                            label = { Text(label) },
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                    }
+                }
+            }
+
+            // —— 权限(CTS 特有的状态诊断组, Metric 无对应组; 红绿状态 + 一键跳系统设置) ——
+            PrefGroup("权限") {
+                PermRow(
+                    name = "Root 权限",
+                    granted = isRoot,
+                    desc = "调用模块 powercfg.sh 必需",
+                    icon = Icons.Outlined.Security,
+                    onAction = null,
+                )
+                PrefDivider()
+                PermRow(
+                    name = "查看使用情况",
+                    granted = hasUsagePerm,
+                    desc = "无 root 时的前台检测兜底",
+                    icon = Icons.Outlined.Visibility,
+                    onAction = {
+                        ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                )
+                PrefDivider()
+                PermRow(
+                    name = "无障碍·前台推送",
+                    granted = a11yEnabled,
+                    desc = "识别全屏主应用推给守护进程(多窗口取最大窗口);root 一键授权、跨重启保持。可选",
+                    icon = Icons.Outlined.Bolt,
+                    onAction = {
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) { RootShell.setAccessibility(true) }
+                            Prefs.setA11yWanted(ctx, true)
+                            if (!ok) runCatching {
+                                ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                             }
+                            kotlinx.coroutines.delay(400)
+                            a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
                         }
-                    )
-                    HorizontalDivider()
-                    PermRow(
-                        name = "电池优化白名单",
-                        granted = batteryWhitelisted,
-                        desc = "防止后台被杀",
-                        icon = Icons.Outlined.BatteryFull,
-                        onAction = {
-                            ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }
-                    )
-                }
+                    }
+                )
+                PrefDivider()
+                PermRow(
+                    name = "电池优化白名单",
+                    granted = batteryWhitelisted,
+                    desc = "防止后台被杀",
+                    icon = Icons.Outlined.BatteryFull,
+                    onAction = {
+                        ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                )
             }
 
-            Section("日志") {
-                val moreLogs by Prefs.moreLogsFlow(ctx).collectAsState(initial = false)
-                ToggleRow(
-                    "更多日志",
-                    "日志页默认只显示 运行/模式/前台 三个日志;开启后显示全部日志文件",
-                    moreLogs,
-                ) { scope.launch { Prefs.setMoreLogs(ctx, it) } }
-            }
-
-            // 同 SukiSU 设置页: 关于作为入口行, 点开展示图标/版本/GitHub 链接
-            SectionTitle("其他")
-            TonalCard(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onOpenDocs)
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.MenuBook,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("使用文档", fontWeight = FontWeight.Medium)
-                        Text(
-                            "功能说明 · 常见问题",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onOpenAbout)
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Outlined.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("关于", fontWeight = FontWeight.Medium)
-                        Text(
-                            "版本信息 · 开源地址",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            // —— 其他(对齐 Metric settings_other: 文档/关于收尾) ——
+            PrefGroup("其他") {
+                PrefNavRow(
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    title = "使用文档",
+                    desc = "功能说明 · 常见问题",
+                    onClick = onOpenDocs,
+                )
+                PrefDivider()
+                PrefNavRow(
+                    icon = Icons.Outlined.Info,
+                    title = "关于",
+                    desc = "版本信息 · 开源地址",
+                    onClick = onOpenAbout,
+                )
             }
 
             Spacer(Modifier.height(96.dp))
@@ -515,42 +447,126 @@ fun SettingsScreen(
     }
 }
 
+// ============ 统一的 preference 行规范(组=标题+卡片; 行自带内距; 分隔线 16dp 缩进) ============
+
+/** 设置分组: 组标题 + 一张卡片; 标题与卡片间 8dp, 组间距由父级 spacedBy(16dp) 控制。 */
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    SectionTitle(title)
-    TonalCard(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) { content() }
+private fun PrefGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionTitle(title)
+        TonalCard(modifier = Modifier.fillMaxWidth()) {
+            Column(content = content)
+        }
     }
 }
 
+/** 组内分隔线, 两侧 16dp 缩进, 与行内距对齐。 */
 @Composable
-private fun ToggleRow(
+private fun PrefDivider() {
+    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+}
+
+/** 开关行: 标题 + 说明 + Switch, 行自带内距。 */
+@Composable
+private fun PrefToggleRow(
     title: String, desc: String,
     checked: Boolean, onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Medium)
             Text(
                 desc,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Spacer(Modifier.width(12.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
+/** 导航/对话框行: (可选图标 +) 标题 + 说明 + 右箭头, 整行(含内距)可点击。 */
+@Composable
+private fun PrefNavRow(
+    title: String, desc: String,
+    icon: ImageVector? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** 选择行: 标题 (+ 说明) + FilterChip 流式排列。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PrefChipsRow(
+    title: String,
+    desc: String?,
+    chips: @Composable FlowRowScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(title, fontWeight = FontWeight.Medium)
+        if (desc != null) {
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            content = chips,
+        )
+    }
+}
+
+/** 权限状态行: 图标颜色表示已授/未授, 尾部对勾或「设置」按钮, 行自带内距。 */
 @Composable
 private fun PermRow(
     name: String, granted: Boolean, desc: String,
     icon: ImageVector,
     onAction: (() -> Unit)?,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(
             icon, null,
             modifier = Modifier.size(24.dp),

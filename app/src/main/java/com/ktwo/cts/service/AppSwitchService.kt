@@ -58,6 +58,8 @@ class AppSwitchService : AccessibilityService() {
         super.onServiceConnected()
         loadImePackages()
         push(mainAppFromWindows())   // 启用后立刻推一次, 不必等下次切换
+        // 服务可能被系统解绑后重连: 先摘旧心跳链再挂新的, 保证任意时刻只有一条
+        main.removeCallbacks(heartbeat)
         main.postDelayed(heartbeat, HEARTBEAT_MS)
     }
 

@@ -17,13 +17,18 @@ import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import com.ktwo.cts.ui.theme.ThemeMode
 import com.ktwo.cts.ui.theme.UiStyle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        runCatching {
-            if (runBlocking { Prefs.notifyEnabled(this@MainActivity) }) NotifyService.start(this)
+        // 不在主线程 runBlocking 读 DataStore(冷启动卡顿/ANR 风险), 改协程异步
+        lifecycleScope.launch {
+            runCatching {
+                if (Prefs.notifyEnabled(this@MainActivity)) NotifyService.start(this@MainActivity)
+            }
         }
         // 捐赠版:打开即验(LicenseGate 负责)+ 联网恢复立刻验(下面登记);离线不锁,被吊销则红屏锁定并停守护。
         // 公益版(NO_LICENSE):彻底跳过,不登记自动复验。

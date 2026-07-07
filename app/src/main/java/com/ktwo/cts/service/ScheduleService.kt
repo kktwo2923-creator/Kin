@@ -46,16 +46,20 @@ class ScheduleService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        if (RootShell.daemonAlive()) {
-            startForegroundCompat()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return
-        }
+        // 先无条件转前台(startForegroundService 限时要求; root shell 可能因授权弹窗阻塞数秒,
+        // 绝不能挡在 startForeground 之前, 也不能在主线程跑)
+        startForegroundCompat()
+        Thread {
+            if (runCatching { RootShell.daemonAlive() }.getOrDefault(false)) {
+                android.os.Handler(mainLooper).post {
+                    runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
+                    stopSelf()
+                }
+            }
+        }.start()
         pm = getSystemService(POWER_SERVICE) as PowerManager
         screenOn = pm.isInteractive
         loadImePackages()
-        startForegroundCompat()
         registerReceiver(screenRx, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)

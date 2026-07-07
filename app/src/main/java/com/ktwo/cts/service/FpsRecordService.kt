@@ -46,6 +46,8 @@ class FpsRecordService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loopJob: Job? = null
     private val stopReasonReq = AtomicReference<String?>(null)
+    // 录制时长限制(秒, 0=不限): 由启动方(帧率悬浮窗时长片)传入, 服务内自守
+    @Volatile private var limitSec = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -63,6 +65,7 @@ class FpsRecordService : Service() {
             else -> {   // ACTION_START(或系统拉起)
                 ensureChannel()
                 startForeground(NOTIF_ID, buildNotif("帧率录制", "准备中"))
+                limitSec = intent?.getIntExtra(EXTRA_LIMIT_SEC, 0) ?: 0
                 beginRecording(intent?.getStringExtra(EXTRA_PKG))
             }
         }
@@ -76,7 +79,16 @@ class FpsRecordService : Service() {
     }
 
     private fun beginRecording(targetPkg: String?) {
-        if (loopJob?.isActive == true) return
+        val old = loopJob
+        if (old?.isActive == true) {
+            // 旧循环还在收尾(最长 1s): 请求其停止, 等 join 后重启, 不再吞掉本次开始请求
+            stopReasonReq.compareAndSet(null, "手动停止")
+            scope.launch {
+                runCatching { old.join() }
+                beginRecording(targetPkg)
+            }
+            return
+        }
         stopReasonReq.set(null)
         loopJob = scope.launch {
             val cellCount = runCatching { Prefs.cellCount(this@FpsRecordService) }.getOrDefault(1)
@@ -130,6 +142,9 @@ class FpsRecordService : Service() {
                 )
                 notify("录制中 · $appName", "${if (p.fps > 0) p.fps else 0}fps · ${points.size}s")
                 if (points.size >= MAX_POINTS) { reason = "达到时长上限"; break }
+                // 用户设定的限时(时长片): 到点自动停 —— 与悬浮窗是否还开着无关
+                val lim = limitSec
+                if (lim > 0 && points.size >= lim) { reason = "到达设定时长"; break }
                 // 扣掉本次采样耗时, 尽量保持 1 秒一个点
                 val spent = System.currentTimeMillis() - tick
                 delay((1000L - spent).coerceIn(200L, 1000L))
@@ -191,19 +206,21 @@ class FpsRecordService : Service() {
         private const val ACTION_START = "com.ktwo.cts.FPSREC_START"
         private const val ACTION_STOP = "com.ktwo.cts.FPSREC_STOP"
         private const val EXTRA_PKG = "target_pkg"
+        private const val EXTRA_LIMIT_SEC = "limit_sec"
         private const val MAX_POINTS = 4 * 3600   // 上限 4 小时, 防止无限增长
 
         private val _state = MutableStateFlow(RecState())
         /** 录制实时状态: 列表页胶囊/按钮 collectAsState 用。 */
         val state: StateFlow<RecState> = _state.asStateFlow()
 
-        /** 开始录制。pkg 为空时等待用户切换到目标应用后自动锁定。 */
-        fun start(ctx: Context, pkg: String? = null) {
+        /** 开始录制。pkg 为空时等待用户切换到目标应用后自动锁定; limitSec>0 时到点自动停。 */
+        fun start(ctx: Context, pkg: String? = null, limitSec: Int = 0) {
             runCatching {
                 ctx.startForegroundService(
                     Intent(ctx, FpsRecordService::class.java)
                         .setAction(ACTION_START)
                         .putExtra(EXTRA_PKG, pkg)
+                        .putExtra(EXTRA_LIMIT_SEC, limitSec)
                 )
             }
         }

@@ -78,10 +78,15 @@ object MetricReader {
         if (parts.size < 5) return -1
         val idle = parts[3] + (parts.getOrElse(4) { 0L })      // idle + iowait
         val total = parts.sum()
-        val prevIdle = lastIdle
-        val prevTotal = lastTotal
-        lastIdle = idle
-        lastTotal = total
+        // 差分基线读改写需原子(悬浮窗/录制/仪表盘会并发 snapshot, 交错会让占用率随机跳变)
+        val prevIdle: Long
+        val prevTotal: Long
+        synchronized(this) {
+            prevIdle = lastIdle
+            prevTotal = lastTotal
+            lastIdle = idle
+            lastTotal = total
+        }
         if (prevIdle < 0 || total <= prevTotal) return -1
         val dTotal = (total - prevTotal).toDouble()
         val dIdle = (idle - prevIdle).toDouble()
@@ -415,8 +420,11 @@ object MetricReader {
         val hex = if (words.size >= 2 && words[0] == "00000000") words[1] else words[0]
         val flip = hex.toLongOrNull(16) ?: return -1
         val now = System.nanoTime()
-        val prev = lastFlip; val prevT = lastFlipNanos
-        lastFlip = flip; lastFlipNanos = now
+        val prev: Long; val prevT: Long
+        synchronized(this) {
+            prev = lastFlip; prevT = lastFlipNanos
+            lastFlip = flip; lastFlipNanos = now
+        }
         if (prev < 0 || prevT == 0L || flip < prev) return -1
         val dt = (now - prevT) / 1_000_000_000.0
         if (dt < 0.2) return -1
