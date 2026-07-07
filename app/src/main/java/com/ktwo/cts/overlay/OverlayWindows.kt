@@ -1283,20 +1283,49 @@ class TempOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
 class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
 
-    private class Line(val box: LinearLayout, val icon: ImageView, val name: TextView, val mem: TextView, val pct: TextView)
+    private class Line(val box: LinearLayout, val icon: ImageView, val name: TextView, val pct: TextView)
 
     private val card = verticalCard().apply {
         setPadding(px(10), px(10), px(10), px(10))
     }
-    // 进程窗只显示读取来源【高通 Vendor HAL + Android Framework 层】进程, 不做筛选切换。
-    private val tHead = mono(11f).apply { text = "进程 · HAL + 框架" }
+    private val tHead = mono(11f).apply { text = "进程" }
+    private var appsOnly = false
     private var lastProcs: List<ProcSampler.Proc>? = null
+
+    // ── 分段滑块筛选(Metric pc1.l): 72×24 轨道 + 34×20 白18 高亮块 180ms 平移 ──
+    private fun tab(label: String, onClick: () -> Unit) = mono(8f, GREY, bold = false).apply {
+        text = label
+        gravity = Gravity.CENTER
+        setOnClickListener { onClick() }
+    }
+    private val tabAll = tab("全部") { setMode(false) }
+    private val tabApp = tab("应用") { setMode(true) }
+    private val indicator = View(ctx).apply {
+        background = GradientDrawable().apply {
+            cornerRadius = px(10).toFloat()
+            setColor(Color.argb(46, 255, 255, 255))   // Metric 高亮块 白@0.18
+        }
+    }
+    private val segTrack = FrameLayout(ctx).apply {
+        background = GradientDrawable().apply {
+            cornerRadius = px(12).toFloat()
+            setColor(Color.argb(26, 255, 255, 255))   // 轨道底 白@0.10
+        }
+        setPadding(px(2), px(2), px(2), px(2))
+        addView(indicator, FrameLayout.LayoutParams(px(34), px(20)))
+        addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(tabAll, LinearLayout.LayoutParams(px(34), px(20)))
+            addView(tabApp, LinearLayout.LayoutParams(px(34), px(20)))
+        })
+    }
 
     private val header = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         addView(tHead, LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addView(segTrack, LinearLayout.LayoutParams(px(72), px(24)))
         addView(circleBtn("✕", 10f) { onCloseRequest?.invoke() },
             LinearLayout.LayoutParams(px(24), px(24)).apply { marginStart = px(4) })
     }
@@ -1315,6 +1344,7 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
     override val root: View = card
 
     init {
+        styleTabs()
         card.addView(header, LinearLayout.LayoutParams(
             px(168), LinearLayout.LayoutParams.WRAP_CONTENT))
         // Metric pc1.n: 行高 21 / 图标 16(圆角6裁剪) / 名称 9sp 粗 weight1 / CPU% 10sp 白74 / 行距 3
@@ -1332,8 +1362,6 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 maxLines = 1
             }
-            // 内存列(取 Scene 之长: 每进程 RES 内存, MB/GB 自适应)。9sp 白74, 右对齐。
-            val mem = mono(9f, WHITE74).apply { gravity = Gravity.END }
             val pct = mono(10f, WHITE74)
             val box = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -1341,9 +1369,6 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
                 addView(icon, LinearLayout.LayoutParams(px(16), px(16)))
                 addView(name, LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(4) })
-                addView(mem, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6) })
                 addView(pct, LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6) })
@@ -1358,7 +1383,7 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
                     override fun onLongPress(e: android.view.MotionEvent) { openThreads() }
                 })
             box.setOnTouchListener { _, ev -> gd.onTouchEvent(ev) }
-            lines.add(Line(box, icon, name, mem, pct))
+            lines.add(Line(box, icon, name, pct))
             listBox.addView(box, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, px(21)).apply {
                 if (i > 0) topMargin = px(3)
@@ -1391,17 +1416,14 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
 
     // ── 图标缓存(进程名 → Drawable)──
     private val iconCache = HashMap<String, Drawable?>()
-    private val defaultIcon: Drawable? by lazy {
-        runCatching { ctx.getDrawable(android.R.drawable.sym_def_app_icon) }.getOrNull()
+    private val userAppCache = HashMap<String, Boolean>()
+    // 无对应应用的原生/内核/HAL/框架进程(system_server / surfaceflinger / crtc_commit /
+    // vendor.qti.hardware.display.composer-service 等)统一用企鹅(Tux)图标标示。
+    private val penguinIcon: Drawable? by lazy {
+        runCatching { ctx.getDrawable(com.ktwo.cts.R.drawable.ic_native_penguin) }.getOrNull()
     }
 
     private fun pkgOf(name: String) = name.substringBefore(':').trim()
-
-    // RES 内存格式化(对齐 Scene: >8192KB 显示 MB, 更大显示 GB): >=1024MB → x.xG, 否则 xM; <0(未知)留空。
-    private fun memStr(rssMb: Int): String =
-        if (rssMb < 0) ""
-        else if (rssMb >= 1024) String.format(Locale.US, "%.1fG", rssMb / 1024f)
-        else "${rssMb}M"
 
     private fun iconFor(name: String): Drawable? {
         if (!iconCache.containsKey(name)) {
@@ -1410,7 +1432,14 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
                 ctx.packageManager.getApplicationIcon(pkgOf(name))
             }.getOrNull()
         }
-        return iconCache[name] ?: defaultIcon
+        return iconCache[name] ?: penguinIcon   // 取不到应用图标 = 系统/原生进程 → 企鹅
+    }
+
+    private fun isUserApp(name: String): Boolean = userAppCache.getOrPut(name) {
+        runCatching {
+            val ai = ctx.packageManager.getApplicationInfo(pkgOf(name), 0)
+            (ai.flags and ApplicationInfo.FLAG_SYSTEM) == 0
+        }.getOrDefault(false)
     }
 
     override fun onTick(t: TickData) {
@@ -1419,9 +1448,29 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
         runCatching { render() }
     }
 
+    private fun setMode(only: Boolean) {
+        if (appsOnly == only) return
+        appsOnly = only
+        // Metric ProcessFilterTransition: 高亮块 180ms 平移
+        indicator.animate().translationX(if (only) px(34).toFloat() else 0f)
+            .setDuration(180).setInterpolator(metricEase()).start()
+        styleTabs()
+        runCatching { render() }
+    }
+
+    private fun styleTabs() {
+        tabAll.setTextColor(if (!appsOnly) WHITE92 else GREY)
+        tabAll.typeface = Typeface.create(Typeface.MONOSPACE,
+            if (!appsOnly) Typeface.BOLD else Typeface.NORMAL)
+        tabApp.setTextColor(if (appsOnly) WHITE92 else GREY)
+        tabApp.typeface = Typeface.create(Typeface.MONOSPACE,
+            if (appsOnly) Typeface.BOLD else Typeface.NORMAL)
+    }
+
     private fun render() {
-        // 数据层已只返回 HAL/框架进程, 这里直接全部展示(不再筛选)
-        val ps = lastProcs.orEmpty()
+        val all = lastProcs
+        // 全部 = 系统进程+应用都显示(系统/原生进程用企鹅图标); 应用 = 仅用户应用
+        val ps = if (appsOnly) all.orEmpty().filter { isUserApp(it.name) } else all.orEmpty()
         val empty = ps.isEmpty()
         emptyView.visibility = if (empty) View.VISIBLE else View.GONE
         listScroll?.visibility = if (empty) View.GONE else View.VISIBLE
@@ -1433,9 +1482,7 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
             } else {
                 l.box.visibility = View.VISIBLE
                 l.icon.setImageDrawable(runCatching { iconFor(p.name) }.getOrNull())
-                // 名称前标注来源类别(HAL/框架), 让"读取来源"一目了然
-                l.name.text = if (p.cat.isEmpty()) p.name else "${p.cat}·${p.name}"
-                l.mem.text = memStr(p.rssMb)
+                l.name.text = p.name
                 l.pct.text = String.format(Locale.US, "%.1f%%", p.cpuPct)
             }
         }

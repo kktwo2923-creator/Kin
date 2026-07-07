@@ -1,0 +1,28 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- 脚(橙) -->
+    <path android:fillColor="#F9A825"
+        android:pathData="M15,38 C10,39 8,44 12,45 C16,46 20,43 21,40 Z" />
+    <path android:fillColor="#F9A825"
+        android:pathData="M33,38 C38,39 40,44 36,45 C32,46 28,43 27,40 Z" />
+    <!-- 身体(黑) -->
+    <path android:fillColor="#212121"
+        android:pathData="M24,3 C15.7,3 12,11.5 12,23 C12,35 16,43 24,43 C32,43 36,35 36,23 C36,11.5 32.3,3 24,3 Z" />
+    <!-- 白肚 -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M24,11 C18.5,11 15.5,18 15.5,26.5 C15.5,36 19.2,41 24,41 C28.8,41 32.5,36 32.5,26.5 C32.5,18 29.5,11 24,11 Z" />
+    <!-- 白脸(眼区) -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M24,8 C20,8 17.8,11 17.8,15 C17.8,19 20.6,21 24,21 C27.4,21 30.2,19 30.2,15 C30.2,11 28,8 24,8 Z" />
+    <!-- 眼睛(黑) -->
+    <path android:fillColor="#212121"
+        android:pathData="M21.4,14 m-1.7,0 a1.7,1.7 0 1,0 3.4,0 a1.7,1.7 0 1,0 -3.4,0" />
+    <path android:fillColor="#212121"
+        android:pathData="M26.6,14 m-1.7,0 a1.7,1.7 0 1,0 3.4,0 a1.7,1.7 0 1,0 -3.4,0" />
+    <!-- 喙(橙) -->
+    <path android:fillColor="#F9A825"
+        android:pathData="M24,15 L20.3,18 L24,20.6 L27.7,18 Z" />
+</vector>
