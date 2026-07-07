@@ -1414,9 +1414,9 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
         runCatching { FloatWindowService.show(ctx, com.ktwo.cts.data.OverlayType.THREAD) }
     }
 
-    // ── 图标缓存(进程名 → Drawable)──
+    // ── 图标 / 应用名缓存(进程名 → Drawable / 应用显示名)──
     private val iconCache = HashMap<String, Drawable?>()
-    private val userAppCache = HashMap<String, Boolean>()
+    private val labelCache = HashMap<String, String?>()   // 进程 → 应用显示名; null=无对应应用(原生进程)
     // 无对应应用的原生/内核/HAL/框架进程(system_server / surfaceflinger / crtc_commit /
     // vendor.qti.hardware.display.composer-service 等)统一用企鹅(Tux)图标标示。
     private val penguinIcon: Drawable? by lazy {
@@ -1435,12 +1435,21 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
         return iconCache[name] ?: penguinIcon   // 取不到应用图标 = 系统/原生进程 → 企鹅
     }
 
-    private fun isUserApp(name: String): Boolean = userAppCache.getOrPut(name) {
-        runCatching {
-            val ai = ctx.packageManager.getApplicationInfo(pkgOf(name), 0)
-            (ai.flags and ApplicationInfo.FLAG_SYSTEM) == 0
-        }.getOrDefault(false)
+    // 应用显示名(对齐 Met: com.tencent.mm → 微信, com.android.systemui → 系统界面);
+    // 无对应已安装应用(原生/内核进程)返回 null。系统应用也算"有应用"。
+    private fun labelFor(name: String): String? {
+        if (!labelCache.containsKey(name)) {
+            if (labelCache.size > 256) labelCache.clear()
+            labelCache[name] = runCatching {
+                val pm = ctx.packageManager
+                pm.getApplicationLabel(pm.getApplicationInfo(pkgOf(name), 0)).toString()
+            }.getOrNull()
+        }
+        return labelCache[name]
     }
+
+    // "应用"筛选 = 该进程能映射到一个已安装应用(系统应用/用户应用都算), 与 Met 一致。
+    private fun hasApp(name: String): Boolean = labelFor(name) != null
 
     override fun onTick(t: TickData) {
         val ps = t.procs ?: return   // null=本拍未采, 保持上次
@@ -1469,8 +1478,11 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
 
     private fun render() {
         val all = lastProcs
-        // 全部 = 系统进程+应用都显示(系统/原生进程用企鹅图标); 应用 = 仅用户应用
-        val ps = if (appsOnly) all.orEmpty().filter { isUserApp(it.name) } else all.orEmpty()
+        // 全部 = 系统/原生进程(企鹅) + 应用都显示; 应用 = 有对应已安装应用的进程(含系统应用, 如 系统界面/蓝牙/相册),
+        // 且按包名去重(同一 App 多进程只留占用最高的一条, 列表已按 CPU 降序 → distinctBy 保留首条)
+        val ps = if (appsOnly)
+            all.orEmpty().filter { hasApp(it.name) }.distinctBy { pkgOf(it.name) }
+        else all.orEmpty()
         val empty = ps.isEmpty()
         emptyView.visibility = if (empty) View.VISIBLE else View.GONE
         listScroll?.visibility = if (empty) View.GONE else View.VISIBLE
@@ -1482,7 +1494,8 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
             } else {
                 l.box.visibility = View.VISIBLE
                 l.icon.setImageDrawable(runCatching { iconFor(p.name) }.getOrNull())
-                l.name.text = p.name
+                // 有应用 → 显示应用名(微信/系统界面…); 原生进程 → 显示进程名
+                l.name.text = labelFor(p.name) ?: p.name
                 l.pct.text = String.format(Locale.US, "%.1f%%", p.cpuPct)
             }
         }
