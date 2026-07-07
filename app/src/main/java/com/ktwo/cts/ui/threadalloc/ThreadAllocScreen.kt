@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Lock
@@ -52,6 +53,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ThreadAllocScreen(
     onBack: () -> Unit,
+    onOpenRules: () -> Unit = {},
     proUnlocked: Boolean = true,
     onNeedPro: () -> Unit = {},
     onOpenManual: () -> Unit = {},
@@ -300,6 +302,37 @@ fun ThreadAllocScreen(
                         checked = gameWeight && proUnlocked,
                         proUnlocked = proUnlocked, onNeedPro = onNeedPro,
                     ) { v -> scope.launch { ThreadAllocCfg.setGameWeight(ctx, v) } }
+                }
+            }
+
+            // ── 线程规则管理(AppOpt 式 per-app 规则) ──
+            SectionTitle("线程规则")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { if (!proUnlocked) onNeedPro() else onOpenRules() }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.ListAlt, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("线程规则管理", fontWeight = FontWeight.Medium)
+                        Text(
+                            "按应用配置「线程名→绑核」规则(AppOpt 式), 支持预设/导入导出 · 需要 Root",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
