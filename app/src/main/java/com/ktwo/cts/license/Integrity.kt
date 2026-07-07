@@ -2,7 +2,6 @@ package com.ktwo.cts.license
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.util.Log
 import com.ktwo.cts.BuildConfig
 import java.security.MessageDigest
 
@@ -34,12 +33,10 @@ object Integrity {
     fun verify(context: Context): Boolean {
         val pin = BuildConfig.SIGNING_CERT_SHA256.trim().lowercase()
         if (pin.isEmpty()) {
-            Log.w("CTS", "未配置签名指纹(ctsCertSha256),跳过重签名检测")
-            return true
+            return true   // 未配置指纹则放行(静默, 不写系统日志)
         }
         val actual = currentSignatureSha256(context)
         if (actual == null) {
-            Log.w("CTS", "读取签名证书失败")
             return false
         }
         val kotlinOk = constantTimeEquals(actual, pin)

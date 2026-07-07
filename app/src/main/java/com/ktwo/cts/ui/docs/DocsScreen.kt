@@ -34,7 +34,7 @@ private val CHAPTERS = listOf(
         "快速开始",
         listOf(
             Para(
-                "kin 是一款面向 Root 设备的性能监控与调度工具: 上层是这颗 App, " +
+                "OnePlus V Pro 是一款面向 Root 设备的性能监控与调度工具: 上层是这颗 App, " +
                     "负责实时监控、悬浮窗、帧率记录、进程与内存管理等; 底层配套 Kin 调度模块, " +
                     "以 Magisk / KernelSU 模块方式刷入, 负责常驻后台的调度与守护工作。"
             ),
@@ -111,7 +111,7 @@ private val CHAPTERS = listOf(
                 listOf(
                     "在帧率记录页选择要录制的应用并开始录制。",
                     "切到目标应用正常游玩 / 使用一段时间。",
-                    "回到 kin 结束录制, 在列表中点开会话查看报告与曲线。",
+                    "回到 OnePlus V Pro 结束录制, 在列表中点开会话查看报告与曲线。",
                 )
             ),
             SubHead("线程负载(需 Root)"),
@@ -242,8 +242,8 @@ private val CHAPTERS = listOf(
             ),
             SubHead("悬浮窗不显示"),
             Para(
-                "请检查系统设置中是否已授予 kin「显示在其他应用上层」权限; " +
-                    "部分 ROM 还需在电池优化中允许 kin 后台运行。"
+                "请检查系统设置中是否已授予 OnePlus V Pro「显示在其他应用上层」权限; " +
+                    "部分 ROM 还需在电池优化中允许 OnePlus V Pro 后台运行。"
             ),
             SubHead("线程分配没有效果"),
             Bullets(

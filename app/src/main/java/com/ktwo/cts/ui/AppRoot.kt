@@ -263,7 +263,7 @@ fun AppRoot() {
                         onDismissRequest = {
                             scope.launch { Prefs.setDocsSeen(ctx, true) }
                         },
-                        title = { Text("欢迎使用 kin") },
+                        title = { Text("欢迎使用 OnePlus V Pro") },
                         text = {
                             Text(
                                 "首次使用建议先阅读使用文档, 了解各功能的作用与所需权限。" +

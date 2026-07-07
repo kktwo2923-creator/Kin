@@ -177,7 +177,7 @@ private fun LicenseScreen(onActivated: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(48.dp))
-            Text("kin", style = MaterialTheme.typography.headlineSmall)
+            Text("OnePlus V Pro", style = MaterialTheme.typography.headlineSmall)
             Text(
                 "授权激活",
                 style = MaterialTheme.typography.titleMedium,
@@ -237,19 +237,6 @@ private fun LicenseScreen(onActivated: () -> Unit) {
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(18.dp))
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Text(
-                    "⚠️ 服务器在境外,购买与激活需要联网。若提示连不上,请先开启加速器/梯子;" +
-                        "激活成功后即可关闭——日常使用完全离线,无需联网。",
-                    Modifier.padding(14.dp),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
             Spacer(Modifier.height(24.dp))
         }
     }

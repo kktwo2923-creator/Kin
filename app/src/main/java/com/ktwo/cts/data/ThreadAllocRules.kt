@@ -140,7 +140,7 @@ object ThreadAllocRules {
         labelOf: (String) -> String? = { null },
     ): String {
         val sb = StringBuilder()
-        sb.append("# kin 线程分配规则 (兼容 AppOpt applist.conf 语法)\n")
+        sb.append("# OnePlus V Pro 线程分配规则 (兼容 AppOpt applist.conf 语法)\n")
         sb.append("# 格式: 包名{线程名通配}=核范围 | 包名=核范围(默认兜底)\n")
         rules.forEach { (pkg, list) ->
             if (list.isEmpty()) return@forEach

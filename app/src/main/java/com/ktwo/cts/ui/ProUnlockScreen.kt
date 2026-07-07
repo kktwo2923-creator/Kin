@@ -1,4 +1,4 @@
-// 付费解锁页(仿 MetricPro):介绍解锁的额外功能 + 收款码 + 卡密/订单号输入 + 激活。
+// 付费解锁页(仿 MetricPro):介绍解锁的额外功能 + 在线支付 + 卡密/订单号输入 + 激活。
 // 解锁范围:智能模式 + 智能设置里的「系统优化」。真值来源 License.state()==VALID。
 package com.ktwo.cts.ui
 
@@ -195,38 +195,6 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                 }
             }
 
-            // ── 收款码(一张图含 左微信 · 右支付宝 两个收款码) ──
-            SectionTitle("扫码支持")
-            TonalCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        "微信 / 支付宝 收款码（左微信 · 右支付宝）",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Image(
-                        painter = painterResource(R.drawable.qr_pay),
-                        contentDescription = "微信支付宝收款码",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 260.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                    )
-                    Text(
-                        "扫码随喜付款后, 把付款「订单号」填到下面点激活即可自动解锁;\n" +
-                            "或联系作者拿到卡密后, 用卡密激活。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-
             // ── 在线支付(支付宝/微信, 下单跳收银台, 付款后自动到账激活) ──
             SectionTitle("在线支付")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
@@ -246,11 +214,6 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                             modifier = Modifier.weight(1f),
                         ) { Text("微信支付") }
                     }
-                    Text(
-                        "⚠️ 服务器在境外, 下单/到账需联网(开加速器/梯子)。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
 
@@ -270,7 +233,7 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                     OutlinedTextField(
                         value = orderNo,
                         onValueChange = { orderNo = it.trim() },
-                        label = { Text("付款订单号(扫码付了填这里)") },
+                        label = { Text("付款订单号(付了没自动到账时填这里)") },
                         placeholder = { Text("支付宝/微信账单里的订单号") },
                         singleLine = true,
                         enabled = !busy,
@@ -294,11 +257,6 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    Text(
-                        "⚠️ 服务器在境外, 激活需联网(开加速器/梯子)。激活成功后日常使用完全离线。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
 

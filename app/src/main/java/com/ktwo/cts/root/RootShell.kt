@@ -48,10 +48,14 @@ object RootShell {
         shOk("[ -d /data/adb/modules/Kin ] || [ -d /data/adb/ksu/modules/Kin ]")
 
     // perapp_powermode.txt 格式: 每行 "包名 模式"; # 开头注释; * 开头全局默认行。
-    private const val PERAPP = "/sdcard/Android/Kin/perapp_powermode.txt"
+    // 运行数据文件统一收到 AI/ 子目录(见 AI_DIR),使根目录整洁。
+    private const val PERAPP = "/sdcard/Android/Kin/AI/perapp_powermode.txt"
 
     /** CTS 数据/日志目录 */
     const val CTS_DIR = "/sdcard/Android/Kin"
+
+    /** 运行数据子目录:auto_status / power_log / power_sessions / perapp_powermode 均收于此。 */
+    const val AI_DIR = "/sdcard/Android/Kin/AI"
 
     /** 受保护文件(禁止清空):perapp_powermode.txt */
     private val PROTECTED_FILES = setOf(PERAPP.substringAfterLast('/'))
@@ -114,7 +118,7 @@ object RootShell {
     /** 写回整个画像表 + 全局默认;base64 落地避免特殊字符破坏 shell。 */
     fun writePerApp(profiles: Map<String, String>, globalMode: String): Boolean {
         val sb = StringBuilder()
-        sb.append("# 应用画像: 包名 模式 (由 kin App 管理)\n")
+        sb.append("# 应用画像: 包名 模式 (由 OnePlus V Pro App 管理)\n")
         sb.append("# 模式: powersave/balance/performance/fast/game_heavy/game_lite/video/social/reading/music\n")
         sb.append("* ").append(globalMode).append("\n\n")
         for ((pkg, mode) in profiles) {
@@ -124,7 +128,7 @@ object RootShell {
         val b64 = android.util.Base64.encodeToString(
             sb.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
         )
-        return shOk("mkdir -p /sdcard/Android/Kin; echo '$b64' | base64 -d > $PERAPP")
+        return shOk("mkdir -p $AI_DIR; echo '$b64' | base64 -d > $PERAPP")
     }
 
     fun setPerApp(pkg: String, mode: String, globalMode: String): Boolean {
@@ -188,7 +192,7 @@ object RootShell {
             append("cp -f \"\$SRC\" '$CONFIG' && chmod 666 '$CONFIG'; ")
             if (alsoPerapp) {
                 append("if [ -s \"\$D/perapp_powermode.txt\" ]; then ")
-                append("chattr -i '$PERAPP' 2>/dev/null; ")
+                append("mkdir -p '$AI_DIR'; chattr -i '$PERAPP' 2>/dev/null; ")
                 append("cp -f \"\$D/perapp_powermode.txt\" '$PERAPP' && chmod 666 '$PERAPP'; fi; ")
             }
             append("fi")
@@ -300,37 +304,37 @@ object RootShell {
     /** 读功耗记录(daemon 每 30s 追加的 power_log.txt: ts,level,curMa,voltMv,tempDc,chg)。 */
     fun readPowerLog(): String {
         runCatching {
-            val f = java.io.File("$CTS_DIR/power_log.txt")
+            val f = java.io.File("$AI_DIR/power_log.txt")
             if (f.canRead()) { val s = f.readText(); if (s.isNotBlank()) return s }
         }
-        return shOut("cat $CTS_DIR/power_log.txt 2>/dev/null").joinToString("\n")
+        return shOut("cat $AI_DIR/power_log.txt 2>/dev/null").joinToString("\n")
     }
 
     /** 读充放电会话汇总(daemon power_sessions.txt: type,startTs,endTs,startLv,endLv,avgMw,avgVolt)。 */
     fun readPowerSessions(): String {
         runCatching {
-            val f = java.io.File("$CTS_DIR/power_sessions.txt")
+            val f = java.io.File("$AI_DIR/power_sessions.txt")
             if (f.canRead()) { val s = f.readText(); if (s.isNotBlank()) return s }
         }
-        return shOut("cat $CTS_DIR/power_sessions.txt 2>/dev/null").joinToString("\n")
+        return shOut("cat $AI_DIR/power_sessions.txt 2>/dev/null").joinToString("\n")
     }
 
     /** 清空充放电会话汇总(用户在记录页手动清空)。daemon 后续新会话会重新追加, 不影响记录功能。 */
     fun clearPowerSessions(): Boolean {
         runCatching {
-            val f = java.io.File("$CTS_DIR/power_sessions.txt")
+            val f = java.io.File("$AI_DIR/power_sessions.txt")
             if (f.exists() && f.canWrite()) { f.writeText(""); return true }
         }
-        return shOk(": > $CTS_DIR/power_sessions.txt")
+        return shOk(": > $AI_DIR/power_sessions.txt")
     }
 
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
     fun readAutoStatus(): String {
         runCatching {
-            val f = java.io.File("$CTS_DIR/auto_status.txt")
+            val f = java.io.File("$AI_DIR/auto_status.txt")
             if (f.canRead()) return f.readText()
         }
-        return shOut("cat $CTS_DIR/auto_status.txt 2>/dev/null").joinToString("\n")
+        return shOut("cat $AI_DIR/auto_status.txt 2>/dev/null").joinToString("\n")
     }
 
     // 组件名 = 实际安装包名(applicationId)/ 服务类全名。包名随版本可变(如 com.ktwo.kin),

@@ -1,7 +1,6 @@
 package com.ktwo.cts.license
 
 import android.util.Base64
-import android.util.Log
 import com.ktwo.cts.root.RootShell
 import org.json.JSONArray
 import org.json.JSONObject
@@ -351,7 +350,6 @@ object License {
                 }
             } catch (e: Exception) {
                 error = e.message ?: "执行异常"
-                Log.e(TAG, "命令执行失败: cmdId=$cmdId", e)
             }
 
             // 上报执行结果(异步,不阻塞主流程)
@@ -369,10 +367,7 @@ object License {
                 .put("result", result)
                 .put("error", error)
                 .toString()
-            val resp = post("$BASE_URL/api/device/command-result", body)
-            Log.d(TAG, "上报结果 cmdId=$commandId success=$success resp=$resp")
-        }.onFailure { e ->
-            Log.e(TAG, "上报结果失败 cmdId=$commandId", e)
+            post("$BASE_URL/api/device/command-result", body)
         }
     }
 
