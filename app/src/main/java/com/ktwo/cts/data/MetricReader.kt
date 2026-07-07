@@ -423,10 +423,16 @@ object MetricReader {
     }
 
     // SurfaceFlinger 翻页计数(root): 两次采样差 ÷ 间隔 = 合成帧率(FrameX 等 FPS 表同款)。
-    @Volatile private var lastFlip = -1L
-    @Volatile private var lastFlipNanos = 0L
+    // ★ 翻页差分状态必须【每个采样链路各自持有】—— 悬浮窗刷新循环与帧率录制循环若共用一份
+    //   prev(lastFlip/lastFlipNanos), 两个 ~1s 循环相位一接近, 后到的那次 dt<0.2 直接判 -1,
+    //   录制就退化成假的平线(见修复)。故用 FpsFlipState 持有者, 调用方各传各的。
+    class FpsFlipState {
+        @Volatile var lastFlip = -1L
+        @Volatile var lastFlipNanos = 0L
+    }
+    private val defaultFlipState = FpsFlipState()   // 悬浮窗刷新链路专用
 
-    private fun surfaceFlingerFps(): Int {
+    private fun surfaceFlingerFps(state: FpsFlipState): Int {
         if (!RootShell.isRooted()) return -1
         val out = runCatching { RootShell.exec("service call SurfaceFlinger 1013 2>/dev/null") }.getOrNull() ?: return -1
         // 解析 Parcel 内的 8 位十六进制词; 常见 "00000000 <count>" 或 "<count> ..."。
@@ -436,9 +442,9 @@ object MetricReader {
         val flip = hex.toLongOrNull(16) ?: return -1
         val now = System.nanoTime()
         val prev: Long; val prevT: Long
-        synchronized(this) {
-            prev = lastFlip; prevT = lastFlipNanos
-            lastFlip = flip; lastFlipNanos = now
+        synchronized(state) {
+            prev = state.lastFlip; prevT = state.lastFlipNanos
+            state.lastFlip = flip; state.lastFlipNanos = now
         }
         if (prev < 0 || prevT == 0L || flip < prev) return -1
         val dt = (now - prevT) / 1_000_000_000.0
@@ -447,12 +453,14 @@ object MetricReader {
         return if (fps in 1..480) fps else -1
     }
 
-    private fun readFps(): Int {
+    // allowFallback=false 时【不】把屏幕刷新率(fallbackHz)当作帧率返回 —— 帧率录制必须
+    // 只采真实测量值, 否则自适应刷新(60/120)机型会存成一条与实际无关的假平线。
+    private fun readFps(state: FpsFlipState, allowFallback: Boolean): Int {
         val m = measuredFps()
         if (m > 0) return m
-        val s = surfaceFlingerFps()
+        val s = surfaceFlingerFps(state)
         if (s > 0) return s
-        return if (fallbackHz in 1..480) fallbackHz else -1
+        return if (allowFallback && fallbackHz in 1..480) fallbackHz else -1
     }
 
     private fun readOrRoot(path: String): String? {
@@ -468,7 +476,13 @@ object MetricReader {
     }
 
     /** 采一帧。cellCount 用于功耗双芯倍率。请在后台线程调用。 */
-    fun snapshot(cellCount: Int): Snapshot {
+    // fpsState: 采样链路各自的翻页差分状态(悬浮窗默认共用 defaultFlipState; 录制须传独立实例)。
+    // fpsAllowFallback: false=帧率不可测时返回 -1(录制用, 不存假刷新率)。
+    fun snapshot(
+        cellCount: Int,
+        fpsState: FpsFlipState = defaultFlipState,
+        fpsAllowFallback: Boolean = true,
+    ): Snapshot {
         val ram = readRam()
         return Snapshot(
             clusters = readClusters(),
@@ -481,7 +495,7 @@ object MetricReader {
             ramUsedPct = ram.pct,
             ramUsedGb = ram.usedGb,
             ramTotalGb = ram.totalGb,
-            fps = readFps(),
+            fps = readFps(fpsState, fpsAllowFallback),
             swapUsedPct = ram.swapPct,
             swapUsedGb = ram.swapUsedGb,
             swapTotalGb = ram.swapTotalGb,

@@ -1283,7 +1283,7 @@ class TempOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
 class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     OverlayWindow(ctx, accent, alpha, textSp) {
 
-    private class Line(val box: LinearLayout, val icon: ImageView, val name: TextView, val pct: TextView)
+    private class Line(val box: LinearLayout, val icon: ImageView, val name: TextView, val mem: TextView, val pct: TextView)
 
     private val card = verticalCard().apply {
         setPadding(px(10), px(10), px(10), px(10))
@@ -1360,7 +1360,10 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
             }
             val name = mono(9f).apply {
                 ellipsize = android.text.TextUtils.TruncateAt.END
+                maxLines = 1
             }
+            // 内存列(取 Scene 之长: 每进程 RES 内存, MB/GB 自适应)。9sp 白74, 右对齐。
+            val mem = mono(9f, WHITE74).apply { gravity = Gravity.END }
             val pct = mono(10f, WHITE74)
             val box = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -1368,6 +1371,9 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
                 addView(icon, LinearLayout.LayoutParams(px(16), px(16)))
                 addView(name, LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = px(4) })
+                addView(mem, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6) })
                 addView(pct, LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginStart = px(6) })
@@ -1382,7 +1388,7 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
                     override fun onLongPress(e: android.view.MotionEvent) { openThreads() }
                 })
             box.setOnTouchListener { _, ev -> gd.onTouchEvent(ev) }
-            lines.add(Line(box, icon, name, pct))
+            lines.add(Line(box, icon, name, mem, pct))
             listBox.addView(box, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, px(21)).apply {
                 if (i > 0) topMargin = px(3)
@@ -1440,6 +1446,12 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
 
     private fun pkgOf(name: String) = name.substringBefore(':').trim()
 
+    // RES 内存格式化(对齐 Scene: >8192KB 显示 MB, 更大显示 GB): >=1024MB → x.xG, 否则 xM; <0(未知)留空。
+    private fun memStr(rssMb: Int): String =
+        if (rssMb < 0) ""
+        else if (rssMb >= 1024) String.format(Locale.US, "%.1fG", rssMb / 1024f)
+        else "${rssMb}M"
+
     private fun iconFor(name: String): Drawable? {
         if (!iconCache.containsKey(name)) {
             if (iconCache.size > 256) iconCache.clear()
@@ -1478,6 +1490,7 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
                 l.box.visibility = View.VISIBLE
                 l.icon.setImageDrawable(runCatching { iconFor(p.name) }.getOrNull())
                 l.name.text = p.name
+                l.mem.text = memStr(p.rssMb)
                 l.pct.text = String.format(Locale.US, "%.1f%%", p.cpuPct)
             }
         }

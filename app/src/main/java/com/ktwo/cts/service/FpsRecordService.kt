@@ -46,6 +46,8 @@ class FpsRecordService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loopJob: Job? = null
     private val stopReasonReq = AtomicReference<String?>(null)
+    // 开始请求序号(单飞): 每次 beginRecording 自增, join 后仅当仍是最新序号才真正重启
+    private val startEpoch = java.util.concurrent.atomic.AtomicInteger(0)
     // 录制时长限制(秒, 0=不限): 由启动方(帧率悬浮窗时长片)传入, 服务内自守
     @Volatile private var limitSec = 0
     // 重启待处理: 旧循环收尾时若为 true, finishAndStop 只保存不停服务(等重启协程接管)
@@ -81,6 +83,7 @@ class FpsRecordService : Service() {
     }
 
     private fun beginRecording(targetPkg: String?) {
+        val myEpoch = startEpoch.incrementAndGet()   // 本次开始请求的序号(单飞: 仅最新请求真正重启)
         val old = loopJob
         if (old?.isActive == true) {
             // 旧循环还在收尾(最长 1s): 请求其停止, 等 join 后重启, 不再吞掉本次开始请求。
@@ -90,7 +93,9 @@ class FpsRecordService : Service() {
             stopReasonReq.compareAndSet(null, "手动停止")
             scope.launch {
                 runCatching { old.join() }
-                beginRecording(targetPkg)
+                // 若期间又来了更新的开始请求(epoch 变大), 本协程作废, 交给最新那个重启 →
+                // 避免多个 join 协程叠加, 互相把对方刚起的录制又停掉(乒乓)。
+                if (startEpoch.get() == myEpoch) beginRecording(targetPkg)
             }
             return
         }
@@ -127,6 +132,12 @@ class FpsRecordService : Service() {
             val points = ArrayList<FpsPoint>()
             val startMs = System.currentTimeMillis()
             var reason: String? = null
+            // 先建立线程负载基线: ThreadSampler 首次调用只建基线、不产差分, 若等到循环里才第一次采,
+            // 短录制(3~5s)会拿不到线程数据。此处提前解析 pid 并采一次基线, 使首个偶数刻即有真实差分。
+            runCatching {
+                threadPid = ThreadSampler.resolvePid(locked)
+                if (threadPid > 0) threadSampler.sampleOnce(threadPid)
+            }
             while (isActive) {
                 reason = stopReasonReq.get()
                 if (reason != null) break
@@ -142,15 +153,17 @@ class FpsRecordService : Service() {
                         if (threadPid > 0) threadSampler.sampleOnce(threadPid)
                     }
                 }
+                // 已录时长按【真实墙钟】计, 不再假设"1 点=1 秒"(慢刻会让每点跨 >1s)
+                val elapsedSec = (((tick - startMs) / 1000L).toInt()).coerceAtLeast(0)
                 _state.value = RecState(
                     active = true, recording = true, pkg = locked, appName = appName,
-                    fps = p.fps, elapsedSec = points.size,
+                    fps = p.fps, elapsedSec = elapsedSec,
                 )
-                notify("录制中 · $appName", "${if (p.fps > 0) p.fps else 0}fps · ${points.size}s")
+                notify("录制中 · $appName", "${if (p.fps > 0) p.fps else 0}fps · ${elapsedSec}s")
                 if (points.size >= MAX_POINTS) { reason = "达到时长上限"; break }
-                // 用户设定的限时(时长片): 到点自动停 —— 与悬浮窗是否还开着无关
+                // 用户设定的限时(时长片): 按真实墙钟到点自动停 —— 与悬浮窗是否还开着无关
                 val lim = limitSec
-                if (lim > 0 && points.size >= lim) { reason = "到达设定时长"; break }
+                if (lim > 0 && elapsedSec >= lim) { reason = "到达设定时长"; break }
                 // 扣掉本次采样耗时, 尽量保持 1 秒一个点
                 val spent = System.currentTimeMillis() - tick
                 delay((1000L - spent).coerceIn(200L, 1000L))

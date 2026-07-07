@@ -75,10 +75,13 @@ object ProcSampler {
         return procFallback(limit)
     }
 
-    fun topThreads(limit: Int = 8): List<Thr> {
+    // pid>0: 只采【该前台进程】的线程(与线程窗表头 'PID x' 一致, 不再混入其它进程的线程);
+    //        pid<=0(前台 pid 未解析出): 回退系统级 top -H。
+    fun topThreads(limit: Int = 8, pid: Int = -1): List<Thr> {
         if (!RootShell.isRooted()) return emptyList()
+        val pidArg = if (pid > 0) "-p $pid " else ""
         val out = runCatching {
-            RootShell.exec("top -b -H -n 1 -o TID,%CPU,S,CMDLINE -s 2 2>/dev/null | head -n 40")
+            RootShell.exec("top -b -H ${pidArg}-n 1 -o TID,%CPU,S,CMDLINE -s 2 2>/dev/null | head -n 40")
         }.getOrDefault("")
         val rows = ArrayList<Thr>()
         out.lineSequence().forEach { line ->

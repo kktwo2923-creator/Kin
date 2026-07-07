@@ -16,6 +16,10 @@ class FpsSampler {
 
     data class FrameStat(val frameMaxMs: Int, val jank: Int, val bigJank: Int)
 
+    // 帧率录制【专属】的 SurfaceFlinger 翻页差分状态(与悬浮窗刷新链路隔离, 避免互相把
+    // prev 覆盖成 dt<0.2 → -1 → 假平线)。仅本采样器持有。
+    private val fpsFlipState = MetricReader.FpsFlipState()
+
     // ── SurfaceFlinger layer 解析缓存 ──
     private var layerPkg = ""            // layerName 对应的包名(换应用后重新解析)
     private var layerName: String? = null
@@ -25,7 +29,10 @@ class FpsSampler {
 
     /** 采一个秒级点。所有子读取各自 runCatching, 永不抛出。 */
     fun sample(cellCount: Int, pkg: String): FpsPoint {
-        val snap = runCatching { MetricReader.snapshot(cellCount) }.getOrNull()
+        // 用录制专属 flip 状态 + 禁用 fallback(帧率不可测时存 -1, 不存假刷新率)
+        val snap = runCatching {
+            MetricReader.snapshot(cellCount, fpsFlipState, fpsAllowFallback = false)
+        }.getOrNull()
         val fs = runCatching { frameStats(pkg) }.getOrDefault(FrameStat(0, 0, 0))
         return FpsPoint(
             t = System.currentTimeMillis(),
