@@ -111,9 +111,10 @@ object SysfsReader {
     fun computeWatt(cellCount: Int): Double {
         val i = rawCurrent() ?: return 0.0
         val v = rawVoltage() ?: return 0.0
+        // 保留电流符号(Met #PWR 带号: 充电为负、放电为正), 不再取绝对值
         val absI = abs(i)
         val absV = abs(v)
-        val currentMa = if (absI > 100_000) absI / 1000.0 else absI.toDouble()
+        val currentMa = if (absI > 100_000) i / 1000.0 else i.toDouble()   // 保号
         val voltageMv = if (absV > 100_000) absV / 1000.0 else absV.toDouble()
         val packMultiplier = if (cellCount >= 2 && voltageMv < 6000.0) 2.0 else 1.0
         return currentMa * voltageMv / 1_000_000.0 * packMultiplier

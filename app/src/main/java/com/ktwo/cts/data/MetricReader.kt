@@ -43,6 +43,7 @@ object MetricReader {
         val ddrMhz: Int = -1,          // DDR/内存总线当前频率 MHz(-1 未知)
         val ddrTempC: Double = -999.0, // DDR 温度 ℃(-999 未知)
         val gpuTempC: Double = -999.0, // GPU 温度 ℃(-999 未知)
+        val cpuTempC: Double = -999.0, // CPU 温度 ℃(专读 cpu 热区, 非全局最高; -999 未知)
     )
 
     // ── CPU 占用率: /proc/stat 差分 ──
@@ -218,11 +219,16 @@ object MetricReader {
                     .lines().map { it.trim() }.filter { it.isNotEmpty() }
             }.getOrDefault(emptyList()) else emptyList()
         }
-        // 优先级: 名字含 ddr > mtk dvfsrc(DDR 档位) > 高通 bimc(内存总线)
-        for (hint in listOf("ddr", "dvfsrc", "bimc")) {
+        // 优先级: ddr > mtk dvfsrc(DDR 档位) > 高通 bimc/llcc/cpu-llcc > 通用 memlat/mincpubw
+        for (hint in listOf("ddr", "dvfsrc", "bimc", "llcc", "memlat", "mincpubw", "cpubw", "gpubw")) {
             val hit = names.firstOrNull { it.lowercase().contains(hint) } ?: continue
             val p = "/sys/class/devfreq/$hit/cur_freq"
             if (readOrRoot(p) != null) { ddrPath = p; return p }
+        }
+        // 仍没命中: 取第一个能读到 cur_freq 的 devfreq 节点兜底
+        for (nm in names) {
+            val p = "/sys/class/devfreq/$nm/cur_freq"
+            if (readOrRoot(p)?.toLongOrNull() != null) { ddrPath = p; return p }
         }
         return null
     }
@@ -299,6 +305,15 @@ object MetricReader {
             if (THERMAL_HINTS.any { type.contains(it) }) out.add("/sys/class/thermal/$z/temp")
         }
         return out
+    }
+
+    // CPU 温度: 只取 type 含 "cpu" 的热区最高(对齐 Met #CPU 显示的 CPU 簇温度, 非全局热点最高温)
+    private fun readCpuTempC(): Double {
+        var c = readNamedTempC("cpu")
+        // 个别 ROM 的 CPU 热区叫 apc/cluster, 兜底再取一次
+        if (c <= -100) c = readNamedTempC("cluster")
+        if (c <= -100) c = readNamedTempC("apc")
+        return c
     }
 
     private fun readMaxTemp(): Int {
@@ -477,6 +492,8 @@ object MetricReader {
             ddrMhz = runCatching { readDdrMhz() }.getOrDefault(-1),
             ddrTempC = runCatching { readNamedTempC("ddr") }.getOrDefault(-999.0),
             gpuTempC = runCatching { readNamedTempC("gpu") }.getOrDefault(-999.0),
+            // CPU 温度专读 cpu 热区(而非全局最高): Met #CPU 显示的是 CPU 簇温度(~49℃), 不是热点最高温
+            cpuTempC = runCatching { readCpuTempC() }.getOrDefault(-999.0),
         )
     }
 }

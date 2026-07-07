@@ -164,12 +164,8 @@ abstract class OverlayWindow(
             setOnClickListener { runCatching { onClick() } }
         }
 
-    /** Metric 频率格式(qb2.i): ≤0 → "-- MHz"; ≥1000 → "x.yGHz"; 其余 → "nMHz"。 */
-    protected fun fmtMhz(mhz: Int): String = when {
-        mhz <= 0 -> "-- MHz"
-        mhz >= 1000 -> String.format(Locale.US, "%.1fGHz", mhz / 1000f)
-        else -> "${mhz}MHz"
-    }
+    /** 频率格式(对照 Met 截图: 环下/簇头都是 "1900MHz" 裸 MHz, 不转 GHz)。 */
+    protected fun fmtMhz(mhz: Int): String = if (mhz <= 0) "-- MHz" else "${mhz}MHz"
 }
 
 /**
@@ -546,8 +542,8 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         })
         val ddr = s?.ddrMhz ?: -1
         rows.add("DDR" to if (ddr > 0) "$ddr" else "--")
-        val tc = s?.tempC ?: -999
-        rows.add("#CPU" to if (tc > 0) String.format(Locale.US, "%.0f℃", tc.toFloat()) else "--℃")
+        val tc = s?.cpuTempC ?: -999.0
+        rows.add("#CPU" to if (tc > 0) String.format(Locale.US, "%.0f℃", tc) else "--℃")
 
         val loads = s?.coreLoadPct.orEmpty()
         val freqs = s?.coreMhz.orEmpty()
@@ -578,20 +574,24 @@ class LoadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         }
     }
 
-    // Metric 每核行: 有IPC → "CPU4 | 1055M IPC0.92"; 无IPC → "CPU4 | 55%"
+    // Met 截图每核行 = 负载% + 每核有效频率M + IPC(如 "59% 1078M IPC0.81");
+    // 有效频率取 perf 计数器算的 cycles/秒(同簇也各核不同), 取不到退 scaling 频率。
     private fun coreRow(cpu: Int, load: Int?, mhz: Int?, ipcOn: Boolean): Pair<String, String> {
-        val label = "CPU$cpu"
-        return if (ipcOn) {
-            val f = if (mhz != null && mhz > 0) "${mhz}M" else "--M"
-            val ipc = com.ktwo.cts.data.PerfIpcSampler.ipcOf(cpu)
-            val ipcStr = if (ipc.isNaN()) "--" else String.format(Locale.US, "%.2f", ipc)
-            label to String.format(Locale.US, "%-5s IPC%s", f, ipcStr)
-        } else {
-            val l = if (load != null && load >= 0) {
-                if (load < 10) " $load%" else "$load%"
-            } else "--"
-            label to l
+        val label = if (load != null && load >= 0) "$load%" else "--"
+        if (!ipcOn) {
+            // 无 perf: 值列显示每核 scaling 频率
+            val f = if (mhz != null && mhz > 0) "${mhz}M" else "--"
+            return label to f
         }
+        val eff = com.ktwo.cts.data.PerfIpcSampler.effMhzOf(cpu)
+        val fStr = when {
+            eff > 0 -> "${eff}M"
+            mhz != null && mhz > 0 -> "${mhz}M"
+            else -> "--M"
+        }
+        val ipc = com.ktwo.cts.data.PerfIpcSampler.ipcOf(cpu)
+        val ipcStr = if (ipc.isNaN()) "--" else String.format(Locale.US, "%.2f", ipc)
+        return label to String.format(Locale.US, "%-5s IPC%s", fStr, ipcStr)
     }
 }
 
@@ -681,10 +681,10 @@ class MiniOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
         if (tick % 9 < 6) {
             val w = s?.watt ?: 0.0
             vPwr.text = if (w != 0.0 && w.isFinite())
-                String.format(Locale.US, "%.2fW", w) else "--W"
+                String.format(Locale.US, "%+.2fW", w) else "--W"   // 带正负号(充电负/放电正)
         } else {
-            val c = s?.tempC ?: -999
-            vPwr.text = if (c > 0) String.format(Locale.US, "%.1f℃", c.toFloat()) else "--℃"
+            val c = s?.cpuTempC ?: -999.0
+            vPwr.text = if (c > 0) String.format(Locale.US, "%.1f℃", c) else "--℃"
         }
     }
 }
@@ -1267,8 +1267,8 @@ class TempOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
 
     override fun onTick(t: TickData) {
         line(tBat, "BAT", t.battTempC)
-        val soc = t.snap?.tempC ?: -999
-        line(tCpu, "CPU", if (soc > -100) soc.toDouble() else -999.0)
+        val soc = t.snap?.cpuTempC ?: -999.0
+        line(tCpu, "CPU", soc)
         line(tGpu, "GPU", t.snap?.gpuTempC ?: -999.0)
         line(tDdr, "DDR", t.snap?.ddrTempC ?: -999.0)
     }
@@ -1563,16 +1563,12 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
             LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(5) })
         visibility = View.GONE
     }
-    // Scene 式多线程 CPU 趋势图(取长补短: Met 给精确表格, Scene 给随时间的趋势折线)
-    private val trend = ThreadTrendView(ctx, accent)
     override val root: View = card
     init {
         card.addView(header, LinearLayout.LayoutParams(
             px(176), LinearLayout.LayoutParams.WRAP_CONTENT))
-        // 表头下方先放 Scene 式趋势图(顶部 5 个高占用线程的 CPU% 随时间彩色折线)
-        card.addView(trend, LinearLayout.LayoutParams(px(176), px(40)).apply { topMargin = px(5) })
         card.addView(headRow.box, LinearLayout.LayoutParams(
-            px(176), LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(4) })
+            px(176), LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = px(5) })
         repeat(24) {
             val r = makeRow(WHITE74)
             rows.add(r)
@@ -1602,12 +1598,7 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
         emptyBox.visibility = if (empty) View.VISIBLE else View.GONE
         listScroll?.visibility = if (empty) View.GONE else View.VISIBLE
         headRow.box.visibility = if (empty) View.GONE else View.VISIBLE
-        trend.visibility = if (empty) View.GONE else View.VISIBLE
         if (empty) return
-        // 喂 Scene 式趋势图: 取前 5 高占用线程(tid→cpu%)
-        runCatching {
-            trend.push(ts.take(5).map { it.tid to it.cpuPct })
-        }
         rows.forEachIndexed { i, r ->
             val th = ts.getOrNull(i)
             if (th == null) { r.box.visibility = View.GONE } else {
@@ -1618,88 +1609,6 @@ class ThreadOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) 
                 r.c[2].text = "${th.tid}"
                 r.c[3].text = th.name.ifEmpty { "-" }
             }
-        }
-    }
-}
-
-/**
- * Scene 式多线程 CPU 趋势图(取自 Scene ThreadCPUView 观感):
- * 最近 ~60 拍窗口, 顶部若干线程各一条彩色折线(y=cpu%, x=时间), 端点圆点; 深色玻璃底融进卡片。
- * 只按 tid 跟踪历史, 线程消失即淡出(不再喂即清空该 tid)。
- */
-class ThreadTrendView(ctx: Context, private val accent: Int) : View(ctx) {
-    private val dp = ctx.resources.displayMetrics.density
-    private val cap = 60
-    // tid → 最近 cpu% 序列
-    private val hist = LinkedHashMap<Int, ArrayDeque<Float>>()
-    // 线程配色(Scene 多线程多色): 主色 + 一组区分色
-    private val palette = intArrayOf(
-        accent,
-        Color.parseColor("#8DEB9A"), Color.parseColor("#8FB9FF"),
-        Color.parseColor("#FFD166"), Color.parseColor("#FF8EA1"),
-    )
-    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(40, 255, 255, 255) }
-    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
-        strokeWidth = 1.2f * dp
-    }
-    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val path = Path()
-    private val bgRect = RectF()
-    // 本拍出现的 tid → 颜色槽位(保持颜色稳定)
-    private val colorSlot = HashMap<Int, Int>()
-
-    /** 喂入本拍的 (tid, cpu%) 前若干线程。 */
-    fun push(items: List<Pair<Int, Float>>) {
-        val live = HashSet<Int>()
-        items.forEachIndexed { idx, (tid, cpu) ->
-            live.add(tid)
-            colorSlot.getOrPut(tid) { colorSlot.size % palette.size }
-            val dq = hist.getOrPut(tid) { ArrayDeque() }
-            if (dq.size >= cap) dq.removeFirst()
-            dq.addLast(cpu.coerceIn(0f, 100f))
-        }
-        // 不在本拍的 tid: 补 0 一拍后清理(线程退场淡出)
-        val it = hist.iterator()
-        while (it.hasNext()) {
-            val e = it.next()
-            if (e.key !in live) {
-                val dq = e.value
-                if (dq.isEmpty() || dq.last() == 0f) { it.remove(); colorSlot.remove(e.key) }
-                else { if (dq.size >= cap) dq.removeFirst(); dq.addLast(0f) }
-            }
-        }
-        invalidate()
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        val w = width.toFloat(); val h = height.toFloat()
-        bgRect.set(0f, 0f, w, h)
-        canvas.drawRoundRect(bgRect, 8 * dp, 8 * dp, bgPaint)
-        if (hist.isEmpty()) return
-        val vPad = 3f * dp
-        val chartH = h - vPad * 2
-        // y 量程: 所有线程近期峰值(至少 20%), 让低占用也看得见起伏
-        val peak = hist.values.flatten().maxOrNull() ?: 0f
-        val top = maxOf(peak, 20f)
-        for ((tid, dq) in hist) {
-            if (dq.size < 2) continue
-            val color = palette[colorSlot[tid] ?: 0]
-            val stepX = w / (cap - 1)
-            val start = cap - dq.size
-            path.reset()
-            var lastX = 0f; var lastY = 0f
-            dq.forEachIndexed { i, v ->
-                val x = (start + i) * stepX
-                val y = h - vPad - (v / top).coerceIn(0f, 1f) * chartH
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                lastX = x; lastY = y
-            }
-            linePaint.color = color
-            canvas.drawPath(path, linePaint)
-            // 端点圆点(Scene 同款)
-            dotPaint.color = color
-            canvas.drawCircle(lastX, lastY, 1.6f * dp, dotPaint)
         }
     }
 }

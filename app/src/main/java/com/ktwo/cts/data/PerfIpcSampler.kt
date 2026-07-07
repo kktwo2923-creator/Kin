@@ -16,6 +16,8 @@ import com.topjohnwu.superuser.Shell
 object PerfIpcSampler {
 
     @Volatile private var ipc: DoubleArray = DoubleArray(0)
+    // 每核有效频率 MHz(= 本区间 cpu-cycles / 秒 / 1e6): Met 每核行显示的就是它(同簇也各核不同)
+    @Volatile private var effMhz: IntArray = IntArray(0)
     private var running = false          // guarded by this
     private var gen = 0                  // 代际号: stop/重启使旧会话作废(guarded by this)
     @Volatile private var wanted = false
@@ -27,6 +29,9 @@ object PerfIpcSampler {
 
     /** 核号 → 最近一秒 IPC; 未知(未采到/不支持)返回 NaN。 */
     fun ipcOf(core: Int): Double = if (core in ipc.indices) ipc[core] else Double.NaN
+
+    /** 核号 → 最近一秒有效频率 MHz(cpu-cycles/秒); 未知返回 -1。 */
+    fun effMhzOf(core: Int): Int = if (core in effMhz.indices) effMhz[core] else -1
 
     /** 开始采样(幂等)。必须在后台线程调用(libsu 根 shell 初始化不能在主线程)。 */
     fun start() {
@@ -60,6 +65,7 @@ object PerfIpcSampler {
             running = false    // 立即可重启; 旧回调按代际号自弃
         }
         ipc = DoubleArray(0)
+        effMhz = IntArray(0)
         runCatching { sh?.close() }   // 关掉专用会话, simpleperf 随会话终止
         // 精确杀本会话 pid(而非 pkill 按名), 绝不误伤紧接着 start 新起的 simpleperf
         if (pid > 0) runCatching { RootShell.execSilent("kill $pid 2>/dev/null") }
@@ -85,22 +91,30 @@ object PerfIpcSampler {
                 }
             }
             val arr = DoubleArray(maxCpu + 1) { Double.NaN }
+            val eff = IntArray(maxCpu + 1) { -1 }
             for (c in 0..maxCpu) {
                 val cy = cycles[c] ?: 0L
                 val ins = instrs[c] ?: 0L
                 if (cy <= 0 || ins <= 0) continue
+                // 本区间(1 秒)的 cycles: raw 模式即当前值, 差分模式取增量
+                val cycPerSec: Long
                 if (rawMode) {
                     arr[c] = ins.toDouble() / cy.toDouble()
+                    cycPerSec = cy
                 } else {
                     val pc = prevCyc[c]; val pi = prevIns[c]
                     if (pc != null && pi != null && cy > pc && ins > pi) {
                         arr[c] = (ins - pi).toDouble() / (cy - pc).toDouble()
-                    }   // 首块无基线 → 保持 NaN, 下一块起有值
+                        cycPerSec = cy - pc
+                    } else cycPerSec = 0L   // 首块无基线
                 }
+                // 有效频率 MHz = cycles/秒 / 1e6(--interval 1000 → 每块约 1 秒)
+                if (cycPerSec > 0) eff[c] = (cycPerSec / 1_000_000.0).toInt()
             }
             prevCyc.putAll(cycles)
             prevIns.putAll(instrs)
             ipc = arr
+            effMhz = eff
             cycles.clear(); instrs.clear()
         }
 
@@ -168,6 +182,7 @@ object PerfIpcSampler {
                     } else {
                         running = false
                         ipc = DoubleArray(0)
+                        effMhz = IntArray(0)
                         return@submit
                     }
                 }
