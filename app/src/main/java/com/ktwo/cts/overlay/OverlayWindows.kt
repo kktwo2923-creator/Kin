@@ -1288,44 +1288,15 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
     private val card = verticalCard().apply {
         setPadding(px(10), px(10), px(10), px(10))
     }
-    private val tHead = mono(11f).apply { text = "进程" }
-    private var appsOnly = false
+    // 进程窗只显示读取来源【高通 Vendor HAL + Android Framework 层】进程, 不做筛选切换。
+    private val tHead = mono(11f).apply { text = "进程 · HAL + 框架" }
     private var lastProcs: List<ProcSampler.Proc>? = null
-
-    // ── 分段滑块筛选(Metric pc1.l): 72×24 轨道 + 34×20 白18 高亮块 180ms 平移 ──
-    private fun tab(label: String, onClick: () -> Unit) = mono(8f, GREY, bold = false).apply {
-        text = label
-        gravity = Gravity.CENTER
-        setOnClickListener { onClick() }
-    }
-    private val tabAll = tab("全部") { setMode(false) }
-    private val tabApp = tab("应用") { setMode(true) }
-    private val indicator = View(ctx).apply {
-        background = GradientDrawable().apply {
-            cornerRadius = px(10).toFloat()
-            setColor(Color.argb(46, 255, 255, 255))   // Metric 高亮块 白@0.18
-        }
-    }
-    private val segTrack = FrameLayout(ctx).apply {
-        background = GradientDrawable().apply {
-            cornerRadius = px(12).toFloat()
-            setColor(Color.argb(26, 255, 255, 255))   // 轨道底 白@0.10
-        }
-        setPadding(px(2), px(2), px(2), px(2))
-        addView(indicator, FrameLayout.LayoutParams(px(34), px(20)))
-        addView(LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(tabAll, LinearLayout.LayoutParams(px(34), px(20)))
-            addView(tabApp, LinearLayout.LayoutParams(px(34), px(20)))
-        })
-    }
 
     private val header = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         addView(tHead, LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        addView(segTrack, LinearLayout.LayoutParams(px(72), px(24)))
         addView(circleBtn("✕", 10f) { onCloseRequest?.invoke() },
             LinearLayout.LayoutParams(px(24), px(24)).apply { marginStart = px(4) })
     }
@@ -1344,7 +1315,6 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
     override val root: View = card
 
     init {
-        styleTabs()
         card.addView(header, LinearLayout.LayoutParams(
             px(168), LinearLayout.LayoutParams.WRAP_CONTENT))
         // Metric pc1.n: 行高 21 / 图标 16(圆角6裁剪) / 名称 9sp 粗 weight1 / CPU% 10sp 白74 / 行距 3
@@ -1402,24 +1372,6 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
             px(168), LinearLayout.LayoutParams.WRAP_CONTENT))
     }
 
-    private fun styleTabs() {
-        tabAll.setTextColor(if (!appsOnly) WHITE92 else GREY)
-        tabAll.typeface = Typeface.create(Typeface.MONOSPACE,
-            if (!appsOnly) Typeface.BOLD else Typeface.NORMAL)
-        tabApp.setTextColor(if (appsOnly) WHITE92 else GREY)
-        tabApp.typeface = Typeface.create(Typeface.MONOSPACE,
-            if (appsOnly) Typeface.BOLD else Typeface.NORMAL)
-    }
-
-    private fun setMode(only: Boolean) {
-        if (appsOnly == only) return
-        appsOnly = only
-        // Metric ProcessFilterTransition: 高亮块 180ms 平移
-        indicator.animate().translationX(if (only) px(34).toFloat() else 0f)
-            .setDuration(180).setInterpolator(metricEase()).start()
-        styleTabs()
-        runCatching { render() }
-    }
 
     // 双击结束进程(root am force-stop) + 提示(Metric process_overlay_kill_requested)
     private fun killRow(i: Int) {
@@ -1437,9 +1389,8 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
         runCatching { FloatWindowService.show(ctx, com.ktwo.cts.data.OverlayType.THREAD) }
     }
 
-    // ── 图标/应用判定缓存(进程名 → Drawable / 是否用户应用)──
+    // ── 图标缓存(进程名 → Drawable)──
     private val iconCache = HashMap<String, Drawable?>()
-    private val userAppCache = HashMap<String, Boolean>()
     private val defaultIcon: Drawable? by lazy {
         runCatching { ctx.getDrawable(android.R.drawable.sym_def_app_icon) }.getOrNull()
     }
@@ -1462,13 +1413,6 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
         return iconCache[name] ?: defaultIcon
     }
 
-    private fun isUserApp(name: String): Boolean = userAppCache.getOrPut(name) {
-        runCatching {
-            val ai = ctx.packageManager.getApplicationInfo(pkgOf(name), 0)
-            (ai.flags and ApplicationInfo.FLAG_SYSTEM) == 0
-        }.getOrDefault(false)
-    }
-
     override fun onTick(t: TickData) {
         val ps = t.procs ?: return   // null=本拍未采, 保持上次
         lastProcs = ps
@@ -1476,8 +1420,8 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
     }
 
     private fun render() {
-        val all = lastProcs
-        val ps = if (appsOnly) all.orEmpty().filter { isUserApp(it.name) } else all.orEmpty()
+        // 数据层已只返回 HAL/框架进程, 这里直接全部展示(不再筛选)
+        val ps = lastProcs.orEmpty()
         val empty = ps.isEmpty()
         emptyView.visibility = if (empty) View.VISIBLE else View.GONE
         listScroll?.visibility = if (empty) View.GONE else View.VISIBLE
@@ -1489,7 +1433,8 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
             } else {
                 l.box.visibility = View.VISIBLE
                 l.icon.setImageDrawable(runCatching { iconFor(p.name) }.getOrNull())
-                l.name.text = p.name
+                // 名称前标注来源类别(HAL/框架), 让"读取来源"一目了然
+                l.name.text = if (p.cat.isEmpty()) p.name else "${p.cat}·${p.name}"
                 l.mem.text = memStr(p.rssMb)
                 l.pct.text = String.format(Locale.US, "%.1f%%", p.cpuPct)
             }

@@ -10,7 +10,23 @@ import com.ktwo.cts.root.RootShell
  */
 object ProcSampler {
 
-    data class Proc(val pid: Int, val name: String, val cpuPct: Float, val rssMb: Int)
+    // cat: 进程来源分类 —— "HAL"(高通 Vendor HAL) / "框架"(Android Framework 层) / ""(其它, 不展示)。
+    data class Proc(val pid: Int, val name: String, val cpuPct: Float, val rssMb: Int, val cat: String = "")
+
+    /** 进程来源分类(依可执行文件路径 + 进程名); 返回 null = 非 HAL/框架, 不纳入进程窗。 */
+    fun classifyProc(name: String, exe: String): String? {
+        val n = name.trim()
+        return when {
+            exe.startsWith("/vendor/") || exe.startsWith("/odm/") -> "HAL"           // 高通 Vendor HAL(/vendor,/odm)
+            n.startsWith("vendor.") || n.contains(".hardware.") ||
+                n.startsWith("android.hardware.")                 -> "HAL"           // HAL 服务命名(部分在 /apex,/system/bin/hw)
+            n == "system_server" || n == "surfaceflinger" ||
+                n == "servicemanager" || n == "hwservicemanager"  -> "框架"          // Framework 核心/原生服务(按名, 无 exe 时也可判)
+            exe.startsWith("/system/") && exe.contains("/bin/") &&
+                !exe.contains("app_process")                      -> "框架"          // 其它系统原生服务
+            else -> null
+        }
+    }
 
     // affinity/core 带默认值("", -1), 老调用处零改动:
     //  - affinity: /proc/[tid]/status 的 Cpus_allowed_list(如 "0-7"), 取不到为 ""
@@ -53,26 +69,48 @@ object ProcSampler {
         }
     }
 
-    fun topProcesses(limit: Int = 8): List<Proc> {
+    // 进程窗数据来源【高通 Vendor HAL + Android Framework 层】: 取 CPU 前若干进程 → 按可执行路径
+    // 分类 → 只留 HAL/框架 → 按 CPU% 排序取前 N。用户应用等其它进程不纳入。
+    private class Cand(val pid: Int, val cpu: Float, val rss: Int, val name: String)
+
+    fun topProcesses(limit: Int = 30): List<Proc> {
         if (!RootShell.isRooted()) return emptyList()
+        val cands = ArrayList<Cand>()
         if (topUsable) {
+            // 不再只取前 40: HAL/框架进程多为低占用, 取 CPU 前 150 覆盖活跃的系统/厂商进程
             val out = runCatching {
-                RootShell.exec("top -b -n 1 -o PID,%CPU,RES,CMDLINE -s 2 2>/dev/null | head -n 40")
+                RootShell.exec("top -b -n 1 -o PID,%CPU,RES,CMDLINE 2>/dev/null | head -n 150")
             }.getOrDefault("")
-            val rows = ArrayList<Proc>()
             out.lineSequence().forEach { line ->
                 val parts = line.trim().split(Regex("\\s+"), limit = 4)
                 if (parts.size < 4) return@forEach
                 val pid = parts[0].toIntOrNull() ?: return@forEach
                 val cpu = parts[1].toFloatOrNull() ?: return@forEach
-                rows.add(Proc(pid, baseName(parts[3]), cpu, resToMb(parts[2])))
+                cands.add(Cand(pid, cpu, resToMb(parts[2]), baseName(parts[3])))
             }
-            if (rows.size >= 3) {
-                return rows.sortedByDescending { it.cpuPct }.take(limit)
-            }
-            topUsable = false   // top 输出不可用, 转 /proc 回退
+            if (cands.size < 3) { topUsable = false }
         }
-        return procFallback(limit)
+        if (cands.isEmpty()) return procFallback(limit)   // top 不可用 → /proc 回退(名匹配分类)
+        // 批量读 /proc/<pid>/exe 分类(root; hidepid 下线程/exe 仍可寻址)
+        val exePath = HashMap<Int, String>()
+        runCatching {
+            val cmd = StringBuilder()
+            for (c in cands) cmd.append("echo \"@${c.pid} \$(readlink /proc/${c.pid}/exe 2>/dev/null)\"; ")
+            val exeOut = RootShell.exec(cmd.toString())
+            for (raw in exeOut.lineSequence()) {
+                if (!raw.startsWith("@")) continue
+                val body = raw.removePrefix("@").trim()
+                val sp = body.indexOf(' ')
+                val pid = (if (sp > 0) body.substring(0, sp) else body).toIntOrNull() ?: continue
+                exePath[pid] = if (sp > 0) body.substring(sp + 1).trim() else ""
+            }
+        }
+        val result = ArrayList<Proc>()
+        for (c in cands) {
+            val cat = classifyProc(c.name, exePath[c.pid] ?: "") ?: continue
+            result.add(Proc(c.pid, c.name, c.cpu, c.rss, cat))
+        }
+        return result.sortedByDescending { it.cpuPct }.take(limit)
     }
 
     // 线程监视(对齐 Met 的单进程线程表): 锁定【前台 App 自身进程】(pid 由无障碍拿到前台包名后
@@ -191,7 +229,8 @@ object ProcSampler {
                 val dj = (r.j - prev).toDouble()
                 if (dj <= 0) continue
                 val pct = (dj / dTotal * 100.0 * ncpu).toFloat().coerceIn(0f, 100f * ncpu)
-                if (pct > 0.1f) result.add(Proc(r.pid, r.name, pct, -1))
+                val cat = classifyProc(r.name, "") ?: continue   // 仅留 HAL/框架(回退无 exe, 按名匹配)
+                if (pct > 0.1f) result.add(Proc(r.pid, r.name, pct, -1, cat))
             }
         }
         lastProcJiffies.clear()
