@@ -114,7 +114,7 @@ object RootShell {
     /** 写回整个画像表 + 全局默认;base64 落地避免特殊字符破坏 shell。 */
     fun writePerApp(profiles: Map<String, String>, globalMode: String): Boolean {
         val sb = StringBuilder()
-        sb.append("# 应用画像: 包名 模式 (由 OnePlus V Pro App 管理)\n")
+        sb.append("# 应用画像: 包名 模式 (由 kin App 管理)\n")
         sb.append("# 模式: powersave/balance/performance/fast/game_heavy/game_lite/video/social/reading/music\n")
         sb.append("* ").append(globalMode).append("\n\n")
         for ((pkg, mode) in profiles) {

@@ -189,7 +189,7 @@ class ScheduleService : Service() {
         )
         return NotificationCompat.Builder(this, CH_ID)
             .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle("OnePlus V Pro 调度")
+            .setContentTitle("${getString(R.string.app_name)} 调度")
             .setContentText(text)
             .setContentIntent(pi)
             .setOngoing(true)
