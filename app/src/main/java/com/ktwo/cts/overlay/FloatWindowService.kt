@@ -90,8 +90,9 @@ class FloatWindowService : Service() {
     private fun px(v: Int) = (v * dp).toInt()
 
     private fun factory(type: OverlayType): OverlayWindow {
-        // Metric 玻璃 tint = surface@0.55(固定, 无用户不透明度概念), 由内容视图绘制
-        val ga = (0.55f * 255).toInt()
+        // 液态玻璃 tint alpha: 比 Met 的 0.55 再透一点(0.46), 让跨窗模糊更明显透出玻璃质感;
+        // 系统无跨窗模糊能力时会略偏透(可读性仍够), 有模糊时玻璃感更强。
+        val ga = (0.46f * 255).toInt()
         val win = when (type) {
             OverlayType.LOAD    -> LoadOverlayWindow(this, type.accent.toInt(), ga, textSp)
             OverlayType.PROCESS -> ProcessOverlayWindow(this, type.accent.toInt(), ga, textSp)

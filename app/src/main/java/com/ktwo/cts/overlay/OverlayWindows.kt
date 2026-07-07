@@ -85,11 +85,42 @@ abstract class OverlayWindow(
     /** FPS 窗展开态(服务钳制窗口位置时选 40×26 或 268×230)。其他窗恒 false。 */
     open val isExpandedWindow: Boolean get() = false
 
-    // Metric 深色玻璃卡 tint: surface@0.55(#1B1D22), 无描边; 模糊轮廓由窗背景负责
-    protected fun cardBg(cornerDp: Int = 18) = GradientDrawable().apply {
-        cornerRadius = px(cornerDp).toFloat()
-        setColor(Color.argb(alpha, 27, 29, 34))
+    // ── 液态玻璃底(Liquid Glass): 跟随系统的半透明中性表面 + 顶部高光渐变 + 亮边 ──
+    // Met 悬浮窗玻璃 = 跨窗口背景模糊(窗层 setBackgroundBlurRadius) 叠半透明动态表面色;
+    // 关键是底色要够透(让模糊透出来)且用中性灰而非近黑, 再加一圈亮边高光模拟玻璃棱。
+    // 注: AGSL 折射玻璃只能采样 App 自身画面, 无法透视悬浮窗下方的别的应用, 故这里用模糊玻璃。
+    protected fun glassBaseColor(): Int = runCatching {
+        // Material You 动态中性表面(暗色档, 比写死近黑更接近 Met 的玻璃灰)
+        if (android.os.Build.VERSION.SDK_INT >= 31)
+            ctx.getColor(android.R.color.system_neutral1_800)
+        else Color.rgb(0x26, 0x2A, 0x30)
+    }.getOrDefault(Color.rgb(0x26, 0x2A, 0x30))
+
+    private fun lighten(c: Int, f: Float): Int {
+        val r = (Color.red(c) + (255 - Color.red(c)) * f).toInt().coerceIn(0, 255)
+        val g = (Color.green(c) + (255 - Color.green(c)) * f).toInt().coerceIn(0, 255)
+        val b = (Color.blue(c) + (255 - Color.blue(c)) * f).toInt().coerceIn(0, 255)
+        return Color.rgb(r, g, b)
     }
+    protected fun withAlpha(c: Int, a: Int) = Color.argb(a, Color.red(c), Color.green(c), Color.blue(c))
+
+    /** 液态玻璃背景: 顶部略亮→底部本色的竖向渐变(玻璃厚度感) + 白色亮边(玻璃棱)。 */
+    protected fun glassBg(cornerDp: Int = 18): GradientDrawable {
+        val base = glassBaseColor()
+        // alpha 由服务传入(Met surface@0.55≈140), 顶部高光比底部再透一点、更亮
+        val top = withAlpha(lighten(base, 0.14f), (alpha * 0.92f).toInt().coerceIn(0, 255))
+        val bottom = withAlpha(base, alpha)
+        return GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(top, bottom)
+        ).apply {
+            cornerRadius = px(cornerDp).toFloat()
+            // 液态玻璃亮边: 1px 白@22%(顶亮的玻璃棱, Met 无描边但玻璃观感靠它兜住)
+            setStroke(maxOf(1, pxF(0.8f)), Color.argb(56, 255, 255, 255))
+        }
+    }
+
+    // 兼容旧调用名: 统一走液态玻璃底
+    protected fun cardBg(cornerDp: Int = 18) = glassBg(cornerDp)
 
     protected fun verticalCard(cornerDp: Int = 18): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
@@ -702,7 +733,7 @@ class FpsOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
 
     private val idleTint = Color.argb(0xB7, 0xD2, 0x9A, 0x04)
     private val recTint = Color.argb(0xB7, 0xD3, 0x2F, 0x2F)
-    private val panelTint = Color.argb(alpha, 27, 29, 34)
+    private val panelTint = withAlpha(glassBaseColor(), alpha)   // 液态玻璃面板底
     private val amber = Color.parseColor("#FFA726")
     private val recGreen = Color.argb(0x80, 0x4C, 0xAF, 0x50)
     private val recRed = Color.argb(0x94, 0xD3, 0x2F, 0x2F)
