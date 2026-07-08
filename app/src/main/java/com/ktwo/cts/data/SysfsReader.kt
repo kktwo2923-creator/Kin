@@ -13,6 +13,10 @@ object SysfsReader {
     private const val CPUFREQ = "/sys/devices/system/cpu/cpufreq"
     private const val BATT = "/sys/class/power_supply/battery"
 
+    // Scene 式快路径: 守护经 socket 推来的最新一帧(3s 内)优先用, 一次读取替代多次 root/open;
+    // 无守护/过期时为 null, 下面每个读取自动回退原有 File/root 链路(行为与接入前一致)。
+    private fun daemon(): KinDaemon.Frame? = KinDaemon.fresh()
+
     private fun readFileOrRoot(path: String): String? {
         runCatching {
             val f = File(path)
@@ -56,7 +60,8 @@ object SysfsReader {
     }
 
     fun curFreqKhz(policy: Int): Long =
-        readFileOrRoot("$CPUFREQ/policy$policy/scaling_cur_freq")?.toLongOrNull() ?: -1
+        daemon()?.long("cpu$policy")
+            ?: readFileOrRoot("$CPUFREQ/policy$policy/scaling_cur_freq")?.toLongOrNull() ?: -1
 
     fun curFreqMhz(policy: Int): Int {
         val k = curFreqKhz(policy)
@@ -73,7 +78,8 @@ object SysfsReader {
     }
 
     fun governor(policy: Int): String =
-        readFileOrRoot("$CPUFREQ/policy$policy/scaling_governor") ?: ""
+        daemon()?.str("gov$policy")
+            ?: readFileOrRoot("$CPUFREQ/policy$policy/scaling_governor") ?: ""
 
     /** 可用频率档(kHz 升序);某些 governor 下该节点不存在,则回退 min/max 两端 */
     fun availableFreqsKhz(policy: Int): List<Long> {
@@ -96,10 +102,14 @@ object SysfsReader {
     fun coreOnline(cpu: Int): Boolean =
         readFileOrRoot("/sys/devices/system/cpu/cpu$cpu/online")?.trim() != "0"
 
-    private fun rawCurrent(): Long? = readFileOrRoot("$BATT/current_now")?.toLongOrNull()
-    private fun rawVoltage(): Long? = readFileOrRoot("$BATT/voltage_now")?.toLongOrNull()
-    private fun battStatus(): String = readFileOrRoot("$BATT/status") ?: ""
-    fun battPct(): Int = readFileOrRoot("$BATT/capacity")?.toIntOrNull() ?: -1
+    private fun rawCurrent(): Long? =
+        daemon()?.long("curr") ?: readFileOrRoot("$BATT/current_now")?.toLongOrNull()
+    private fun rawVoltage(): Long? =
+        daemon()?.long("volt") ?: readFileOrRoot("$BATT/voltage_now")?.toLongOrNull()
+    private fun battStatus(): String =
+        daemon()?.str("status") ?: readFileOrRoot("$BATT/status") ?: ""
+    fun battPct(): Int =
+        daemon()?.int("cap") ?: readFileOrRoot("$BATT/capacity")?.toIntOrNull() ?: -1
     fun isCharging(): Boolean = battStatus().equals("Charging", true) || battStatus().equals("Full", true)
 
     /**
@@ -187,15 +197,18 @@ object SysfsReader {
         "/sys/kernel/gpu/gpu_clock",                  // 部分 ROM,MHz
     )
 
+    // 原始频率读数 → MHz(按量级判定单位)。守护快路径与 File 回退共用同一换算, 结果一致。
+    private fun gpuMhzFromRaw(raw: Long): Int = when {
+        raw > 10_000_000 -> (raw / 1_000_000).toInt()   // Hz -> MHz
+        raw > 10_000     -> (raw / 1000).toInt()         // kHz -> MHz(少见)
+        else             -> raw.toInt()                  // 已是 MHz
+    }
+
     fun readGpuMhz(): Int {
+        daemon()?.long("gpumhz")?.let { return gpuMhzFromRaw(it) }
         for (p in GPU_CUR_PATHS) {
             val raw = readFileOrRoot(p)?.toLongOrNull() ?: continue
-            // 按量级判断单位:>10M=Hz, >10K=kHz, 否则已是 MHz
-            return when {
-                raw > 10_000_000 -> (raw / 1_000_000).toInt()   // Hz -> MHz
-                raw > 10_000     -> (raw / 1000).toInt()         // kHz -> MHz(少见)
-                else             -> raw.toInt()                  // 已是 MHz
-            }
+            return gpuMhzFromRaw(raw)
         }
         return -1
     }

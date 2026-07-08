@@ -281,6 +281,8 @@ object MetricReader {
     )
 
     private fun readGpuLoad(): Int {
+        // Scene 式快路径: 守护经 socket 推来的 GPU 占用优先(3s 内), 无守护则回退直读 sysfs。
+        KinDaemon.fresh()?.int("gpuload")?.let { return it.coerceIn(0, 100) }
         for (p in GPU_BUSY_PATHS) {
             val raw = readOrRoot(p) ?: continue
             // "45 %" 或 "45"
