@@ -35,6 +35,7 @@ import com.ktwo.cts.ui.memory.MemoryDetailScreen
 import com.ktwo.cts.ui.process.ProcessScreen
 import com.ktwo.cts.ui.threadalloc.ManualAllocScreen
 import com.ktwo.cts.ui.threadalloc.ThreadRulesScreen
+import com.ktwo.cts.ui.threadalloc.ThreadPriorityScreen
 import com.ktwo.cts.ui.threadalloc.ThreadAllocScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
@@ -65,7 +66,7 @@ private val FULLSCREEN_ROUTES =
     setOf(
         "about", "automode", "pro", "perfmon", "fpsrecord",
         "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
-        "threadalloc_manual", "threadalloc_rules", "memory", "governor", "docs", "coloros",
+        "threadalloc_manual", "threadalloc_rules", "threadalloc_priority", "memory", "governor", "docs", "coloros",
     )
 
 @Composable
@@ -215,10 +216,14 @@ fun AppRoot() {
                             onNeedPro = { nav.navigate("pro") },
                             onOpenManual = { nav.navigate("threadalloc_manual") },
                             onOpenRules = { nav.navigate("threadalloc_rules") },
+                            onOpenPriority = { nav.navigate("threadalloc_priority") },
                         )
                     }
                     composable("threadalloc_rules") {
                         ThreadRulesScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("threadalloc_priority") {
+                        ThreadPriorityScreen(onBack = { nav.popBackStack() })
                     }
                     composable("threadalloc_manual") {
                         ManualAllocScreen(

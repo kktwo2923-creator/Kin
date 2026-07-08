@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SportsEsports
@@ -58,6 +59,7 @@ fun ThreadAllocScreen(
     proUnlocked: Boolean = true,
     onNeedPro: () -> Unit = {},
     onOpenManual: () -> Unit = {},
+    onOpenPriority: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -86,9 +88,11 @@ fun ThreadAllocScreen(
                 ctx,
                 enabled = ThreadAllocCfg.enabled(ctx),
                 gamePkgs = ThreadAllocCfg.gamePkgsFlow(ctx).first(),
+                rtEnabled = ThreadAllocCfg.gameRtFlow(ctx).first(),   // 实时调度开关 → rt_enable
             )
-            // 补推一次当前规则: 用户可能先建好规则、再打开总开关; 确保开关一开守护就拿到最新规则文件。
+            // 补推一次当前规则: 用户可能先建好规则、再打开开关; 确保守护拿到最新规则文件。
             ThreadAllocRuleStore.syncToDaemon(ctx)
+            com.ktwo.cts.data.ThreadPrioRuleStore.syncToDaemon(ctx)
         }
     }
 
@@ -294,10 +298,10 @@ fun ThreadAllocScreen(
                     HorizontalDivider()
                     TaSwitchRow(
                         "实时调度",
-                        "给关键线程更高的调度优先级 · 即将支持",
+                        "给关键线程更高的调度优先级(SCHED_FIFO/RR), 抢占普通线程更不掉帧。下方「实时优先级规则」配置",
                         checked = gameRt && proUnlocked,
                         proUnlocked = proUnlocked, onNeedPro = onNeedPro,
-                    ) { v -> scope.launch { ThreadAllocCfg.setGameRt(ctx, v) } }
+                    ) { v -> scope.launch { ThreadAllocCfg.setGameRt(ctx, v); syncDaemon() } }
                     HorizontalDivider()
                     TaSwitchRow(
                         "权重调整",
@@ -327,6 +331,37 @@ fun ThreadAllocScreen(
                         Text("线程规则管理", fontWeight = FontWeight.Medium)
                         Text(
                             "按应用配置「线程名→绑核」规则(AppOpt 式), 支持预设/导入导出 · 需要 Root",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            // ── 实时优先级规则(SCHED_FIFO/RR) ──
+            SectionTitle("实时优先级")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { if (!proUnlocked) onNeedPro() else onOpenPriority() }
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Bolt, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("实时优先级规则", fontWeight = FontWeight.Medium)
+                        Text(
+                            "按应用配置「线程名→实时调度策略」(SCHED_FIFO/RR), 需先开上方「实时调度」· 需要 Root",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

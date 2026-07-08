@@ -275,6 +275,29 @@ object RootShell {
         return shOut("cat $THREAD_RULES 2>/dev/null").joinToString("\n")
     }
 
+    /** 实时优先级规则文件(AppOpt priority.prop 兼容); 守护读它设 SCHED_FIFO/RR 调度类。 */
+    private const val THREAD_PRIO_RULES = "$CTS_DIR/thread_priority_rules.conf"
+
+    /** 把实时优先级规则文本推给守护(落到 $THREAD_PRIO_RULES); 守护按 mtime/size 变化热重载。 */
+    fun writeThreadPriorityRules(text: String): Boolean {
+        val b64 = android.util.Base64.encodeToString(
+            text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
+        )
+        return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $THREAD_PRIO_RULES; chmod 0644 $THREAD_PRIO_RULES; touch $CTS_DIR")
+    }
+
+    /** 读回守护侧实时优先级规则文件; 不存在返回空串。 */
+    fun readThreadPriorityRules(): String {
+        runCatching {
+            val f = java.io.File(THREAD_PRIO_RULES)
+            if (f.canRead()) {
+                val s = f.readText()
+                if (s.isNotBlank()) return s
+            }
+        }
+        return shOut("cat $THREAD_PRIO_RULES 2>/dev/null").joinToString("\n")
+    }
+
     /** 守护是否在运行：直接查进程(daemon 已不再写 daemon.alive 心跳)。 */
     fun daemonAlive(): Boolean =
         shOut("pidof Kinetic 2>/dev/null").firstOrNull()?.isNotBlank() == true
