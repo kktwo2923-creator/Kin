@@ -1438,11 +1438,13 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
     // 应用显示名(对齐 Met: com.tencent.mm → 微信, com.android.systemui → 系统界面);
     // 无对应已安装应用(原生/内核进程)返回 null。系统应用也算"有应用"。
     private fun labelFor(name: String): String? {
+        val pkg = pkgOf(name)
+        if (!pkg.contains('.')) return null   // 无点号 = 非包名(surfaceflinger/kworker 等原生进程), 免查
         if (!labelCache.containsKey(name)) {
-            if (labelCache.size > 256) labelCache.clear()
+            if (labelCache.size > 512) labelCache.clear()
             labelCache[name] = runCatching {
                 val pm = ctx.packageManager
-                pm.getApplicationLabel(pm.getApplicationInfo(pkgOf(name), 0)).toString()
+                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
             }.getOrNull()
         }
         return labelCache[name]

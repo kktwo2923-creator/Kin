@@ -324,8 +324,8 @@ class FloatWindowService : Service() {
                 activeTypes.any { it == OverlayType.PROCESS || it == OverlayType.THREAD }
             // Metric: 进程窗定高列表 top-30 / 线程窗 96~126dp 滚动列表
             val procs = if (needProc && activeTypes.contains(OverlayType.PROCESS))
-                // 候选取多些(120): 前几十名多是内核/原生进程, 过滤出"应用"后才够全(悬浮窗最终最多显示 48 条)
-                runCatching { ProcSampler.topProcesses(120) }.getOrNull() else null
+                // 候选覆盖全部进程(按应用枚举): 不按 CPU 名次截断, 过滤出"应用"后才不漏(悬浮窗最终最多显示 48 条)
+                runCatching { ProcSampler.topProcesses(400) }.getOrNull() else null
             // 先用无障碍刷新前台 pkg/pid, 再列该前台 App 自身进程(pid 固定)的内部 TID 线程
             if (activeTypes.contains(OverlayType.THREAD)) refreshForeground(tick)
             val thrs = if (needProc && activeTypes.contains(OverlayType.THREAD))
