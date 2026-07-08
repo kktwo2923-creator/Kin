@@ -1331,7 +1331,7 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
     }
 
     private val lines = ArrayList<Line>()
-    private val linePkgs = arrayOfNulls<String>(30)
+    private val linePkgs = arrayOfNulls<String>(48)
     private val listBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     private var listScroll: View? = null
     private val emptyView = mono(9f).apply {
@@ -1348,7 +1348,7 @@ class ProcessOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float)
         card.addView(header, LinearLayout.LayoutParams(
             px(168), LinearLayout.LayoutParams.WRAP_CONTENT))
         // Metric pc1.n: 行高 21 / 图标 16(圆角6裁剪) / 名称 9sp 粗 weight1 / CPU% 10sp 白74 / 行距 3
-        repeat(30) { i ->
+        repeat(48) { i ->
             val icon = ImageView(ctx).apply {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 outlineProvider = object : ViewOutlineProvider() {

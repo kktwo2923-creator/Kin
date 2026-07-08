@@ -55,11 +55,12 @@ object ProcSampler {
 
     // 进程窗: 列出 CPU 占用最高的进程(系统进程 + 应用都在)。系统/内核/HAL 等无对应应用的进程,
     // 在悬浮窗里用企鹅(Tux)图标标示; 应用用各自图标。
-    fun topProcesses(limit: Int = 30): List<Proc> {
+    fun topProcesses(limit: Int = 48): List<Proc> {
         if (!RootShell.isRooted()) return emptyList()
         if (topUsable) {
+            // 覆盖全部进程(不再只取前 40): 否则前 40 名多被系统/原生进程占满, 过滤后应用寥寥, 显示不全
             val out = runCatching {
-                RootShell.exec("top -b -n 1 -o PID,%CPU,RES,CMDLINE -s 2 2>/dev/null | head -n 40")
+                RootShell.exec("top -b -n 1 -o PID,%CPU,RES,CMDLINE -s 2 2>/dev/null | head -n 400")
             }.getOrDefault("")
             val rows = ArrayList<Proc>()
             out.lineSequence().forEach { line ->
