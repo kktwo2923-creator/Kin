@@ -14,7 +14,8 @@ import kotlin.math.roundToInt
  */
 class FpsSampler {
 
-    data class FrameStat(val frameMaxMs: Int, val jank: Int, val bigJank: Int)
+    // fps: 从 SurfaceFlinger 帧时间戳直接算出的帧率(与 Scene/Metric 同源, 帧数÷区间时长); -1=不可用
+    data class FrameStat(val frameMaxMs: Int, val jank: Int, val bigJank: Int, val fps: Int = -1)
 
     // 帧率录制【专属】的 SurfaceFlinger 翻页差分状态(与悬浮窗刷新链路隔离, 避免互相把
     // prev 覆盖成 dt<0.2 → -1 → 假平线)。仅本采样器持有。
@@ -34,9 +35,11 @@ class FpsSampler {
             MetricReader.snapshot(cellCount, fpsFlipState, fpsAllowFallback = false)
         }.getOrNull()
         val fs = runCatching { frameStats(pkg) }.getOrDefault(FrameStat(0, 0, 0))
+        // FPS 优先用【与帧时间/卡顿同源】的 SurfaceFlinger 帧时间戳算法(Scene/Metric 同款);
+        // 该秒帧数不足时才回退到 MetricReader 的翻页/测量链路。
         return FpsPoint(
             t = System.currentTimeMillis(),
-            fps = snap?.fps ?: -1,
+            fps = if (fs.fps > 0) fs.fps else (snap?.fps ?: -1),
             cpuLoad = snap?.cpuLoadPct ?: -1,
             gpuLoad = snap?.gpuLoadPct ?: -1,
             gpuMhz = snap?.gpuMhz ?: -1,
@@ -100,6 +103,8 @@ class FpsSampler {
         var maxMs = 0.0
         var jank = 0
         var big = 0
+        var frameCount = 0     // 本区间真实呈现的帧数
+        var sumMs = 0.0        // 这些帧的间隔时长合计(ms)——排除空闲间隙
         for (p in presents) {
             if (p <= prev) continue
             val ms = (p - prev) / 1_000_000.0
@@ -108,6 +113,8 @@ class FpsSampler {
                 recentFrameMs.clear()
                 continue
             }
+            frameCount++
+            sumMs += ms
             if (ms > maxMs) maxMs = ms
             // 卡顿判定(行业等效标准, 原创实现): 单帧 > 前若干帧均值×2 且超过绝对阈值。
             // >125ms 记 bigJank, 否则 >83ms 记 jank(两者互斥计数, 合计即总卡顿)。
@@ -118,7 +125,10 @@ class FpsSampler {
             recentFrameMs.addLast(ms)
             while (recentFrameMs.size > 3) recentFrameMs.removeFirst()
         }
-        return FrameStat(maxMs.roundToInt(), jank, big)
+        // FPS = 帧数 ÷ 这些帧的总时长(秒) —— 与 Scene/Metric 一样从真实帧时间戳算, 与刷新率无关。
+        // 帧数太少(<2)时该秒判定不可靠, 返回 -1 交由上层回退。
+        val fps = if (frameCount >= 2 && sumMs > 0.0) (frameCount * 1000.0 / sumMs).roundToInt() else -1
+        return FrameStat(maxMs.roundToInt(), jank, big, if (fps in 1..480) fps else -1)
     }
 
     companion object {
