@@ -83,6 +83,11 @@ private fun DetailContent(
     modifier: Modifier = Modifier,
 ) {
     val pts = s.points
+    // Scene 式总览统计: 从有效帧率点算 方差 与 ≥45FPS 流畅度
+    val fpsVals = pts.mapNotNull { it.fps.takeIf { f -> f > 0 } }
+    val fpsMean = if (fpsVals.isNotEmpty()) fpsVals.average() else 0.0
+    val variance = if (fpsVals.size >= 2) fpsVals.sumOf { (it - fpsMean) * (it - fpsMean) } / fpsVals.size else -1.0
+    val smoothPct = if (fpsVals.isNotEmpty()) fpsVals.count { it >= 45 } * 100.0 / fpsVals.size else -1.0
     LazyColumn(
         modifier,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -110,24 +115,36 @@ private fun DetailContent(
                     InfoLine("开始时间", fmtFullDate(s.startMs))
                     InfoLine("时长", fmtDurationText(s.durationMs))
                     InfoLine("停止原因", s.stopReason.ifEmpty { "--" })
-                    InfoLine("备注", "--")
                 }
             }
         }
 
-        // ── 1) FPS ──
+        // ── FPS 总览(Scene chart_fps_overview): MAX / MIN / AVG / 方差 大数字磁贴 ──
+        item {
+            OverviewCard(listOf(
+                StatTileData("MAX", fmtInt(s.maxFps), "FPS"),
+                StatTileData("MIN", fmtInt(s.minFps), "FPS"),
+                StatTileData("AVG", if (s.avgFps > 0) "%.1f".format(s.avgFps) else "--", "FPS"),
+                StatTileData("方差", if (variance >= 0) "%.1f".format(variance) else "--", "越小越稳"),
+            ))
+        }
+
+        // ── 流畅度(Scene chart_other_overview): ≥45FPS 流畅度 / 1% Low / 5% Low ──
+        item {
+            OverviewCard(listOf(
+                StatTileData("≥45FPS", if (smoothPct >= 0) "%.0f%%".format(smoothPct) else "--", "流畅度"),
+                StatTileData("1% Low", fmtInt(s.low1Fps), "FPS"),
+                StatTileData("5% Low", fmtInt(s.low5Fps), "FPS"),
+            ))
+        }
+
+        // ── FPS 曲线(统计已上移到总览磁贴, 这里只放大曲线)──
         item {
             val values = pts.map { it.fps.coerceAtLeast(0).toFloat() }
             ChartCard(
-                title = "FPS",
+                title = "FPS 曲线",
                 color = MaterialTheme.colorScheme.primary,
-                stats = listOf(
-                    "MAX" to fmtInt(s.maxFps),
-                    "MIN" to fmtInt(s.minFps),
-                    "AVG" to if (s.avgFps > 0) "%.1f".format(s.avgFps) else "--",
-                    "1% Low" to fmtInt(s.low1Fps),
-                    "5% Low" to fmtInt(s.low5Fps),
-                ),
+                stats = emptyList(),
                 values = values,
                 minY = 0f,
                 footer = "JANK ${s.jankTotal} · BIG JANK ${s.bigJankTotal}" +
@@ -334,6 +351,45 @@ private fun ChartCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+private data class StatTileData(val label: String, val value: String, val sub: String)
+
+/** Scene 式总览磁贴卡: 一行等宽磁贴, 每个 = 小标题 + 大数字(强调色) + 小副标题。 */
+@Composable
+private fun OverviewCard(tiles: List<StatTileData>) {
+    TonalCard(modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 16.dp)) {
+            tiles.forEach { t ->
+                Column(
+                    Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        t.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        t.value,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        t.sub,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
