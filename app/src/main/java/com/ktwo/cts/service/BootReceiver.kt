@@ -13,6 +13,8 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 restoreUserConfig(ctx)   // 数据恢复与自启开关无关, 始终执行
+                // 开机把当前付费状态同步给守护(App 是付费权威, 守护据此知道是否已付费)
+                if (RootShell.isRooted()) com.ktwo.cts.license.License.pushEntitlementToDaemon()
                 // 重新断言无障碍授权: 部分 ROM 重启会掉 sideload 应用的无障碍, root 写回 secure settings
                 if (Prefs.a11yWanted(ctx) && RootShell.isRooted()) RootShell.setAccessibility(true)
                 // 刷新率手动锁定重应用(ColorOS 重启会复位刷新率档位)。OEM 显示服务在 BOOT_COMPLETED

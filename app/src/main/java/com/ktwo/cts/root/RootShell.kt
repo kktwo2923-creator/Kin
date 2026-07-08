@@ -298,6 +298,26 @@ object RootShell {
         return shOut("cat $THREAD_PRIO_RULES 2>/dev/null").joinToString("\n")
     }
 
+    /** App→守护 授权信号文件。App 是付费权威, 守护读它知道是否已付费(不再自行验签 license.json)。 */
+    private const val DAEMON_AUTH = "$AI_DIR/auth.json"
+
+    /**
+     * 把当前付费状态下发给守护(写 auth.json)。App 依据自身 Pro/卡密状态调用。
+     * 守护【只信任该信号且无条件运行】—— 未付费也不会把用户锁死。
+     * base64 落地避免特殊字符破坏 shell; 无 root/写失败静默返回 false。
+     */
+    fun writeDaemonAuth(paid: Boolean, plan: String = "", expiresAt: String = ""): Boolean {
+        val json = org.json.JSONObject()
+            .put("paid", paid)
+            .put("plan", plan)
+            .put("expires_at", expiresAt)
+            .toString()
+        val b64 = android.util.Base64.encodeToString(
+            json.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
+        )
+        return shOk("mkdir -p $AI_DIR; echo '$b64' | base64 -d > $DAEMON_AUTH; chmod 0644 $DAEMON_AUTH; touch $CTS_DIR")
+    }
+
     /** 守护是否在运行：直接查进程(daemon 已不再写 daemon.alive 心跳)。 */
     fun daemonAlive(): Boolean =
         shOut("pidof Kinetic 2>/dev/null").firstOrNull()?.isNotBlank() == true

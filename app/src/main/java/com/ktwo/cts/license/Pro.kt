@@ -27,7 +27,10 @@ object Pro {
      * 就持久保留 —— 为爱发电模式下不因缺令牌/离线把已解锁用户又锁回去。
      */
     suspend fun sync(context: Context) {
-        val unlocked = withContext(Dispatchers.IO) { isUnlockedNow() }
+        val unlocked = withContext(Dispatchers.IO) {
+            License.pushEntitlementToDaemon()   // 顺带把当前付费状态同步给守护(App 是付费权威)
+            isUnlockedNow()
+        }
         if (unlocked) Prefs.setProUnlocked(context, true)
     }
 

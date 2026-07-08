@@ -381,9 +381,27 @@ object License {
 
     private fun writeLicense(json: String): Boolean {
         val b64 = Base64.encodeToString(json.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        return RootShell.execSilent(
+        val ok = RootShell.execSilent(
             "mkdir -p ${RootShell.CTS_DIR}; echo '$b64' | base64 -d > $LICENSE_FILE; chmod 644 $LICENSE_FILE"
         )
+        // 授权文件每次变更(激活/续签/吊销)都把付费状态同步给守护 —— App 是付费权威,
+        // 守护据此「知道」是否已付费, 不再自行读/验签 license.json。
+        if (ok) pushEntitlementToDaemon()
+        return ok
+    }
+
+    /**
+     * 把当前付费状态下发给守护(写 auth.json)。App 是付费权威, 守护只信任该信号且无条件运行。
+     * 付费真值 = 本机授权令牌有效(state()==VALID)。务必在 IO 线程调用。
+     */
+    fun pushEntitlementToDaemon() {
+        runCatching {
+            val paid = state() == State.VALID
+            val o = runCatching { JSONObject(readLicenseRaw()) }.getOrNull()
+            val plan = o?.optString("product_name", "").orEmpty()
+            val exp = o?.optString("expires_at", "").orEmpty()
+            RootShell.writeDaemonAuth(paid, plan, exp)
+        }
     }
 
     private fun nowIso(): String {
