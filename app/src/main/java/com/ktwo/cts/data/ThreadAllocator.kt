@@ -63,6 +63,9 @@ object ThreadAllocator {
             ?: RootShell.exec("pgrep -f '^$pkg' 2>/dev/null | head -1").trim().toIntOrNull()
     }.getOrNull()
 
+    /** 公开入口: 找包名主进程 pid(供「自动识别」读取其实时线程)。未运行/无 root 返回 null。 */
+    fun pidOf(pkg: String): Int? = findPid(pkg)
+
     /**
      * 对 pkg 的渲染类线程执行绑核(taskset -p <hex掩码> <tid>), 返回成功处理的线程数。
      * 匹配不到渲染线程时, 退回只绑主线程。任何一步失败都静默降级, 最终返回 0。

@@ -338,6 +338,54 @@ object ThreadAllocRules {
             listOf(TaRule("", cpusToSpec(p.small)))
         },
     )
+
+    /** 按 id 取预设(找不到返回 null)。 */
+    fun presetById(id: String): TaPreset? = presets().firstOrNull { it.id == id }
+
+    // ── 自动分配(参考 JZzz「自动线程分配」的分桶思路: 按引擎类型套模板) ──
+
+    /**
+     * 各引擎的判定关键字(comm 子串, 不区分大小写)。
+     * 注意: 只收【游戏引擎特有】的线程名 —— 像 RenderThread / GLThread / NativeThread 几乎每个
+     * 安卓应用都有(硬件渲染线程等), 不能当游戏标志, 否则会把微信/抖音等普通应用误判成游戏。
+     */
+    private val UNITY_KEYS = listOf("UnityMain", "UnityGfx", "UnityMulti")   // Unity 引擎特征
+    private val ENGINE_KEYS = listOf(   // 非 Unity 但明确是游戏引擎(UE/Cocos/自研)的主线程标志
+        "GameThread", "UnrealMain", "RHIThread", "Cocos", "GameMain", "GfxThread",
+    )
+
+    /**
+     * 按「实时线程名 + 是否游戏类别」自动判定最合适的预设 id:
+     *  - 有 Unity 引擎线程(UnityMain 等)               → Unity 游戏预设(game_unity);
+     *  - 否则出现 UE/自研引擎主线程 或 系统类别判定为游戏 → 非 Unity 游戏预设(game_ue);
+     *  - 其余                                            → 普通应用均衡预设(app_balanced)。
+     * threadNames 为空(应用没运行/读不到线程)时只靠 isGame 兜底判定。
+     */
+    fun detectPresetId(threadNames: List<String>, isGame: Boolean): String {
+        fun hasAny(keys: List<String>): Boolean =
+            threadNames.any { n -> keys.any { k -> n.contains(k, ignoreCase = true) } }
+        return when {
+            hasAny(UNITY_KEYS)       -> "game_unity"
+            hasAny(ENGINE_KEYS)      -> "game_ue"
+            isGame                   -> "game_ue"
+            else                     -> "app_balanced"
+        }
+    }
+
+    /**
+     * 一步到位: 自动判定类型并生成一套规则(核区间按本机簇布局自适应)。
+     * 返回(命中的预设, 生成的规则); 判不出预设时退回普通应用均衡预设。
+     */
+    fun autoGenerate(
+        pkg: String,
+        plan: TaClusterPlan,
+        threadNames: List<String>,
+        isGame: Boolean,
+    ): Pair<TaPreset, List<TaRule>> {
+        val id = detectPresetId(threadNames, isGame)
+        val preset = presetById(id) ?: presets().first { it.id == "app_balanced" }
+        return preset to normalize(preset.build(pkg, plan))
+    }
 }
 
 /**

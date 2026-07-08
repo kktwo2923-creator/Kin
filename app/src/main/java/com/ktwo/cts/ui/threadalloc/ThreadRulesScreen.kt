@@ -6,6 +6,7 @@ package com.ktwo.cts.ui.threadalloc
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Delete
@@ -28,16 +30,42 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.ktwo.cts.data.TaPreset
 import com.ktwo.cts.data.TaRule
 import com.ktwo.cts.data.ThreadAllocRuleStore
 import com.ktwo.cts.data.ThreadAllocRules
+import com.ktwo.cts.data.ThreadAllocator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 应用标签(尽力解析, 未安装/系统进程名显示原文)。 */
 private fun labelOf(ctx: Context, pkg: String): String = runCatching {
     val pm = ctx.packageManager
     pm.getApplicationLabel(pm.getApplicationInfo(pkg.substringBefore(':'), 0)).toString()
 }.getOrDefault(pkg)
+
+/** 系统是否把该应用标为游戏(ApplicationInfo.category)。取不到按非游戏处理。 */
+private fun isGameCategory(ctx: Context, pkg: String): Boolean = runCatching {
+    ctx.packageManager.getApplicationInfo(pkg.substringBefore(':'), 0)
+        .category == ApplicationInfo.CATEGORY_GAME
+}.getOrDefault(false)
+
+/**
+ * 自动识别并生成规则: 若应用在运行则读它的实时线程名判定引擎类型, 否则退回系统游戏类别判定,
+ * 再套用对应的自适应预设。返回(命中的预设, 规则)。全程 IO 线程, 失败不抛出。
+ */
+private suspend fun autoDetectRules(
+    ctx: Context,
+    pkg: String,
+    plan: com.ktwo.cts.data.TaClusterPlan,
+): Pair<TaPreset, List<TaRule>> = withContext(Dispatchers.IO) {
+    val pid = runCatching { ThreadAllocator.pidOf(pkg) }.getOrNull()
+    val names = if (pid != null)
+        runCatching { ThreadAllocator.listThreads(pid).map { it.name } }.getOrDefault(emptyList())
+    else emptyList()
+    ThreadAllocRules.autoGenerate(pkg, plan, names, isGameCategory(ctx, pkg))
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +77,8 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
 
     var editPkg by remember { mutableStateOf<String?>(null) }   // 正在编辑的应用
     var showAdd by remember { mutableStateOf(false) }
+    var showAutoPick by remember { mutableStateOf(false) }      // 一键自动生成: 选应用
+    val plan = remember { ThreadAllocRules.clusterPlan() }
 
     fun toast(msg: String) = scope.launch { snackbar.showSnackbar(msg) }
 
@@ -67,6 +97,10 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    // 一键自动生成: 选应用 → 识别引擎类型 → 套自适应预设 → 直接保存生效
+                    IconButton(onClick = { showAutoPick = true }) {
+                        Icon(Icons.Outlined.AutoFixHigh, contentDescription = "自动生成规则")
+                    }
                     // 导入: 解析剪贴板里的 AppOpt applist.conf 文本
                     IconButton(onClick = {
                         val text = runCatching {
@@ -211,6 +245,22 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
         },
     )
 
+    // 一键自动生成: 选中应用后, 读它的实时线程识别引擎类型 → 套自适应预设 → 直接落盘生效
+    if (showAutoPick) AddAppDialog(
+        title = "自动生成 · 选择应用",
+        onDismiss = { showAutoPick = false },
+        onAdd = { pkg ->
+            showAutoPick = false
+            scope.launch {
+                val (preset, generated) = autoDetectRules(ctx, pkg, plan)
+                if (generated.isEmpty()) { toast("未能识别线程, 请手动配置"); return@launch }
+                ThreadAllocRuleStore.put(ctx, pkg, generated)
+                com.ktwo.cts.service.ThreadRuleService.start(ctx)
+                toast("已识别为「${preset.name}」, 自动生成 ${generated.count { it.thread.isNotEmpty() }} 条规则")
+            }
+        },
+    )
+
     editPkg?.let { pkg ->
         RuleEditorSheet(
             pkg = pkg,
@@ -229,7 +279,11 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
 
 /** 添加应用: 从已安装应用挑选(简单列表 + 过滤)。 */
 @Composable
-private fun AddAppDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+private fun AddAppDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String) -> Unit,
+    title: String = "选择应用",
+) {
     val ctx = LocalContext.current
     var filter by remember { mutableStateOf("") }
     val apps = remember {
@@ -248,7 +302,7 @@ private fun AddAppDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择应用") },
+        title = { Text(title) },
         text = {
             Column {
                 OutlinedTextField(
@@ -289,10 +343,13 @@ private fun RuleEditorSheet(
     onSave: (List<TaRule>) -> Unit,
 ) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val plan = remember { ThreadAllocRules.clusterPlan() }
     var rows by remember(pkg, initial) {
         mutableStateOf(if (initial.isEmpty()) listOf(TaRule("", "")) else initial)
     }
+    var detected by remember(pkg) { mutableStateOf<String?>(null) }   // 自动识别结果提示
+    var detecting by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -312,8 +369,39 @@ private fun RuleEditorSheet(
             )
             Spacer(Modifier.height(10.dp))
 
-            // 预设一键套用(核区间按本机簇布局换算)
-            Text("套用预设", fontWeight = FontWeight.Medium)
+            // 自动识别: 读该应用实时线程 → 判引擎类型 → 自动套最合适的预设
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("套用预设", fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                TextButton(
+                    enabled = !detecting,
+                    onClick = {
+                        detecting = true
+                        scope.launch {
+                            val (preset, generated) = autoDetectRules(ctx, pkg, plan)
+                            if (generated.isNotEmpty()) {
+                                rows = generated
+                                detected = preset.name
+                            } else {
+                                detected = "未识别到线程(应用未运行?), 请手动选预设"
+                            }
+                            detecting = false
+                        }
+                    },
+                ) {
+                    Icon(Icons.Outlined.AutoFixHigh, contentDescription = null,
+                        modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (detecting) "识别中…" else "自动识别")
+                }
+            }
+            detected?.let {
+                Text(
+                    "已套用: $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
             LazyColumn(Modifier.heightIn(max = 132.dp)) {
                 items(ThreadAllocRules.presets(), key = { it.id }) { p ->
                     Row(
