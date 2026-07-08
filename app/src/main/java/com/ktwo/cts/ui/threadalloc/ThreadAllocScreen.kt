@@ -73,6 +73,7 @@ fun ThreadAllocScreen(
     val gameRt by ThreadAllocCfg.gameRtFlow(ctx).collectAsState(initial = false)
     val gameWeight by ThreadAllocCfg.gameWeightFlow(ctx).collectAsState(initial = false)
     val gamePkgs by ThreadAllocCfg.gamePkgsFlow(ctx).collectAsState(initial = emptySet())
+    val ebpfEnabled by ThreadAllocCfg.ebpfEnabledFlow(ctx).collectAsState(initial = false)
 
     var conflicts by remember { mutableStateOf<List<String>>(emptyList()) }
     var bigCores by remember { mutableStateOf<List<Int>>(emptyList()) }
@@ -89,6 +90,7 @@ fun ThreadAllocScreen(
                 enabled = ThreadAllocCfg.enabled(ctx),
                 gamePkgs = ThreadAllocCfg.gamePkgsFlow(ctx).first(),
                 rtEnabled = ThreadAllocCfg.gameRtFlow(ctx).first(),   // 实时调度开关 → rt_enable
+                ebpfEnabled = ThreadAllocCfg.ebpfEnabled(ctx),        // 事件驱动开关 → ebpf_enable
             )
             // 补推一次当前规则: 用户可能先建好规则、再打开开关; 确保守护拿到最新规则文件。
             ThreadAllocRuleStore.syncToDaemon(ctx)
@@ -232,6 +234,14 @@ fun ThreadAllocScreen(
                             )
                         }
                     }
+                    HorizontalDivider()
+                    TaSwitchRow(
+                        "实时监听 (eBPF / 事件驱动)",
+                        "监听内核 fork/exec 事件, 新线程一创建就即时绑核/设优先级, 不用等轮询。" +
+                            "内核不支持时自动退回定时轮询",
+                        checked = ebpfEnabled && proUnlocked,
+                        proUnlocked = proUnlocked, onNeedPro = onNeedPro,
+                    ) { v -> scope.launch { ThreadAllocCfg.setEbpfEnabled(ctx, v); syncDaemon() } }
                 }
             }
 

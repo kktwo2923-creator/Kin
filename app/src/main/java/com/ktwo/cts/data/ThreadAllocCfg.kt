@@ -26,9 +26,10 @@ object ThreadAllocCfg {
     private val APP_ENABLED   = booleanPreferencesKey("ta_app_enabled")    // 整理前台应用线程
     private val GAME_ENABLED  = booleanPreferencesKey("ta_game_enabled")   // 游戏线程分配
     private val GAME_ADAPTIVE = booleanPreferencesKey("ta_game_adaptive")  // 自适应分配
-    private val GAME_RT       = booleanPreferencesKey("ta_game_rt")        // 实时调度(即将支持)
+    private val GAME_RT       = booleanPreferencesKey("ta_game_rt")        // 实时调度(SCHED_FIFO/RR)
     private val GAME_WEIGHT   = booleanPreferencesKey("ta_game_weight")    // 权重调整(即将支持)
     private val GAME_PKGS     = stringPreferencesKey("ta_game_pkgs")       // 逗号分隔的游戏包名
+    private val EBPF_ENABLED  = booleanPreferencesKey("ta_ebpf_enabled")   // 事件驱动(eBPF/proc connector)
 
     fun enabledFlow(ctx: Context): Flow<Boolean> =
         ctx.taDataStore.data.map { it[ENABLED] ?: false }
@@ -66,6 +67,14 @@ object ThreadAllocCfg {
         ctx.taDataStore.data.map { it[GAME_RT] ?: false }
     suspend fun setGameRt(ctx: Context, b: Boolean) {
         ctx.taDataStore.edit { it[GAME_RT] = b }
+    }
+
+    fun ebpfEnabledFlow(ctx: Context): Flow<Boolean> =
+        ctx.taDataStore.data.map { it[EBPF_ENABLED] ?: false }
+    suspend fun ebpfEnabled(ctx: Context): Boolean =
+        ctx.taDataStore.data.first()[EBPF_ENABLED] ?: false
+    suspend fun setEbpfEnabled(ctx: Context, b: Boolean) {
+        ctx.taDataStore.edit { it[EBPF_ENABLED] = b }
     }
 
     fun gameWeightFlow(ctx: Context): Flow<Boolean> =

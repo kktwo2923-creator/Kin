@@ -40,12 +40,13 @@ object ThreadAllocDaemonCfg {
         enabled: Boolean,
         gamePkgs: Set<String>,
         rtEnabled: Boolean,
+        ebpfEnabled: Boolean,
     ): Boolean =
         withContext(Dispatchers.IO) {
             writeMutex.withLock {
                 runCatching {
                     val raw = RootShell.readConfigRaw()
-                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled)
+                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled, ebpfEnabled)
                     val written = RootShell.writeConfigRaw(merged)
                     if (written) {
                         runCatching {
@@ -58,7 +59,13 @@ object ThreadAllocDaemonCfg {
         }
 
     /** 读-改-写: 只更新 Function.ThreadAlloc, 其余节点原样保留。raw 为空/非法时从 {} 起。 */
-    fun mergeThreadAlloc(raw: String, enabled: Boolean, gamePkgs: Set<String>, rtEnabled: Boolean): String {
+    fun mergeThreadAlloc(
+        raw: String,
+        enabled: Boolean,
+        gamePkgs: Set<String>,
+        rtEnabled: Boolean,
+        ebpfEnabled: Boolean,
+    ): String {
         val o = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
         val f = o.optJSONObject("Function") ?: JSONObject().also { o.put("Function", it) }
         val t = f.optJSONObject("ThreadAlloc") ?: JSONObject().also { f.put("ThreadAlloc", it) }
@@ -67,7 +74,8 @@ object ThreadAllocDaemonCfg {
         t.put("interval_s", intOf(t, "interval_s", DEF_INTERVAL_S).coerceIn(1, 60).toString())
         t.put("big_only", boolOf(t, "big_only", DEF_BIG_ONLY).toString())
         t.put("game_pkgs", gamePkgs.filter { it.isNotBlank() }.sorted().joinToString(","))
-        t.put("rt_enable", rtEnabled.toString())   // 实时调度总开关(独立于 enable)
+        t.put("rt_enable", rtEnabled.toString())      // 实时调度总开关(独立于 enable)
+        t.put("ebpf_enable", ebpfEnabled.toString())  // 事件驱动(eBPF/proc connector)总开关
 
         // 4 空格缩进, 与出厂 config.json / AutoModeCfg 写回保持一致。
         return o.toString(4)
