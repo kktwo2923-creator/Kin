@@ -373,18 +373,39 @@ object ThreadAllocRules {
     }
 
     /**
+     * 自动识别的判定来源(供 UI 如实告知, 别把兜底猜测说成"已识别"):
+     *  - LIVE     : 读到应用实时线程后判定(命中引擎线程, 或据实况判为普通应用) —— 可靠;
+     *  - CATEGORY : 没读到线程, 但系统把应用标为游戏 —— 中等可靠;
+     *  - FALLBACK : 既没读到线程也不是游戏类别(应用没运行/无 Root), 只能按普通应用兜底 —— 不可靠。
+     */
+    enum class Source { LIVE, CATEGORY, FALLBACK }
+
+    /** 自动识别结果: 预设 + 生成的规则 + 判定来源 + 实际读到的线程数(0 = 没读到)。 */
+    data class AutoResult(
+        val preset: TaPreset,
+        val rules: List<TaRule>,
+        val source: Source,
+        val threadsRead: Int,
+    )
+
+    /**
      * 一步到位: 自动判定类型并生成一套规则(核区间按本机簇布局自适应)。
-     * 返回(命中的预设, 生成的规则); 判不出预设时退回普通应用均衡预设。
+     * 判不出预设时退回普通应用均衡预设; source 如实反映判定依据(见 Source)。
      */
     fun autoGenerate(
         pkg: String,
         plan: TaClusterPlan,
         threadNames: List<String>,
         isGame: Boolean,
-    ): Pair<TaPreset, List<TaRule>> {
+    ): AutoResult {
         val id = detectPresetId(threadNames, isGame)
         val preset = presetById(id) ?: presets().first { it.id == "app_balanced" }
-        return preset to normalize(preset.build(pkg, plan))
+        val source = when {
+            threadNames.isNotEmpty() -> Source.LIVE       // 读到线程 → 基于实况(命中引擎或判为普通应用)
+            isGame                   -> Source.CATEGORY   // 没线程但系统标为游戏
+            else                     -> Source.FALLBACK   // 既没线程也非游戏类别 → 纯兜底猜测
+        }
+        return AutoResult(preset, normalize(preset.build(pkg, plan)), source, threadNames.size)
     }
 }
 

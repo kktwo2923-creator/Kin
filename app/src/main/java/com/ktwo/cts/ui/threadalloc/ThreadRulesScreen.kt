@@ -30,7 +30,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.ktwo.cts.data.TaPreset
 import com.ktwo.cts.data.TaRule
 import com.ktwo.cts.data.ThreadAllocRuleStore
 import com.ktwo.cts.data.ThreadAllocRules
@@ -53,18 +52,25 @@ private fun isGameCategory(ctx: Context, pkg: String): Boolean = runCatching {
 
 /**
  * 自动识别并生成规则: 若应用在运行则读它的实时线程名判定引擎类型, 否则退回系统游戏类别判定,
- * 再套用对应的自适应预设。返回(命中的预设, 规则)。全程 IO 线程, 失败不抛出。
+ * 再套用对应的自适应预设。返回 AutoResult(含判定来源, 供 UI 如实告知)。全程 IO 线程, 失败不抛出。
  */
 private suspend fun autoDetectRules(
     ctx: Context,
     pkg: String,
     plan: com.ktwo.cts.data.TaClusterPlan,
-): Pair<TaPreset, List<TaRule>> = withContext(Dispatchers.IO) {
+): ThreadAllocRules.AutoResult = withContext(Dispatchers.IO) {
     val pid = runCatching { ThreadAllocator.pidOf(pkg) }.getOrNull()
     val names = if (pid != null)
         runCatching { ThreadAllocator.listThreads(pid).map { it.name } }.getOrDefault(emptyList())
     else emptyList()
     ThreadAllocRules.autoGenerate(pkg, plan, names, isGameCategory(ctx, pkg))
+}
+
+/** 如实描述识别来源(不把没读到线程的兜底猜测说成"已识别")。 */
+private fun detectLabel(res: ThreadAllocRules.AutoResult): String = when (res.source) {
+    ThreadAllocRules.Source.LIVE     -> "据实时线程识别为「${res.preset.name}」"
+    ThreadAllocRules.Source.CATEGORY -> "据系统游戏类别识别为「${res.preset.name}」"
+    ThreadAllocRules.Source.FALLBACK -> "未读到线程(应用未运行?), 已按「${res.preset.name}」兜底"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,6 +82,7 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
     val rules by ThreadAllocRuleStore.flow(ctx).collectAsState(initial = emptyMap())
 
     var editPkg by remember { mutableStateOf<String?>(null) }   // 正在编辑的应用
+    var editOverride by remember { mutableStateOf<List<TaRule>?>(null) }  // 打开编辑器时预填的规则(自动生成用)
     var showAdd by remember { mutableStateOf(false) }
     var showAutoPick by remember { mutableStateOf(false) }      // 一键自动生成: 选应用
     val plan = remember { ThreadAllocRules.clusterPlan() }
@@ -245,18 +252,31 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
         },
     )
 
-    // 一键自动生成: 选中应用后, 读它的实时线程识别引擎类型 → 套自适应预设 → 直接落盘生效
+    // 一键自动生成: 选中应用后, 读它的实时线程识别引擎类型 → 套自适应预设。
+    // 已有规则则不静默覆盖, 而是带自动结果进编辑器让用户确认后再存(防误删手改的规则)。
     if (showAutoPick) AddAppDialog(
         title = "自动生成 · 选择应用",
         onDismiss = { showAutoPick = false },
         onAdd = { pkg ->
             showAutoPick = false
             scope.launch {
-                val (preset, generated) = autoDetectRules(ctx, pkg, plan)
-                if (generated.isEmpty()) { toast("未能识别线程, 请手动配置"); return@launch }
-                ThreadAllocRuleStore.put(ctx, pkg, generated)
-                com.ktwo.cts.service.ThreadRuleService.start(ctx)
-                toast("已识别为「${preset.name}」, 自动生成 ${generated.count { it.thread.isNotEmpty() }} 条规则")
+                val res = autoDetectRules(ctx, pkg, plan)
+                val n = res.rules.count { it.thread.isNotEmpty() }
+                val existing = rules[pkg].orEmpty()
+                if (existing.isNotEmpty()) {
+                    // 已有规则 → 进编辑器预填自动结果, 用户按「保存」才覆盖
+                    editOverride = res.rules
+                    editPkg = pkg
+                    toast("${detectLabel(res)}; 确认保存将覆盖原有 ${existing.size} 条规则")
+                } else {
+                    ThreadAllocRuleStore.put(ctx, pkg, res.rules)
+                    com.ktwo.cts.service.ThreadRuleService.start(ctx)
+                    toast(
+                        "${detectLabel(res)}, 已生成 $n 条并生效" +
+                            if (res.source == ThreadAllocRules.Source.FALLBACK)
+                                "; 若是游戏请启动后再自动识别" else ""
+                    )
+                }
             }
         },
     )
@@ -264,13 +284,13 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
     editPkg?.let { pkg ->
         RuleEditorSheet(
             pkg = pkg,
-            initial = rules[pkg].orEmpty(),
-            onDismiss = { editPkg = null },
+            initial = editOverride ?: rules[pkg].orEmpty(),   // 自动生成时预填生成结果, 否则读现有规则
+            onDismiss = { editPkg = null; editOverride = null },
             onSave = { newRules ->
                 scope.launch {
                     ThreadAllocRuleStore.put(ctx, pkg, newRules)
                     if (newRules.isNotEmpty()) com.ktwo.cts.service.ThreadRuleService.start(ctx)
-                    editPkg = null
+                    editPkg = null; editOverride = null
                 }
             },
         )
@@ -377,12 +397,13 @@ private fun RuleEditorSheet(
                     onClick = {
                         detecting = true
                         scope.launch {
-                            val (preset, generated) = autoDetectRules(ctx, pkg, plan)
-                            if (generated.isNotEmpty()) {
-                                rows = generated
-                                detected = preset.name
+                            val res = autoDetectRules(ctx, pkg, plan)
+                            // 没读到线程(应用未运行/无 Root)不算真识别: 不覆盖当前规则, 只提示
+                            if (res.source == ThreadAllocRules.Source.FALLBACK) {
+                                detected = "应用未运行, 读不到线程无法识别; 请手动选预设, 或启动应用后重试"
                             } else {
-                                detected = "未识别到线程(应用未运行?), 请手动选预设"
+                                rows = res.rules
+                                detected = detectLabel(res)
                             }
                             detecting = false
                         }
@@ -396,7 +417,7 @@ private fun RuleEditorSheet(
             }
             detected?.let {
                 Text(
-                    "已套用: $it",
+                    it,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(bottom = 4.dp),
@@ -407,7 +428,7 @@ private fun RuleEditorSheet(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable { rows = p.build(pkg, plan) }
+                            .clickable { rows = p.build(pkg, plan); detected = null }
                             .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -436,6 +457,7 @@ private fun RuleEditorSheet(
                             value = r.thread,
                             onValueChange = { v ->
                                 rows = rows.toMutableList().also { it[i] = r.copy(thread = v) }
+                                detected = null   // 手改后清掉"识别为…"提示, 免误导
                             },
                             placeholder = { Text("线程名, 如 UnityMain / Thread-*") },
                             textStyle = MaterialTheme.typography.bodySmall
@@ -448,6 +470,7 @@ private fun RuleEditorSheet(
                             value = r.cpus,
                             onValueChange = { v ->
                                 rows = rows.toMutableList().also { it[i] = r.copy(cpus = v) }
+                                detected = null
                             },
                             placeholder = { Text("0-3,7") },
                             textStyle = MaterialTheme.typography.bodySmall
@@ -457,6 +480,7 @@ private fun RuleEditorSheet(
                         )
                         IconButton(onClick = {
                             rows = rows.toMutableList().also { it.removeAt(i) }
+                            detected = null
                         }) {
                             Icon(Icons.Outlined.Delete, contentDescription = "删行",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -464,7 +488,7 @@ private fun RuleEditorSheet(
                     }
                 }
             }
-            TextButton(onClick = { rows = rows + TaRule("", "") }) { Text("+ 加一行") }
+            TextButton(onClick = { rows = rows + TaRule("", ""); detected = null }) { Text("+ 加一行") }
 
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
