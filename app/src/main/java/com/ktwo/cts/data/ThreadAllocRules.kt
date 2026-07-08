@@ -9,6 +9,7 @@
 package com.ktwo.cts.data
 
 import android.content.Context
+import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -405,6 +406,19 @@ object ThreadAllocRuleStore {
             mutex.withLock { ThreadAllocRules.serialize(loadLocked(ctx), labelOf) }
         }
 
+    /**
+     * 把当前全量规则下发给 Kin 守护(写 /sdcard/Android/Kin/thread_alloc_rules.conf, 守护热重载后按规则绑核)。
+     * 每次规则增删改都会自动下发一次(见 persistLocked); 这里额外提供显式入口,
+     * 供「启用线程分配」开关打开时补推一次(用户可能先建了规则、后开开关)。
+     * 无 root / 写失败静默(不抛出), 返回是否写成功。
+     */
+    suspend fun syncToDaemon(ctx: Context): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            runCatching { RootShell.writeThreadRules(ThreadAllocRules.serialize(loadLocked(ctx))) }
+                .getOrDefault(false)
+        }
+    }
+
     // ── 内部: 以下两个方法假定已持有 mutex ──
 
     private fun loadLocked(ctx: Context): Map<String, List<TaRule>> {
@@ -418,7 +432,11 @@ object ThreadAllocRuleStore {
     }
 
     private fun persistLocked(ctx: Context, map: Map<String, List<TaRule>>) {
-        runCatching { file(ctx).writeText(ThreadAllocRules.serialize(map)) }
+        val text = ThreadAllocRules.serialize(map)
+        runCatching { file(ctx).writeText(text) }
         cache.value = LinkedHashMap(map)
+        // 规则一改就下发守护: 守护读 thread_alloc_rules.conf(mtime 变即热重载)后按新规则绑核。
+        // 无 root 时静默失败, 不影响 App 内规则的保存与展示。
+        runCatching { RootShell.writeThreadRules(text) }
     }
 }

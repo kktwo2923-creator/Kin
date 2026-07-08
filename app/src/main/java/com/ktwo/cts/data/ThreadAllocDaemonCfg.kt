@@ -1,6 +1,10 @@
 // 线程分配 → Kin 守护的配置下发: 读-改-写 config.json 的 Function.ThreadAlloc 节点。
-// 守护读该节点后, 前台是游戏库中的应用时周期性把渲染线程绑到大核(持续生效, 区别于
-// ThreadAllocator.applyAffinity 的"立即应用一次")。
+// 守护读该节点(enable/interval_s/big_only/game_pkgs)后有两条生效路径, 持续生效, 区别于
+// ThreadAllocator.applyAffinity 的"立即应用一次":
+//   ① 规则引擎(AppOpt 式): 读 thread_alloc_rules.conf(见 ThreadAllocRuleStore.syncToDaemon /
+//      RootShell.writeThreadRules), 扫 /proc 对命中 "pkg{线程}=核" 规则的所有进程逐线程绑核;
+//   ② 游戏库快路径: 前台是 game_pkgs 中的游戏且未被规则覆盖时, 把渲染类线程绑到大核。
+// 本类只管 config.json 节点(总开关 + 游戏库); 具体规则文本走 ThreadAllocRuleStore 独立下发。
 // 铁律: 只动 ThreadAlloc 段; Function 下其它子节点(AutoMode/BgTrim/TouchBoost/...)与
 // 顶层其它键(Policy/models/meta/...)原样保留 —— 做法与 AutoModeCfg.mergeInto 一致。
 package com.ktwo.cts.data

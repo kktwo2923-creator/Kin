@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.ktwo.cts.data.ThreadAllocCfg
 import com.ktwo.cts.data.ThreadAllocDaemonCfg
+import com.ktwo.cts.data.ThreadAllocRuleStore
 import com.ktwo.cts.data.ThreadAllocator
 import com.ktwo.cts.service.AppSwitchService
 import com.ktwo.cts.service.ForegroundDetector
@@ -86,6 +87,8 @@ fun ThreadAllocScreen(
                 enabled = ThreadAllocCfg.enabled(ctx),
                 gamePkgs = ThreadAllocCfg.gamePkgsFlow(ctx).first(),
             )
+            // 补推一次当前规则: 用户可能先建好规则、再打开总开关; 确保开关一开守护就拿到最新规则文件。
+            ThreadAllocRuleStore.syncToDaemon(ctx)
         }
     }
 
@@ -369,7 +372,8 @@ fun ThreadAllocScreen(
 
             // ── 立即应用 ──
             Text(
-                "开启后由 Kin 守护在后台持续把游戏渲染线程绑到大核(前台是游戏库中的游戏时自动生效); " +
+                "开启后由 Kin 守护在后台持续生效: 有「线程规则」的应用按规则逐线程绑核(不限前台, 含系统进程); " +
+                    "游戏库中的游戏在前台且未配规则时, 自动把渲染线程绑到大核。改规则即时热重载, 无需重启。" +
                     "下方「立即应用」用于守护未运行时的临时绑核。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

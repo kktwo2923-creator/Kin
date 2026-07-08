@@ -249,6 +249,32 @@ object RootShell {
         return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $CONFIG; touch $CTS_DIR")
     }
 
+    /** 线程分配规则文件(AppOpt applist.conf 兼容); 守护读它做 pkg{线程}=核 绑核。 */
+    private const val THREAD_RULES = "$CTS_DIR/thread_alloc_rules.conf"
+
+    /**
+     * 把线程分配规则文本推给守护(落到 $THREAD_RULES);守护按 mtime 变化热重载。
+     * base64 落地避免规则里的 {}/*/[] 等特殊字符破坏 shell。无 root/写失败静默返回 false。
+     */
+    fun writeThreadRules(text: String): Boolean {
+        val b64 = android.util.Base64.encodeToString(
+            text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
+        )
+        return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $THREAD_RULES; chmod 0644 $THREAD_RULES; touch $CTS_DIR")
+    }
+
+    /** 读回守护侧规则文件(免 root 优先, 失败再 root 读); 不存在返回空串。 */
+    fun readThreadRules(): String {
+        runCatching {
+            val f = java.io.File(THREAD_RULES)
+            if (f.canRead()) {
+                val s = f.readText()
+                if (s.isNotBlank()) return s
+            }
+        }
+        return shOut("cat $THREAD_RULES 2>/dev/null").joinToString("\n")
+    }
+
     /** 守护是否在运行：直接查进程(daemon 已不再写 daemon.alive 心跳)。 */
     fun daemonAlive(): Boolean =
         shOut("pidof Kinetic 2>/dev/null").firstOrNull()?.isNotBlank() == true
