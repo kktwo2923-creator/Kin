@@ -42,7 +42,8 @@ private val OVL_SPECS = listOf(
     OvlSpec(OverlayType.PROCESS, Icons.AutoMirrored.Outlined.ListAlt, Color(0xFF34A853), Color(0xFFE4F4E8)),
     OvlSpec(OverlayType.THREAD,  Icons.Outlined.AccountTree,         Color(0xFF8B5CF6), Color(0xFFF0EAFD)),
     OvlSpec(OverlayType.MINI,    Icons.Outlined.PanoramaFishEye,     Color(0xFFFF8A34), Color(0xFFFFF0E2)),
-    OvlSpec(OverlayType.FPS,     Icons.AutoMirrored.Outlined.ShowChart, Color(0xFFEC4899), Color(0xFFFDE9F3)),
+    // 帧率记录器暂时下线(录制功能还没修好, 等以后再搞): 从悬浮窗选择列表隐藏其入口, 代码保留。
+    // OvlSpec(OverlayType.FPS,     Icons.AutoMirrored.Outlined.ShowChart, Color(0xFFEC4899), Color(0xFFFDE9F3)),
     OvlSpec(OverlayType.TEMP,    Icons.Outlined.DeviceThermostat,    Color(0xFFF97316), Color(0xFFFFEDE3)),
 )
 

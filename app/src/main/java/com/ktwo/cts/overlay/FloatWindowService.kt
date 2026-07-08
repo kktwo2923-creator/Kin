@@ -179,6 +179,9 @@ class FloatWindowService : Service() {
     }
 
     private fun showWindow(type: OverlayType) {
+        // 帧率记录器暂时下线(录制还没修好, 等以后再搞): 即使旧偏好里残留开启也一律不显示,
+        // 避免它卡在屏上又无法从选择列表关闭。恢复功能时删掉此行即可。
+        if (type == OverlayType.FPS) return
         if (windows.containsKey(type)) return
         if (!prefsReady.isCompleted) {
             // 设置未载入完 → 排队; 就绪后复核开关仍开着才建(防冷启动开→关竞态出幽灵窗)

@@ -82,12 +82,7 @@ fun FeaturesScreen(
             // —— 分组一: 设备监测(对齐 Metric feature_page_group_title) ——
             // 顺序按使用频率: 记录/监控类高频入口在前, 详情/历史类在后。
             FeatureGroup("设备监测") {
-                FeatureRow(
-                    Icons.Outlined.Timeline, "帧率记录",
-                    "按应用录制 FPS/帧时间/卡顿, 生成会话报告与曲线",
-                    onClick = onOpenFpsRecord,
-                )
-                RowDivider()
+                // 帧率记录暂时下线(录制还没修好, 等以后再搞): 隐藏入口, 代码/路由保留。
                 FeatureRow(
                     Icons.Outlined.Speed, "性能监控",
                     "应用内实时大屏仪表盘: CPU/GPU/温度/帧率/功耗/内存",
@@ -96,7 +91,7 @@ fun FeaturesScreen(
                 RowDivider()
                 FeatureRow(
                     Icons.Outlined.Layers, "悬浮窗管理器",
-                    "六个独立监视悬浮窗(负载/进程/线程/迷你/帧率/温度), 展开选择",
+                    "五个独立监视悬浮窗(负载/进程/线程/迷你/温度), 展开选择",
                     expands = true, // 弹出底部面板而非跳页, 尾部用向下箭头提示
                     onClick = { showOverlaySheet = true },
                 )
