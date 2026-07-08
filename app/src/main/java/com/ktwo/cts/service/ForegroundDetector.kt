@@ -34,8 +34,9 @@ class ForegroundDetector(private val ctx: Context) {
     } catch (_: Exception) { null }
 
     private fun tryDumpsys(): String? = try {
-        val out = RootShell.exec(
-            "dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | head -1"
+        // 超时包裹 dumpsys(慢命令): 卡死时自杀, 不拖垮共享 su 会话(否则前台探测一挂, 录制/悬浮窗全卡)
+        val out = RootShell.execTimed(
+            2, "dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | head -1"
         )
         // 形如: mCurrentFocus=Window{... u0 com.tencent.tmgp.sgame/com.xxx.Activity}
         Regex("[a-zA-Z][a-zA-Z0-9._]+/")

@@ -63,7 +63,8 @@ class FpsSampler {
         if (layerPkg == pkg && layerFailCount > 5) return null   // 本会话多次找不到, 放弃
         if (layerPkg != pkg) { layerPkg = pkg; layerName = null; layerFailCount = 0 }
         val out = runCatching {
-            RootShell.exec("dumpsys SurfaceFlinger --list 2>/dev/null")
+            // 超时包裹: dumpsys SurfaceFlinger 在高负载/开模糊合成时可能挂起, 卡死会拖垮共享 su 会话
+            RootShell.execTimed(3, "dumpsys SurfaceFlinger --list 2>/dev/null")
         }.getOrDefault("")
         val cand = out.lineSequence().map { it.trim() }
             .filter { it.isNotEmpty() && it.contains(pkg) }
@@ -81,7 +82,7 @@ class FpsSampler {
         val layer = resolveLayer(pkg) ?: return FrameStat(0, 0, 0)
         val safe = layer.replace("\"", "").replace("$", "").replace("`", "")
         val out = runCatching {
-            RootShell.exec("dumpsys SurfaceFlinger --latency \"$safe\" 2>/dev/null")
+            RootShell.execTimed(3, "dumpsys SurfaceFlinger --latency \"$safe\" 2>/dev/null")
         }.getOrDefault("")
         val lines = out.lines()
         if (lines.size < 2) { layerName = null; layerFailCount++; return FrameStat(0, 0, 0) }

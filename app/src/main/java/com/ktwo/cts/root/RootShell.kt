@@ -19,6 +19,29 @@ object RootShell {
     /** 执行一行 root 命令,返回 stdout(失败/无 shell 返回空串, 不抛出) */
     fun exec(cmd: String): String = shOut(cmd).joinToString("\n")
 
+    // toybox timeout 是否可用: 一次性探测并缓存。个别精简 ROM 无 timeout 时若强行包裹,
+    // 命令会报 "timeout: not found" 返回空 → fps/帧时间恒 0(功能回归)。故缺失时退回不包裹。
+    @Volatile private var timeoutAvail: Boolean? = null
+    private fun hasTimeout(): Boolean {
+        timeoutAvail?.let { return it }
+        val ok = runCatching { shOut("command -v timeout 2>/dev/null").any { it.isNotBlank() } }
+            .getOrDefault(false)
+        timeoutAvail = ok
+        return ok
+    }
+
+    /**
+     * 带超时的 root 执行: 用 toybox `timeout -s KILL` 包住可能挂起/耗时过长的命令。
+     * libsu 全局共享【单个】su 会话, 命令串行执行 —— 一旦某条命令卡死(如高负载/开着模糊合成时
+     * `dumpsys SurfaceFlinger` 会阻塞), 后面所有 root 调用都排在它后面一起卡死: 悬浮窗停更、
+     * 点"记录"没反应, 整个 App 像冻住。给这些命令加超时, 卡死时自杀释放会话, 绝不拖垮其它功能。
+     * -s KILL: dumpsys 忽略 SIGTERM, 必须 SIGKILL 才能真正杀掉。
+     * cmd 内不要再带外层管道(超时只作用于紧跟的那个进程; 复合脚本请自行 `sh -c '...'` 包裹)。
+     * 无 timeout 的 ROM: 自动退回不包裹执行(等同接入前, 无回归)。
+     */
+    fun execTimed(sec: Int, cmd: String): String =
+        if (hasTimeout()) exec("timeout -s KILL $sec $cmd") else exec(cmd)
+
     fun execSilent(cmd: String): Boolean = shOk(cmd)
 
     /** 优先走 /data/powercfg.sh(Scene 接管协议入口),失败则 fallback 到 switch.sh。 */

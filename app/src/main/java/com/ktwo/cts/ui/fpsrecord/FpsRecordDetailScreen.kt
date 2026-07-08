@@ -17,11 +17,15 @@ import androidx.compose.ui.unit.dp
 import com.ktwo.cts.data.fpsrecord.FpsRecordStore
 import com.ktwo.cts.data.fpsrecord.FpsSession
 import com.ktwo.cts.ui.TonalCard
+import com.ktwo.cts.ui.theme.MonoNumber
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+// Met 详情页统一金色强调色(与悬浮窗 segGold 一致): 所有图表用同一主色, 不再每图轮换 Material 色。
+private val ACCENT = Color(0xFFFFD166)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,11 +87,11 @@ private fun DetailContent(
     modifier: Modifier = Modifier,
 ) {
     val pts = s.points
-    // Scene 式总览统计: 从有效帧率点算 方差 与 ≥45FPS 流畅度
-    val fpsVals = pts.mapNotNull { it.fps.takeIf { f -> f > 0 } }
-    val fpsMean = if (fpsVals.isNotEmpty()) fpsVals.average() else 0.0
-    val variance = if (fpsVals.size >= 2) fpsVals.sumOf { (it - fpsMean) * (it - fpsMean) } / fpsVals.size else -1.0
-    val smoothPct = if (fpsVals.isNotEmpty()) fpsVals.count { it >= 45 } * 100.0 / fpsVals.size else -1.0
+    // 帧时间方差(Met: Frame Time 卡片统计 = MAX + VAR); 无有效帧时间则 -1
+    val frameVals = pts.mapNotNull { it.frameMaxMs.takeIf { f -> f > 0 }?.toDouble() }
+    val frameMean = if (frameVals.isNotEmpty()) frameVals.average() else 0.0
+    val frameVar = if (frameVals.size >= 2)
+        frameVals.sumOf { (it - frameMean) * (it - frameMean) } / frameVals.size else -1.0
     LazyColumn(
         modifier,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -119,97 +123,97 @@ private fun DetailContent(
             }
         }
 
-        // ── FPS 总览(Scene chart_fps_overview): MAX / MIN / AVG / 方差 大数字磁贴 ──
+        // ── FPS 总览(Met 详情页顶部): 一行 MAX / MIN / AVG / 1% Low / 5% Low, 副标签统一 FPS ──
         item {
             OverviewCard(listOf(
                 StatTileData("MAX", fmtInt(s.maxFps), "FPS"),
                 StatTileData("MIN", fmtInt(s.minFps), "FPS"),
                 StatTileData("AVG", if (s.avgFps > 0) "%.1f".format(s.avgFps) else "--", "FPS"),
-                StatTileData("方差", if (variance >= 0) "%.1f".format(variance) else "--", "越小越稳"),
-            ))
-        }
-
-        // ── 流畅度(Scene chart_other_overview): ≥45FPS 流畅度 / 1% Low / 5% Low ──
-        item {
-            OverviewCard(listOf(
-                StatTileData("≥45FPS", if (smoothPct >= 0) "%.0f%%".format(smoothPct) else "--", "流畅度"),
                 StatTileData("1% Low", fmtInt(s.low1Fps), "FPS"),
                 StatTileData("5% Low", fmtInt(s.low5Fps), "FPS"),
             ))
         }
 
-        // ── FPS 曲线(统计已上移到总览磁贴, 这里只放大曲线)──
+        // ── 1) FPS 曲线(Met chart #1: 标题 FPS)──
         item {
             val values = pts.map { it.fps.coerceAtLeast(0).toFloat() }
             ChartCard(
-                title = "FPS 曲线",
-                color = MaterialTheme.colorScheme.primary,
+                title = "FPS",
+                color = ACCENT,
                 stats = emptyList(),
                 values = values,
                 minY = 0f,
-                footer = "JANK ${s.jankTotal} · BIG JANK ${s.bigJankTotal}" +
-                    if (pts.none { it.frameMaxMs > 0 }) "(帧时间不可用, 未统计)" else "",
             )
         }
 
-        // ── 2) 帧时间 ──
+        // ── 2) Jank(Met chart #3: 独立卡顿图, 统计 JANK / BIG JANK)──
+        item {
+            val available = pts.any { it.frameMaxMs > 0 }
+            // 每秒卡顿数(jank+bigJank)为一条曲线; 帧时间不可用时无卡顿数据
+            val jankSeries = pts.map { (it.jank + it.bigJank).toFloat() }
+            ChartCard(
+                title = "Jank",
+                color = ACCENT,
+                stats = listOf(
+                    "JANK" to "${s.jankTotal}",
+                    "BIG JANK" to "${s.bigJankTotal}",
+                ),
+                values = if (available) jankSeries else emptyList(),
+                minY = 0f,
+                emptyHint = if (available) null else "帧时间不可用, 无卡顿数据",
+            )
+        }
+
+        // ── 3) 帧时间(Met chart #2: Frame Time(ms), 统计 MAX + VAR)──
         item {
             val frames = pts.map { it.frameMaxMs.toFloat() }
             val available = pts.any { it.frameMaxMs > 0 }
             ChartCard(
-                title = "帧时间 ms",
-                color = MaterialTheme.colorScheme.tertiary,
-                stats = if (available)
-                    listOf("MAX" to fmtInt(frames.max().toInt()))
-                else emptyList(),
+                title = "Frame Time(ms)",
+                color = ACCENT,
+                stats = if (available) listOf(
+                    "MAX" to "${frames.max().toInt()}ms",
+                    "VAR" to if (frameVar >= 0) "%.1f".format(frameVar) else "--",
+                ) else emptyList(),
                 values = if (available) frames else emptyList(),
                 minY = 0f,
                 emptyHint = if (available) null else "帧时间不可用",
             )
         }
 
-        // ── 3) CPU 占用 ──
+        // ── 4) CPU 占用(Met chart #4: CPU Usage(%))──
         item {
             MetricChartCard(
-                title = "CPU 占用 %",
+                title = "CPU Usage(%)",
                 raw = pts.map { it.cpuLoad },
-                color = MaterialTheme.colorScheme.primary,
+                color = ACCENT,
                 percent = true,
             )
         }
 
-        // ── 4) GPU 占用 ──
+        // ── 5) GPU 频率(Met chart #9: GPU Frequency(MHz); 用我们已采集的 gpuMhz)──
         item {
             MetricChartCard(
-                title = "GPU 占用 %",
-                raw = pts.map { it.gpuLoad },
-                color = MaterialTheme.colorScheme.secondary,
-                percent = true,
-            )
-        }
-
-        // ── 5) 温度 ──
-        item {
-            MetricChartCard(
-                title = "温度 ℃",
-                raw = pts.map { it.tempC },
-                color = MaterialTheme.colorScheme.error,
+                title = "GPU Frequency(MHz)",
+                raw = pts.map { it.gpuMhz },
+                color = ACCENT,
                 percent = false,
-                invalidBelow = -100,
+                invalidBelow = 1,
+                unit = "MHz",
             )
         }
 
-        // ── 6) 功耗 ──
+        // ── 6) 功耗(Met chart #11: Power(W), 每个数值带 W 单位)──
         item {
             val watts = pts.map { it.watt }
             val valid = watts.filter { it > 0.0 && it.isFinite() }
             ChartCard(
-                title = "功耗 W",
-                color = MaterialTheme.colorScheme.tertiary,
+                title = "Power(W)",
+                color = ACCENT,
                 stats = if (valid.isNotEmpty()) listOf(
-                    "MAX" to "%.1f".format(valid.max()),
-                    "MIN" to "%.1f".format(valid.min()),
-                    "AVG" to "%.1f".format(valid.average()),
+                    "MAX" to "%.1fW".format(valid.max()),
+                    "MIN" to "%.1fW".format(valid.min()),
+                    "AVG" to "%.1fW".format(valid.average()),
                 ) else emptyList(),
                 values = if (valid.isNotEmpty())
                     watts.map { if (it.isFinite()) it.toFloat().coerceAtLeast(0f) else 0f }
@@ -219,12 +223,24 @@ private fun DetailContent(
             )
         }
 
-        // ── 7) 电量 ──
+        // ── 7) 温度(Met chart #14: Temperature(℃))──
         item {
             MetricChartCard(
-                title = "电量 %",
+                title = "Temperature(℃)",
+                raw = pts.map { it.tempC },
+                color = ACCENT,
+                percent = false,
+                invalidBelow = -100,
+                unit = "℃",
+            )
+        }
+
+        // ── 8) 电量(Met chart #12: Capacity %)──
+        item {
+            MetricChartCard(
+                title = "Capacity %",
                 raw = pts.map { it.battPct },
-                color = MaterialTheme.colorScheme.secondary,
+                color = ACCENT,
                 percent = true,
             )
         }
@@ -281,6 +297,7 @@ private fun MetricChartCard(
     color: Color,
     percent: Boolean,
     invalidBelow: Int = 0,   // 小于该值视为无效(百分比类 -1 无效; 温度传 -100)
+    unit: String = "",       // 统计数值后缀(MHz / ℃ 等; 百分比类留空)
 ) {
     val valid = raw.filter { it >= invalidBelow }
     val available = valid.isNotEmpty()
@@ -288,9 +305,9 @@ private fun MetricChartCard(
         title = title,
         color = color,
         stats = if (available) listOf(
-            "MAX" to "${valid.max()}",
-            "MIN" to "${valid.min()}",
-            "AVG" to "%.1f".format(valid.average()),
+            "MAX" to "${valid.max()}$unit",
+            "MIN" to "${valid.min()}$unit",
+            "AVG" to "%.1f$unit".format(valid.average()),
         ) else emptyList(),
         values = if (available) raw.map { it.coerceAtLeast(invalidBelow.coerceAtLeast(0)).toFloat() }
                  else emptyList(),
@@ -377,9 +394,9 @@ private fun OverviewCard(tiles: List<StatTileData>) {
                     Spacer(Modifier.height(6.dp))
                     Text(
                         t.value,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge.merge(MonoNumber),
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = ACCENT,
                         maxLines = 1,
                     )
                     Spacer(Modifier.height(2.dp))

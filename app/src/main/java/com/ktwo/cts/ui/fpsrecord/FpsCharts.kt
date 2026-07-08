@@ -14,9 +14,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ktwo.cts.ui.theme.MonoNumber
+import kotlin.math.roundToInt
 
 /**
  * 通用折线图: 横向网格线 + 折线 + 线下渐变填充。
@@ -31,6 +34,7 @@ fun LineChart(
     maxY: Float? = null,
 ) {
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)
+    val axisColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
     Canvas(modifier) {
         if (size.width <= 0f || size.height <= 0f) return@Canvas
         // 横向网格(4 条等分线)
@@ -81,6 +85,17 @@ fun LineChart(
                 join = StrokeJoin.Round,
             ),
         )
+        // Met 式右侧纵轴刻度: 顶部=量程最大值, 底部=最小值(读图更直观)
+        val labelPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            this.color = axisColor.toArgb()
+            textSize = 9.dp.toPx()
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textAlign = android.graphics.Paint.Align.RIGHT
+        }
+        val nc = drawContext.canvas.nativeCanvas
+        nc.drawText(hi.roundToInt().toString(), size.width, 9.dp.toPx(), labelPaint)
+        nc.drawText(lo.roundToInt().toString(), size.width, size.height - 2.dp.toPx(), labelPaint)
     }
 }
 

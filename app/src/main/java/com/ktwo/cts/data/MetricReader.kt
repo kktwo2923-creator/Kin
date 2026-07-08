@@ -436,7 +436,8 @@ object MetricReader {
 
     private fun surfaceFlingerFps(state: FpsFlipState): Int {
         if (!RootShell.isRooted()) return -1
-        val out = runCatching { RootShell.exec("service call SurfaceFlinger 1013 2>/dev/null") }.getOrNull() ?: return -1
+        // 超时包裹: 与 FpsSampler 同理, SurfaceFlinger 事务卡死会拖垮共享 su 会话(悬浮窗+录制一起冻)
+        val out = runCatching { RootShell.execTimed(3, "service call SurfaceFlinger 1013 2>/dev/null") }.getOrNull() ?: return -1
         // 解析 Parcel 内的 8 位十六进制词; 常见 "00000000 <count>" 或 "<count> ..."。
         val words = Regex("[0-9a-fA-F]{8}").findAll(out).map { it.value }.toList()
         if (words.isEmpty()) return -1

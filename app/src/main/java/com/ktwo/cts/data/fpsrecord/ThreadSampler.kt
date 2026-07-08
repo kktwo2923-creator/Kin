@@ -56,7 +56,9 @@ class ThreadSampler {
                 "echo \"@S \$(cat \$t/stat 2>/dev/null)\"; " +
                 "echo \"@A \$(grep Cpus_allowed_list \$t/status 2>/dev/null)\"; " +
                 "done"
-            val out = RootShell.exec(cmd)
+            // 录制期这条命令是共享 su 会话上耗时最久的(游戏数百线程 × 每线程数个子命令),
+            // 用 timeout 限住上限, 避免拖慢采样节奏/拖垮其它 root 调用(cmd 无单引号, sh -c 包裹安全)。
+            val out = RootShell.execTimed(4, "sh -c '$cmd'")
             if (out.isBlank()) return
 
             var total = -1L

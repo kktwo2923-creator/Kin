@@ -160,7 +160,7 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                 Spacer(Modifier.height(8.dp))
                 Text("解锁智能版", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(
-                    if (unlocked) "已解锁 · 感谢你的支持" else "为爱发电, 随喜捐赠即可解锁全部智能功能",
+                    if (unlocked) "已解锁 · 感谢购买" else "输入卡密激活, 解锁全部智能功能",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -280,9 +280,9 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
     if (showConfirm) {
         AlertDialog(
             onDismissRequest = { showConfirm = false },
-            title = { Text("曾购买过会员") },
+            title = { Text("已购买本产品") },
             text = {
-                Text("确认你曾购买 / 支持过本项目?\n点「激活」即可直接解锁, 无需卡密、无需联网验证。")
+                Text("确认你已购买本产品?\n点「激活」即可直接解锁, 无需卡密、无需联网验证。")
             },
             confirmButton = {
                 TextButton(onClick = {
