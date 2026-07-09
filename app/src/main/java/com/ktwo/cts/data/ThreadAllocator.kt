@@ -23,9 +23,14 @@ object ThreadAllocator {
         "fpsgo" to "fpsgo",
     )
     /** 需要模糊匹配命令行的框架(App 形态): 匹配串 -> 展示名。 */
+    // Scene 系(vtools/gesture/gamepad)与守护端 refreshSceneActive() 保持同一副包名集, 避免两端各认一半;
+    // 轻调度/Metric 同属"线程绑核"类, 会和本功能抢同一 cpuset, 故一并纳入冲突提示。
     private val CONFLICT_CMDLINES = linkedMapOf(
         "com.omarea.vtools" to "Scene",
+        "com.omarea.gesture" to "Scene 手势",
         "com.omarea.gamepad" to "Scene 游戏助手",
+        "com.qingtd.miao" to "轻调度",
+        "com.itos.metric.monitor" to "Metric",
     )
 
     /** 包名只允许安全字符, 防止拼进 shell 出问题。 */
