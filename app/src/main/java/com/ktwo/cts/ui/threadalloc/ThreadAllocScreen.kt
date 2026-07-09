@@ -24,7 +24,6 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SportsEsports
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -78,7 +77,6 @@ fun ThreadAllocScreen(
     val gamePkgs by ThreadAllocCfg.gamePkgsFlow(ctx).collectAsState(initial = emptySet())
     val ebpfEnabled by ThreadAllocCfg.ebpfEnabledFlow(ctx).collectAsState(initial = false)
 
-    var conflicts by remember { mutableStateOf<List<String>>(emptyList()) }
     var bigCores by remember { mutableStateOf<List<Int>>(emptyList()) }
     var showGamePicker by remember { mutableStateOf(false) }
     var applying by remember { mutableStateOf(false) }
@@ -104,12 +102,11 @@ fun ThreadAllocScreen(
         }
     }
 
-    // 冲突检测 + 大核识别: 进页时后台跑一次, 失败静默(空列表)
+    // 大核识别: 进页时后台跑一次, 失败静默(空列表)
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val c = runCatching { ThreadAllocator.conflicts() }.getOrDefault(emptyList())
             val b = runCatching { ThreadAllocator.bigCoreCpus() }.getOrDefault(emptyList())
-            withContext(Dispatchers.Main) { conflicts = c; bigCores = b }
+            withContext(Dispatchers.Main) { bigCores = b }
         }
     }
 
@@ -162,33 +159,6 @@ fun ThreadAllocScreen(
                         }
                         Spacer(Modifier.width(8.dp))
                         FilledTonalButton(onClick = onNeedPro) { Text("解锁") }
-                    }
-                }
-            }
-
-            // ── 冲突检测横幅 ──
-            if (conflicts.isNotEmpty()) {
-                TonalCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
-                ) {
-                    Row(
-                        Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Outlined.WarningAmber, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("检测到可能的冲突", fontWeight = FontWeight.Medium)
-                            Text(
-                                "检测到 ${conflicts.joinToString("、")} 正在运行, 它们也会调整线程调度, 可能与本功能互相覆盖。建议只保留一个。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
                 }
             }

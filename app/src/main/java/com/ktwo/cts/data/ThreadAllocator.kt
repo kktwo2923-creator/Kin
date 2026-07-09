@@ -15,24 +15,6 @@ object ThreadAllocator {
         RegexOption.IGNORE_CASE,
     )
 
-    /** 已知会自行接管线程/调度的第三方框架进程: 进程名(pidof 精确匹配) -> 展示名。 */
-    private val CONFLICT_PROCS = linkedMapOf(
-        "oiface" to "oiface(厂商游戏加速)",
-        "uperf" to "uperf",
-        "migt" to "migt(MI 调度)",
-        "fpsgo" to "fpsgo",
-    )
-    /** 需要模糊匹配命令行的框架(App 形态): 匹配串 -> 展示名。 */
-    // Scene 系(vtools/gesture/gamepad)与守护端 refreshSceneActive() 保持同一副包名集, 避免两端各认一半;
-    // 轻调度/Metric 同属"线程绑核"类, 会和本功能抢同一 cpuset, 故一并纳入冲突提示。
-    private val CONFLICT_CMDLINES = linkedMapOf(
-        "com.omarea.vtools" to "Scene",
-        "com.omarea.gesture" to "Scene 手势",
-        "com.omarea.gamepad" to "Scene 游戏助手",
-        "com.qingtd.miao" to "轻调度",
-        "com.itos.metric.monitor" to "Metric",
-    )
-
     /** 包名只允许安全字符, 防止拼进 shell 出问题。 */
     private fun safePkg(pkg: String): Boolean =
         pkg.isNotBlank() && pkg.all { it.isLetterOrDigit() || it == '.' || it == '_' }
@@ -235,20 +217,4 @@ object ThreadAllocator {
         RootShell.execSilent("taskset -p ${Integer.toHexString(mask)} $tid")
     }.getOrDefault(false)
 
-    /**
-     * 检测可能与线程分配打架的调度/加速框架, 返回展示名列表(空 = 未发现)。
-     * 只读检测, 不做任何处置。
-     */
-    fun conflicts(): List<String> = runCatching {
-        val found = ArrayList<String>()
-        CONFLICT_PROCS.forEach { (proc, label) ->
-            val out = runCatching { RootShell.exec("pidof '$proc' 2>/dev/null").trim() }.getOrDefault("")
-            if (out.isNotEmpty()) found += label
-        }
-        CONFLICT_CMDLINES.forEach { (needle, label) ->
-            val out = runCatching { RootShell.exec("pgrep -f '$needle' 2>/dev/null | head -1").trim() }.getOrDefault("")
-            if (out.isNotEmpty()) found += label
-        }
-        found.distinct()
-    }.getOrDefault(emptyList())
 }

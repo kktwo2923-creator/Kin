@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.ktwo.cts.BuildConfig
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.license.License
+import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.NotifyService
 import com.ktwo.cts.ui.theme.AppTheme
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
@@ -18,6 +19,7 @@ import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import com.ktwo.cts.ui.theme.ThemeMode
 import com.ktwo.cts.ui.theme.UiStyle
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -33,6 +35,16 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 if (com.ktwo.cts.data.ThreadAllocRuleStore.all(this@MainActivity).isNotEmpty())
                     com.ktwo.cts.service.ThreadRuleService.start(this@MainActivity)
+            }
+        }
+        // 生成 pkg→App名字 映射给守护(让日志把包名显示成 App 名字); 枚举应用较重放 IO, 无 root 静默失败
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching {
+                val pm = packageManager
+                val labels = pm.getInstalledApplications(0).associate {
+                    it.packageName to pm.getApplicationLabel(it).toString()
+                }
+                RootShell.writeAppLabels(labels)
             }
         }
         // 捐赠版:打开即验(LicenseGate 负责)+ 联网恢复立刻验(下面登记);离线不锁,被吊销则红屏锁定并停守护。

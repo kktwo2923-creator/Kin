@@ -73,6 +73,8 @@ object RootShell {
     // perapp_powermode.txt 格式: 每行 "包名 模式"; # 开头注释; * 开头全局默认行。
     // 运行数据文件统一收到 AI/ 子目录(见 AI_DIR),使根目录整洁。
     private const val PERAPP = "/sdcard/Android/Kin/AI/perapp_powermode.txt"
+    // pkg → App 显示名 映射, 供守护日志把包名翻成 App 名字(MainActivity 打开时刷新)。
+    private const val PKG_LABEL = "/sdcard/Android/Kin/AI/pkg_label.txt"
 
     /** CTS 数据/日志目录 */
     const val CTS_DIR = "/sdcard/Android/Kin"
@@ -158,6 +160,26 @@ object RootShell {
         val cur = readPerApp()
         if (mode == "follow") cur.remove(pkg) else cur[pkg] = mode
         return writePerApp(cur, globalMode)
+    }
+
+    /**
+     * 写 pkg→App名字 映射(供守护日志显示 App 名字, 而非包名)。base64 落地避免中文/空格破坏 shell;
+     * 每行 "包名<TAB>名字"(名字里的换行/制表折成空格)。空表或无 root 静默失败, 返回是否写成功。
+     */
+    fun writeAppLabels(labels: Map<String, String>): Boolean {
+        if (labels.isEmpty()) return false
+        val sb = StringBuilder()
+        sb.append("# 包名 → App 名字 (供 Kin 守护日志显示; 由 App 生成, 勿手改)\n")
+        for ((pkg, label) in labels) {
+            if (pkg.isBlank() || label.isBlank()) continue
+            val clean = label.replace(Regex("[\\r\\n\\t]"), " ").trim()
+            if (clean.isEmpty()) continue
+            sb.append(pkg).append('\t').append(clean).append('\n')
+        }
+        val b64 = android.util.Base64.encodeToString(
+            sb.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
+        )
+        return shOk("mkdir -p $AI_DIR; echo '$b64' | base64 -d > $PKG_LABEL")
     }
 
     /**
