@@ -242,7 +242,8 @@ object ThreadAllocRules {
         }
     }.getOrElse { fallbackPlan() }
 
-    private fun fallbackPlan(): TaClusterPlan {
+    /** 纯按核数推断的兜底拓扑(不读 sysfs/root, 可在主线程/组合期安全用作初值)。 */
+    fun fallbackPlan(): TaClusterPlan {
         val n = Runtime.getRuntime().availableProcessors().coerceAtLeast(2)
         val all = (0 until n).toList()
         val small = all.take((n / 2).coerceAtLeast(1))

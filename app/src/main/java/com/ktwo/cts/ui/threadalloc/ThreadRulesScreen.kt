@@ -32,7 +32,9 @@ import androidx.compose.ui.unit.dp
 import com.ktwo.cts.data.TaRule
 import com.ktwo.cts.data.ThreadAllocRuleStore
 import com.ktwo.cts.data.ThreadAllocRules
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // labelOf / isGameCategory / autoDetectRules / detectLabel 已抽到共享的 AutoDetect.kt(本包内可直接调用)。
 
@@ -48,7 +50,12 @@ fun ThreadRulesScreen(onBack: () -> Unit) {
     var editOverride by remember { mutableStateOf<List<TaRule>?>(null) }  // 打开编辑器时预填的规则(自动生成用)
     var showAdd by remember { mutableStateOf(false) }
     var showAutoPick by remember { mutableStateOf(false) }      // 一键自动生成: 选应用
-    val plan = remember { ThreadAllocRules.clusterPlan() }
+    // clusterPlan() 读 sysfs(个别 ROM 回退 root), 不能在组合期主线程跑 → 先用兜底拓扑, 再异步求真值
+    var plan by remember { mutableStateOf(ThreadAllocRules.fallbackPlan()) }
+    LaunchedEffect(Unit) {
+        val p = withContext(Dispatchers.IO) { runCatching { ThreadAllocRules.clusterPlan() }.getOrNull() }
+        if (p != null) plan = p
+    }
 
     fun toast(msg: String) = scope.launch { snackbar.showSnackbar(msg) }
 
@@ -327,7 +334,12 @@ private fun RuleEditorSheet(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val plan = remember { ThreadAllocRules.clusterPlan() }
+    // clusterPlan() 读 sysfs(个别 ROM 回退 root), 不能在组合期主线程跑 → 先用兜底拓扑, 再异步求真值
+    var plan by remember { mutableStateOf(ThreadAllocRules.fallbackPlan()) }
+    LaunchedEffect(Unit) {
+        val p = withContext(Dispatchers.IO) { runCatching { ThreadAllocRules.clusterPlan() }.getOrNull() }
+        if (p != null) plan = p
+    }
     var rows by remember(pkg, initial) {
         mutableStateOf(if (initial.isEmpty()) listOf(TaRule("", "")) else initial)
     }
