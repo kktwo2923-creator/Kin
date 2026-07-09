@@ -6,7 +6,6 @@ package com.ktwo.cts.ui.threadalloc
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,45 +32,9 @@ import androidx.compose.ui.unit.dp
 import com.ktwo.cts.data.TaRule
 import com.ktwo.cts.data.ThreadAllocRuleStore
 import com.ktwo.cts.data.ThreadAllocRules
-import com.ktwo.cts.data.ThreadAllocator
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
-/** 应用标签(尽力解析, 未安装/系统进程名显示原文)。 */
-private fun labelOf(ctx: Context, pkg: String): String = runCatching {
-    val pm = ctx.packageManager
-    pm.getApplicationLabel(pm.getApplicationInfo(pkg.substringBefore(':'), 0)).toString()
-}.getOrDefault(pkg)
-
-/** 系统是否把该应用标为游戏(ApplicationInfo.category)。取不到按非游戏处理。 */
-private fun isGameCategory(ctx: Context, pkg: String): Boolean = runCatching {
-    ctx.packageManager.getApplicationInfo(pkg.substringBefore(':'), 0)
-        .category == ApplicationInfo.CATEGORY_GAME
-}.getOrDefault(false)
-
-/**
- * 自动识别并生成规则: 若应用在运行则读它的实时线程名判定引擎类型, 否则退回系统游戏类别判定,
- * 再套用对应的自适应预设。返回 AutoResult(含判定来源, 供 UI 如实告知)。全程 IO 线程, 失败不抛出。
- */
-private suspend fun autoDetectRules(
-    ctx: Context,
-    pkg: String,
-    plan: com.ktwo.cts.data.TaClusterPlan,
-): ThreadAllocRules.AutoResult = withContext(Dispatchers.IO) {
-    val pid = runCatching { ThreadAllocator.pidOf(pkg) }.getOrNull()
-    val names = if (pid != null)
-        runCatching { ThreadAllocator.listThreads(pid).map { it.name } }.getOrDefault(emptyList())
-    else emptyList()
-    ThreadAllocRules.autoGenerate(pkg, plan, names, isGameCategory(ctx, pkg))
-}
-
-/** 如实描述识别来源(不把没读到线程的兜底猜测说成"已识别")。 */
-private fun detectLabel(res: ThreadAllocRules.AutoResult): String = when (res.source) {
-    ThreadAllocRules.Source.LIVE     -> "据实时线程识别为「${res.preset.name}」"
-    ThreadAllocRules.Source.CATEGORY -> "据系统游戏类别识别为「${res.preset.name}」"
-    ThreadAllocRules.Source.FALLBACK -> "未读到线程(应用未运行?), 已按「${res.preset.name}」兜底"
-}
+// labelOf / isGameCategory / autoDetectRules / detectLabel 已抽到共享的 AutoDetect.kt(本包内可直接调用)。
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

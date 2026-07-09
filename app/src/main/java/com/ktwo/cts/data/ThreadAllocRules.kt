@@ -64,7 +64,8 @@ data class TaPreset(
 object ThreadAllocRules {
 
     /** 包名/进程名合法形态: 字母开头 + [字母数字._], 可带一个 :子进程 后缀。 */
-    private val PKG_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9._]*(:[a-zA-Z0-9._]+)?$")
+    // 允许连字符 '-': 厂商 HAL 进程名(如 vendor.qti.hardware.display.composer-service)常带 '-'。
+    private val PKG_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+)?$")
 
     /** 游戏规则识别关键词(与 AppOpt WebUI identifyRuleType 同步)。 */
     private val GAME_KEYS = listOf("UnityMain", "Unity[!M]", "Job.Worker", "GameThread", "TaskGraphNP")
@@ -251,41 +252,70 @@ object ThreadAllocRules {
         return TaClusterPlan(small, mid, big, prime, all)
     }
 
+    // JZzz「自动线程分配」的三套模板核区间用的是 0-2(小)/3-5(中)/6-7(大+超大)/0-5(小+中)。
+    // 这里把这四个语义档换算成本机簇布局: 小=small、中=mid、大档=big+prime(顶端两簇)、低中=small+mid。
+    private fun littleOf(p: TaClusterPlan) = cpusToSpec(p.small)
+    private fun midOf(p: TaClusterPlan) = cpusToSpec(p.mid)
+    private fun topOf(p: TaClusterPlan) = cpusToSpec((p.big + p.prime).distinct())        // JZzz 6-7
+    private fun lowMidOf(p: TaClusterPlan) = cpusToSpec((p.small + p.mid).distinct())      // JZzz 0-5
+
     /**
-     * 常用预设库(从 AppOpt 报告的模板/预设摘取代表性条目):
-     * 普通应用模板(genAppRules)、Unity/非 Unity 游戏模板(A/B)、两条轻量单点预设、省电模板。
+     * 常用预设库。前三条 game_unity/game_ue/app_balanced 忠实移植 JZzz 真完全体v14 的三套模板
+     * (有UnityMain游戏 / 无UnityMain游戏 / 普通APP), 线程名 glob 与分档一字不差, 核区间按本机簇自适应,
+     * 使「自动分配」的生成结果与 JZzz 一致(GPL-3.0, 署名见下)。后几条为轻量/省电补充预设。
      */
     fun presets(): List<TaPreset> = listOf(
         TaPreset(
             id = "game_unity",
             name = "Unity 游戏 (有 UnityMain)",
-            desc = "UnityMain 绑超大核, 其余 Unity 线程绑大核, Job.Worker 绑中核 (AppOpt 游戏模板A)",
+            desc = "JZzz 有UnityMain模板: UnityMain/Unity*/渲染线程绑大档, Native/Job.Worker绑中核",
             game = true,
         ) { _, p ->
             listOf(
-                TaRule("UnityMain", cpusToSpec(p.prime)),
-                TaRule("Unity[!M]*", cpusToSpec(p.big)),
-                TaRule("Job.Worker*", cpusToSpec(p.mid)),
-                TaRule("NativeThread", cpusToSpec(p.mid)),
-                TaRule("Thread-*", cpusToSpec(p.small)),
-                TaRule("*[!e!r]Thread", cpusToSpec(p.small)),
-                TaRule("", cpusToSpec(p.nonPrime)),
+                TaRule("UnityMain", topOf(p)),
+                TaRule("Unity[!M]*", topOf(p)),
+                TaRule("RenderThread*", topOf(p)),
+                TaRule("NativeThread", midOf(p)),
+                TaRule("*[!e!r]Thread", lowMidOf(p)),
+                TaRule("Thread-*", lowMidOf(p)),
+                TaRule("Job.worker*", midOf(p)),
+                TaRule("Job.Worker*", midOf(p)),   // 大小写各一条(JZzz 修的 Job.worker 大小写坑)
+                TaRule("", lowMidOf(p)),
             )
         },
         TaPreset(
             id = "game_ue",
             name = "UE/自研引擎游戏 (无 UnityMain)",
-            desc = "MainThread/GameThread 绑超大核, 渲染线程绑大核 (AppOpt 游戏模板B)",
+            desc = "JZzz 无UnityMain模板: Main/Game/Render/*Thread绑大档, Native绑中核",
             game = true,
         ) { _, p ->
             listOf(
-                TaRule("MainThread", cpusToSpec(p.prime)),
-                TaRule("*GameThread", cpusToSpec(p.prime)),
-                TaRule("Render Thread*", cpusToSpec(p.big)),
-                TaRule("*[!e!r]Thread", cpusToSpec(p.big)),
-                TaRule("NativeThread", cpusToSpec(p.mid)),
-                TaRule("Thread*", cpusToSpec(p.small)),
-                TaRule("", cpusToSpec(p.nonPrime)),
+                TaRule("Render Thread", topOf(p)),
+                TaRule("RenderThread*", topOf(p)),
+                TaRule("*GameThread", topOf(p)),
+                TaRule("MainThread", topOf(p)),
+                TaRule("*[!e!r]Thread", topOf(p)),
+                TaRule("NativeThread", midOf(p)),
+                TaRule("Thread-*", lowMidOf(p)),
+                TaRule("Job.worker*", midOf(p)),
+                TaRule("", lowMidOf(p)),
+            )
+        },
+        TaPreset(
+            id = "app_balanced",
+            name = "普通应用 · 均衡",
+            desc = "JZzz 普通APP模板: 主线程/媒体解码放中核, binder与默认放小核",
+            game = false,
+        ) { pkg, p ->
+            listOf(
+                TaRule(mainThreadComm(pkg), midOf(p)),
+                TaRule("*[!e!r]Thread", midOf(p)),
+                TaRule("Thread-*", midOf(p)),
+                TaRule("Thread*", midOf(p)),
+                TaRule("binder:*", littleOf(p)),
+                TaRule("MediaCodec_*", midOf(p)),
+                TaRule("VDecod2-*", midOf(p)),
+                TaRule("", littleOf(p)),
             )
         },
         TaPreset(
@@ -297,36 +327,6 @@ object ThreadAllocRules {
             listOf(
                 TaRule("UnityMain", cpusToSpec(p.prime)),
                 TaRule("GLThread*", cpusToSpec(p.prime)),
-            )
-        },
-        TaPreset(
-            id = "render_big",
-            name = "渲染线程绑大核 (轻量)",
-            desc = "只把 RenderThread 类线程固定到大核, 其余线程不干预",
-            game = false,
-        ) { _, p ->
-            listOf(
-                TaRule("RenderThread*", cpusToSpec(p.big)),
-                TaRule("Render Thread*", cpusToSpec(p.big)),
-            )
-        },
-        TaPreset(
-            id = "app_balanced",
-            name = "普通应用 · 均衡",
-            desc = "主线程/渲染/解码放中核, binder/IO 与其余线程放小核 (AppOpt 应用模板)",
-            game = false,
-        ) { pkg, p ->
-            val mid = cpusToSpec(p.mid)
-            val small = cpusToSpec(p.small)
-            listOf(
-                TaRule(mainThreadComm(pkg), mid),
-                TaRule("Thread-*", mid),
-                TaRule("Thread*", mid),
-                TaRule("*[!e!r]Thread", mid),
-                TaRule("binder:*", small),
-                TaRule("MediaCodec_*", mid),
-                TaRule("VDecod2-*", mid),
-                TaRule("", small),
             )
         },
         TaPreset(
@@ -342,6 +342,43 @@ object ThreadAllocRules {
     /** 按 id 取预设(找不到返回 null)。 */
     fun presetById(id: String): TaPreset? = presets().firstOrNull { it.id == id }
 
+    /**
+     * 把预设 applist.conf 里的【基线核号】(0-2 小 / 3-5 中 / 6-7 大档)重映射到本机簇布局:
+     * 规则里出现哪个基线档的核, 就并入本机对应簇的核(小→small、中→mid、大档→big+prime)。
+     * 空/解析不出核 → 返回空串(调用方丢弃该行)。这样内置预设在任意核心布局机型上都能落到合适的核。
+     */
+    fun remapBaselineCpus(spec: String, plan: TaClusterPlan): String {
+        val cores = ThreadAllocator.parseCpuList(spec)
+        if (cores.isEmpty()) return ""
+        var small = false; var mid = false; var top = false
+        cores.forEach { c ->
+            when {
+                c in 0..2 -> small = true
+                c in 3..5 -> mid = true
+                else -> top = true
+            }
+        }
+        val out = sortedSetOf<Int>()
+        if (small) out += plan.small
+        if (mid) out += plan.mid
+        if (top) { out += plan.big; out += plan.prime }
+        return cpusToSpec(out.toList())
+    }
+
+    /** 把整份(基线核号)规则重映射到本机簇布局; 逐条 remap 核区间, 丢弃映射不出核的行, 每包规范化。 */
+    fun remapBaseline(rules: Map<String, List<TaRule>>, plan: TaClusterPlan): LinkedHashMap<String, List<TaRule>> {
+        val out = LinkedHashMap<String, List<TaRule>>()
+        rules.forEach { (pkg, list) ->
+            val mapped = list.mapNotNull { r ->
+                val cpus = remapBaselineCpus(r.cpus, plan)
+                if (cpus.isEmpty()) null else TaRule(r.thread, cpus)
+            }
+            val norm = normalize(mapped)
+            if (norm.isNotEmpty()) out[pkg] = norm
+        }
+        return out
+    }
+
     // ── 自动分配(参考 JZzz「自动线程分配」的分桶思路: 按引擎类型套模板) ──
 
     /**
@@ -355,20 +392,40 @@ object ThreadAllocRules {
     )
 
     /**
-     * 按「实时线程名 + 是否游戏类别」自动判定最合适的预设 id:
-     *  - 有 Unity 引擎线程(UnityMain 等)               → Unity 游戏预设(game_unity);
-     *  - 否则出现 UE/自研引擎主线程 或 系统类别判定为游戏 → 非 Unity 游戏预设(game_ue);
-     *  - 其余                                            → 普通应用均衡预设(app_balanced)。
-     * threadNames 为空(应用没运行/读不到线程)时只靠 isGame 兜底判定。
+     * JZzz「自动获取包名」用的游戏关键字(对 包名+应用名 小写匹配), 命中即判为游戏。移植自 JZzz v14。
+     * 这是 JZzz 唯一的自动"游戏 vs 应用"判据(不读线程)。
+     */
+    val GAME_KEYWORDS = listOf(
+        "game", "games", "play", "王者", "荣耀", "和平", "精英", "原神", "崩坏", "阴阳师", "决战",
+        "平安京", "火影", "忍者", "cf", "穿越火线", "lol", "英雄联盟", "dnf", "地下城", "冒险岛",
+        "梦幻西游", "大话西游", "魔兽", "炉石", "传说", "刀塔", "自走棋", "金铲铲", "三国杀",
+        "第五人格", "明日之后", "明日方舟", "少女前线", "碧蓝航线", "战舰", "少女", "崩坏3",
+        "崩坏星穹铁道", "绝区零", "鸣潮", "战双", "帕弥什", "幻塔", "天涯明月刀", "完美世界",
+        "诛仙", "问道",
+    )
+
+    /** 按 包名+应用名 关键字判定是否游戏(JZzz 式, 不读线程)。 */
+    fun isGameByName(pkg: String, label: String): Boolean {
+        val hay = (pkg + " " + label).lowercase()
+        return GAME_KEYWORDS.any { hay.contains(it) }
+    }
+
+    /**
+     * 自动判定最合适的预设 id(对齐 JZzz 效果):
+     *  - 读到 Unity 引擎线程(UnityMain 等)     → Unity 游戏模板(game_unity);
+     *  - 读到 UE/自研引擎主线程(GameThread 等)  → 非 Unity 游戏模板(game_ue);
+     *  - 否则判定为游戏(关键字/系统类别)         → 默认 Unity 模板(game_unity), 与 JZzz RULE_TYPE 默认=1 一致;
+     *  - 其余                                    → 普通应用模板(app_balanced)。
+     * threadNames 非空时优先靠实时线程精确区分 Unity/UE(比 JZzz 更准); 读不到线程时退回 JZzz 的默认 Unity。
      */
     fun detectPresetId(threadNames: List<String>, isGame: Boolean): String {
         fun hasAny(keys: List<String>): Boolean =
             threadNames.any { n -> keys.any { k -> n.contains(k, ignoreCase = true) } }
         return when {
-            hasAny(UNITY_KEYS)       -> "game_unity"
-            hasAny(ENGINE_KEYS)      -> "game_ue"
-            isGame                   -> "game_ue"
-            else                     -> "app_balanced"
+            hasAny(UNITY_KEYS)  -> "game_unity"
+            hasAny(ENGINE_KEYS) -> "game_ue"
+            isGame              -> "game_unity"   // JZzz 默认按 Unity 处理
+            else                -> "app_balanced"
         }
     }
 
@@ -468,6 +525,22 @@ object ThreadAllocRuleStore {
                 parsed.size
             }
         }
+
+    /**
+     * 一键导入内置预设(assets/thread_alloc_presets/applist.conf): 解析 → 按本机簇布局重映射基线核号
+     * → 合并进现有规则(同名覆盖) → 落盘并推守护。返回导入的应用数; 读不到/解析空返回 0。
+     */
+    suspend fun importBundledPreset(ctx: Context): Int = withContext(Dispatchers.IO) {
+        val text = runCatching {
+            ctx.assets.open("thread_alloc_presets/applist.conf")
+                .bufferedReader().use { it.readText() }
+        }.getOrNull().orEmpty()
+        if (text.isBlank()) return@withContext 0
+        val parsed = ThreadAllocRules.parse(text)
+        if (parsed.isEmpty()) return@withContext 0
+        val remapped = ThreadAllocRules.remapBaseline(parsed, ThreadAllocRules.clusterPlan())
+        importRules(ctx, remapped)
+    }
 
     /** 导出为 AppOpt 兼容文本(labelOf 提供应用名注释)。 */
     suspend fun exportText(ctx: Context, labelOf: (String) -> String? = { null }): String =

@@ -47,7 +47,7 @@ object ThreadPrioRules {
 
     val POLICIES = listOf(OTHER, FIFO, RR)
 
-    private val PKG_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9._]*(:[a-zA-Z0-9._]+)?$")
+    private val PKG_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9._-]*(:[a-zA-Z0-9._-]+)?$")
     private const val MAX_THREAD_LEN = 31
 
     /** 规范化: 剔除非法(策略未知/优先级越界/超长模式), 同模式后者覆盖, 默认兜底只留一条放最后。 */

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Search
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +43,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.ktwo.cts.data.ThreadAllocCfg
 import com.ktwo.cts.data.ThreadAllocDaemonCfg
 import com.ktwo.cts.data.ThreadAllocRuleStore
+import com.ktwo.cts.data.ThreadAllocRules
 import com.ktwo.cts.data.ThreadAllocator
 import com.ktwo.cts.service.AppSwitchService
 import com.ktwo.cts.service.ForegroundDetector
@@ -79,6 +82,9 @@ fun ThreadAllocScreen(
     var bigCores by remember { mutableStateOf<List<Int>>(emptyList()) }
     var showGamePicker by remember { mutableStateOf(false) }
     var applying by remember { mutableStateOf(false) }
+    var applyingPreset by remember { mutableStateOf(false) }   // 快速开始: 一键用预设
+    var applyingAuto by remember { mutableStateOf(false) }     // 快速开始: 自动分配
+    val plan = remember { ThreadAllocRules.clusterPlan() }
 
     // 把总开关 + 游戏库同步进守护 config.json 的 Function.ThreadAlloc 段(守护据此持续绑核)。
     // 先落 DataStore 再从 DataStore 读最新值写盘, 避免连续勾选时用到过期的 compose 状态;
@@ -184,6 +190,58 @@ fun ThreadAllocScreen(
                             )
                         }
                     }
+                }
+            }
+
+            // ── 快速开始(最常用的两件事放最前) ──
+            SectionTitle("快速开始")
+            TaPrimaryActionCard(
+                icon = Icons.AutoMirrored.Outlined.ListAlt,
+                title = "一键使用预设规则",
+                desc = "内置热门应用/游戏的绑核规则(applist.conf), 一键导入并按本机核心布局自动适配",
+                buttonText = "导入",
+                proUnlocked = proUnlocked, onNeedPro = onNeedPro, busy = applyingPreset,
+            ) {
+                applyingPreset = true
+                scope.launch {
+                    val n = runCatching { ThreadAllocRuleStore.importBundledPreset(ctx) }.getOrDefault(0)
+                    if (n > 0) {
+                        com.ktwo.cts.service.ThreadRuleService.start(ctx)
+                        syncDaemon()
+                    }
+                    applyingPreset = false
+                    snackbar.showSnackbar(
+                        if (n > 0) "已导入 $n 个应用的预设规则(已适配本机核心布局)"
+                        else "导入失败, 请确认 Root 权限"
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            TaPrimaryActionCard(
+                icon = Icons.Outlined.AutoFixHigh,
+                title = "自动分配(前台应用)",
+                desc = "识别当前前台应用/游戏的引擎类型, 自动生成绑核规则并生效(JZzz 式)",
+                buttonText = "分配",
+                proUnlocked = proUnlocked, onNeedPro = onNeedPro, busy = applyingAuto,
+            ) {
+                applyingAuto = true
+                scope.launch {
+                    val fg = withContext(Dispatchers.IO) {
+                        AppSwitchService.foreground.ifBlank {
+                            runCatching { ForegroundDetector(ctx).currentForegroundPackage() }.getOrNull().orEmpty()
+                        }
+                    }
+                    if (fg.isBlank() || fg == ctx.packageName) {
+                        applyingAuto = false
+                        snackbar.showSnackbar("没拿到前台应用(本应用不算), 请先切到目标应用再回来点")
+                        return@launch
+                    }
+                    val res = autoDetectRules(ctx, fg, plan)
+                    ThreadAllocRuleStore.put(ctx, fg, res.rules)
+                    com.ktwo.cts.service.ThreadRuleService.start(ctx)
+                    syncDaemon()
+                    applyingAuto = false
+                    snackbar.showSnackbar("${labelOf(ctx, fg)}: ${detectLabel(res)}, 已生成并生效")
                 }
             }
 
@@ -471,6 +529,42 @@ fun ThreadAllocScreen(
             },
             onDismiss = { showGamePicker = false },
         )
+    }
+}
+
+/** 首页「快速开始」的主操作卡片: 图标 + 标题/说明 + 主按钮(未解锁点按钮引导付费, busy 时禁用)。 */
+@Composable
+private fun TaPrimaryActionCard(
+    icon: ImageVector,
+    title: String,
+    desc: String,
+    buttonText: String,
+    proUnlocked: Boolean,
+    onNeedPro: () -> Unit,
+    busy: Boolean,
+    onClick: () -> Unit,
+) {
+    TonalCard(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                Text(
+                    desc,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Button(
+                onClick = { if (!proUnlocked) onNeedPro() else if (!busy) onClick() },
+                enabled = !busy,
+            ) { Text(if (busy) "…" else buttonText) }
+        }
     }
 }
 
