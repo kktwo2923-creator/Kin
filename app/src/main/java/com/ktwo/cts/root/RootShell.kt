@@ -254,7 +254,7 @@ object RootShell {
 
     /**
      * 把线程分配规则文本推给守护(落到 $THREAD_RULES);守护按 mtime 变化热重载。
-     * base64 落地避免规则里的 {}/*/[] 等特殊字符破坏 shell。无 root/写失败静默返回 false。
+     * base64 落地避免规则里的花括号、星号、方括号等特殊字符破坏 shell。无 root/写失败静默返回 false。
      */
     fun writeThreadRules(text: String): Boolean {
         val b64 = android.util.Base64.encodeToString(
