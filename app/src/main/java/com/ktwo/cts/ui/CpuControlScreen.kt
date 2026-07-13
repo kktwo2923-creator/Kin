@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,10 +23,16 @@ import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.PolicyMap
 import com.ktwo.cts.data.ProfileModel
 
-/** CPU 控制面板:编辑 config.json 里选中 model 的频率/调速器/GPU/核心,写回后 daemon 热重载。 */
+/**
+ * CPU 控制面板:编辑 config.json 里选中 model 的频率/调速器/GPU/核心,写回后 daemon 热重载。
+ * 调速器参数编辑入口整合在本页(不再在「功能」页单列), 点击跳转 GovernorParamsScreen。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
+fun CpuControlScreen(
+    onOpenGovernor: () -> Unit = {},
+    vm: CpuControlVm = viewModel(),
+) {
     val cfg by vm.cfg.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val editing by vm.editing.collectAsStateWithLifecycle()
@@ -148,6 +157,8 @@ fun CpuControlScreen(vm: CpuControlVm = viewModel()) {
                     shape = RoundedCornerShape(16.dp),
                 ) { Text("应用「${profileLabel(selected)}」配置", fontWeight = FontWeight.SemiBold) }
             }
+
+            GovernorEntryCard(onClick = onOpenGovernor)
 
             Spacer(Modifier.height(96.dp))
         }
@@ -280,6 +291,39 @@ private fun RestoreDefaultsDialog(
         confirmButton = { TextButton(onClick = { onConfirm(alsoPerapp) }) { Text("恢复") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+/** 调速器参数编辑入口: 点击跳转独立编辑页(每簇 governor tunable)。 */
+@Composable
+private fun GovernorEntryCard(onClick: () -> Unit) {
+    TonalCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.Tune, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("调速器参数", fontWeight = FontWeight.Bold)
+                Text(
+                    "每簇 governor 可调参数精细编辑",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable

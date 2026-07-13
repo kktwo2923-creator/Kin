@@ -95,7 +95,7 @@ fun AppsScreen() {
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("应用画像") },
+                title = { Text("应用策略") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,

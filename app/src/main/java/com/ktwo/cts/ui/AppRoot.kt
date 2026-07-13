@@ -162,14 +162,12 @@ fun AppRoot() {
                             onOpenCpu      = { nav.navigate("cpu") },
                             onOpenAutoMode = { nav.navigate("automode") },
                             onOpenFpsRecord = { nav.navigate("fpsrecord") },
-                            onOpenProcess = { nav.navigate("process") },
                             onOpenThreadAlloc = { nav.navigate("threadalloc") },
-                            onOpenMemory = { nav.navigate("memory") },
-                            onOpenGovernor = { nav.navigate("governor") },
                             onOpenColorOs = { nav.navigate("coloros") },
                         )
                     }
-                    composable("cpu")      { CpuControlScreen() }
+                    // 调速器参数入口已整合进 CPU 控制页(性能配置)。
+                    composable("cpu")      { CpuControlScreen(onOpenGovernor = { nav.navigate("governor") }) }
                     composable("apps")     { AppsScreen() }
                     composable("monitor")  { AutoMonitorScreen() }
                     composable("records")  { RecordsScreen() }
