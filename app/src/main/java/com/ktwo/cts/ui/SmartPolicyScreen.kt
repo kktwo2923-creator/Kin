@@ -226,7 +226,8 @@ fun SmartPolicyScreen(
             // ── 状态频率策略 ──
             SpSection("状态频率策略") {
                 Text(
-                    "智能调度的六个负载状态各自的频率上限;未自定义的状态由智能曲线按学习结果自动决定。",
+                    "六个负载状态各自的频率「上限」(封顶值, 不是实时运行频率)。" +
+                        "带 ~ 的上限由智能曲线按学习结果自动决定、随省电倾向浮动;自定义后为固定封顶。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -300,18 +301,30 @@ private fun FsmStateRow(
     onChange: (FsmStateOverride) -> Unit,
 ) {
     val cn = SmartPolicyCfg.STATE_CN[stateKey] ?: stateKey
-    // 尾部摘要: 覆盖了就报百分比, 没覆盖就报智能曲线大概压到多少 MHz。
-    val summary = if (ov.anySet) {
+    // 摘要统一为「上限 小核/大核MHz · GPU% · 来源」—— 全是封顶值(scaling_max), 不是实时频率。
+    // 自定义百分比换算成 MHz(不带 ~, 固定封顶); 曲线值带 ~(随学习/省电倾向浮动)。
+    // alpha 兜底 500, 与问卷展示/应用口径一致。
+    val alphaEff = if (alpha >= 0) alpha else 500
+    val gpuPct = if (ov.gpu in 1..100) ov.gpu else FsmCurve.GPU_BUILTIN.getOrElse(idx) { 100 }
+    val summary = if (hwMaxL > 0 && hwMaxB > 0) {
+        val lTxt = ov.maxL.takeIf { it in 10..100 }
+            ?.let { "${it * hwMaxL / 100 / 1000}" }
+            ?: "~${FsmCurve.maxCapKhz(idx, alphaEff, little = true, hwMaxKhz = hwMaxL) / 1000}"
+        val bTxt = ov.maxB.takeIf { it in 10..100 }
+            ?.let { "${it * hwMaxB / 100 / 1000}" }
+            ?: "~${FsmCurve.maxCapKhz(idx, alphaEff, little = false, hwMaxKhz = hwMaxB) / 1000}"
+        "上限 $lTxt/${bTxt}MHz · GPU ${gpuPct}% · " + (if (ov.anySet) "自定义" else "智能曲线")
+    } else if (ov.anySet) {
+        // 读不到本机最高频: 自定义无法换算 MHz, 退回百分比表述。
         buildList {
             if (ov.maxL in 10..100) add("小核${ov.maxL}%")
             if (ov.maxB in 10..100) add("大核${ov.maxB}%")
-            add(if (ov.gpu in 1..100) "GPU ${ov.gpu}%" else "GPU 跟随智能")
-        }.joinToString(" · ")
+            add("GPU ${gpuPct}%")
+        }.joinToString(" · ").let { "上限 $it · 自定义" }
     } else {
-        val l = FsmCurve.maxCapKhz(idx, alpha, little = true, hwMaxKhz = hwMaxL) / 1000
-        val b = FsmCurve.maxCapKhz(idx, alpha, little = false, hwMaxKhz = hwMaxB) / 1000
-        if (hwMaxL > 0 && hwMaxB > 0) "智能曲线 ~${l}MHz/~${b}MHz"
-        else "智能曲线 ~${l}MHz/~${b}MHz(参考机型换算)"
+        val l = FsmCurve.maxCapKhz(idx, alphaEff, little = true, hwMaxKhz = hwMaxL) / 1000
+        val b = FsmCurve.maxCapKhz(idx, alphaEff, little = false, hwMaxKhz = hwMaxB) / 1000
+        "上限 ~$l/~${b}MHz · GPU ${gpuPct}% · 智能曲线(参考机型换算)"
     }
 
     Column {
