@@ -301,8 +301,9 @@ private fun FsmStateRow(
     onChange: (FsmStateOverride) -> Unit,
 ) {
     val cn = SmartPolicyCfg.STATE_CN[stateKey] ?: stateKey
-    // 摘要统一为「上限 小核/大核MHz · GPU% · 来源」—— 全是封顶值(scaling_max), 不是实时频率。
+    // 摘要统一为「上限 小核/大核MHz · GPU%」—— 全是封顶值(scaling_max), 不是实时频率。
     // 自定义百分比换算成 MHz(不带 ~, 固定封顶); 曲线值带 ~(随学习/省电倾向浮动)。
+    // 「智能曲线/自定义」来源做成标题旁的小标签(同"当前"), 不占摘要行, 避免折行。
     // alpha 兜底 500, 与问卷展示/应用口径一致。
     val alphaEff = if (alpha >= 0) alpha else 500
     val gpuPct = if (ov.gpu in 1..100) ov.gpu else FsmCurve.GPU_BUILTIN.getOrElse(idx) { 100 }
@@ -313,18 +314,18 @@ private fun FsmStateRow(
         val bTxt = ov.maxB.takeIf { it in 10..100 }
             ?.let { "${it * hwMaxB / 100 / 1000}" }
             ?: "~${FsmCurve.maxCapKhz(idx, alphaEff, little = false, hwMaxKhz = hwMaxB) / 1000}"
-        "上限 $lTxt/${bTxt}MHz · GPU ${gpuPct}% · " + (if (ov.anySet) "自定义" else "智能曲线")
+        "上限 $lTxt/${bTxt}MHz · GPU ${gpuPct}%"
     } else if (ov.anySet) {
         // 读不到本机最高频: 自定义无法换算 MHz, 退回百分比表述。
         buildList {
             if (ov.maxL in 10..100) add("小核${ov.maxL}%")
             if (ov.maxB in 10..100) add("大核${ov.maxB}%")
             add("GPU ${gpuPct}%")
-        }.joinToString(" · ").let { "上限 $it · 自定义" }
+        }.joinToString(" · ").let { "上限 $it" }
     } else {
         val l = FsmCurve.maxCapKhz(idx, alphaEff, little = true, hwMaxKhz = hwMaxL) / 1000
         val b = FsmCurve.maxCapKhz(idx, alphaEff, little = false, hwMaxKhz = hwMaxB) / 1000
-        "上限 ~$l/~${b}MHz · GPU ${gpuPct}% · 智能曲线(参考机型换算)"
+        "上限 ~$l/~${b}MHz · GPU ${gpuPct}%(参考机型换算)"
     }
 
     Column {
@@ -362,6 +363,14 @@ private fun FsmStateRow(
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
+                    Spacer(Modifier.width(6.dp))
+                    // 来源标签: 自定义(用户改过)/智能曲线(自动)。放标题旁, 摘要行只留数值不折行。
+                    Text(
+                        if (ov.anySet) "自定义" else "智能曲线",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (ov.anySet) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Text(
                     summary,
