@@ -442,6 +442,23 @@ object RootShell {
         return shOk(": > $AI_DIR/power_sessions.txt")
     }
 
+    /** 智能调度学习数据文件(daemon 持久化的自学习状态)非空 = 已积累学习数据(老用户)。 */
+    fun hasLearningData(): Boolean {
+        val path = "$CTS_DIR/.kin/auto_state.txt"
+        val text = runCatching {
+            val f = java.io.File(path)
+            if (f.canRead()) f.readText() else ""
+        }.getOrDefault("").ifBlank { shOut("cat $path 2>/dev/null").joinToString("\n") }
+        // 行格式 b<i>=alpha,obs,last_seen,...(daemon saveState)。daemon 一跑起来文件就存在,
+        // 光看存在性会把新用户误判成老用户;这里要求任一桶的观察数 obs 达到阈值才算"有数据"。
+        return text.lineSequence().any { line ->
+            val eq = line.indexOf('=')
+            if (eq <= 0 || !line.startsWith("b")) return@any false
+            val obs = line.substring(eq + 1).split(',').getOrNull(1)?.trim()?.toIntOrNull() ?: 0
+            obs >= 8
+        }
+    }
+
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
     fun readAutoStatus(): String {
         runCatching {

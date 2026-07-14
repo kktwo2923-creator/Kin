@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,6 +52,7 @@ fun FeaturesScreen(
     onOpenApps: () -> Unit = {},
     onOpenCpu: () -> Unit = {},
     onOpenAutoMode: () -> Unit = {},
+    onOpenSmartPolicy: () -> Unit = {},
     onOpenFpsRecord: () -> Unit = {},
     onOpenThreadAlloc: () -> Unit = {},
     onOpenColorOs: () -> Unit = {},
@@ -93,6 +95,13 @@ fun FeaturesScreen(
                         else "智能版功能 · 省电/夜间/温控/系统优化",
                         locked = !proUnlocked,
                         onClick = onOpenAutoMode,
+                    ),
+                    FeatureItem(
+                        Icons.Outlined.Tune, "智能策略",
+                        if (proUnlocked) "问答调优 · 六状态频率上限一目了然"
+                        else "智能版功能 · 问答调优/状态频率策略",
+                        locked = !proUnlocked,
+                        onClick = onOpenSmartPolicy,
                     ),
                     FeatureItem(
                         Icons.Outlined.Insights, "智能监控",

@@ -237,6 +237,51 @@ object Prefs {
     suspend fun setDocsSeen(ctx: Context, b: Boolean) {
         ctx.dataStore.edit { it[DOCS_SEEN_KEY] = b }
     }
+
+    // ── 智能策略(问答调优)──
+    // 最近一次问卷回答(SurveyAnswers JSON); 空 = 从未回答过(问卷提示的判定条件之一)。
+    private val SMART_SURVEY_KEY = stringPreferencesKey("smart_survey_json")
+    fun smartSurveyFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[SMART_SURVEY_KEY] ?: "" }
+    suspend fun setSmartSurvey(ctx: Context, json: String) {
+        ctx.dataStore.edit { it[SMART_SURVEY_KEY] = json }
+    }
+
+    // 问卷历史(JSON 数组): 每完成一轮追加一条, 最多留 50 条, 超出丢最旧。
+    private val SMART_SURVEY_HISTORY_KEY = stringPreferencesKey("smart_survey_history_json")
+    fun smartSurveyHistoryFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[SMART_SURVEY_HISTORY_KEY] ?: "[]" }
+    suspend fun appendSmartSurveyHistory(ctx: Context, entryJson: String) {
+        val entry = runCatching { org.json.JSONObject(entryJson) }.getOrNull() ?: return
+        ctx.dataStore.edit { p ->
+            val arr = runCatching { org.json.JSONArray(p[SMART_SURVEY_HISTORY_KEY] ?: "[]") }
+                .getOrDefault(org.json.JSONArray())
+            arr.put(entry)
+            // 上限 50 条, 丢最旧(数组头部)。
+            val out = org.json.JSONArray()
+            val start = (arr.length() - 50).coerceAtLeast(0)
+            for (i in start until arr.length()) out.put(arr.get(i))
+            p[SMART_SURVEY_HISTORY_KEY] = out.toString()
+        }
+    }
+
+    // 问卷提示「稍后再说」的截止时间(ms): 当前时间早于它时不再弹; 完成问卷后清零。
+    private val SMART_SURVEY_SNOOZE_KEY = longPreferencesKey("smart_survey_snooze_ts")
+    fun smartSurveySnoozeFlow(ctx: Context): Flow<Long> =
+        ctx.dataStore.data.map { it[SMART_SURVEY_SNOOZE_KEY] ?: 0L }
+    suspend fun setSmartSurveySnooze(ctx: Context, ts: Long) {
+        ctx.dataStore.edit { it[SMART_SURVEY_SNOOZE_KEY] = ts }
+    }
+
+    // 智能调度首次开启时间(ms): 0 = 未记录。用于「运行满 24 小时后提示问卷」判据。
+    private val SMART_ENABLED_SINCE_KEY = longPreferencesKey("smart_enabled_since")
+    fun smartEnabledSinceFlow(ctx: Context): Flow<Long> =
+        ctx.dataStore.data.map { it[SMART_ENABLED_SINCE_KEY] ?: 0L }
+    suspend fun smartEnabledSince(ctx: Context): Long =
+        ctx.dataStore.data.first()[SMART_ENABLED_SINCE_KEY] ?: 0L
+    suspend fun setSmartEnabledSince(ctx: Context, ts: Long) {
+        ctx.dataStore.edit { it[SMART_ENABLED_SINCE_KEY] = ts }
+    }
 }
 
 private val BLACKLIST_KEY   = stringPreferencesKey("blacklist_json")

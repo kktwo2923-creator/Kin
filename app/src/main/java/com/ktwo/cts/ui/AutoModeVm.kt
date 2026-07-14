@@ -122,6 +122,10 @@ class AutoModeVm(app: Application) : AndroidViewModel(app) {
                 }
                 // 持久化给底栏用: tab 集只信这个值, 不再热路径读 root shell(避免抖动弹页)。
                 Prefs.setSmartEnabled(getApplication<Application>(), on)
+                // 记录首次开启时间(智能策略问卷「运行满一天再提示」判据), 只记第一次。
+                if (on && Prefs.smartEnabledSince(getApplication()) == 0L) {
+                    Prefs.setSmartEnabledSince(getApplication(), System.currentTimeMillis())
+                }
                 true
             }.getOrDefault(false)
             _smartEnabled.value = if (ok) on else _smartEnabled.value

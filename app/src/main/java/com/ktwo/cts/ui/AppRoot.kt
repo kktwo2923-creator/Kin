@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,6 +68,7 @@ private val FULLSCREEN_ROUTES =
         "about", "automode", "pro", "perfmon", "fpsrecord",
         "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
         "threadalloc_manual", "threadalloc_rules", "threadalloc_priority", "memory", "governor", "docs", "coloros",
+        "smartpolicy?survey={survey}",
     )
 
 @Composable
@@ -98,6 +100,50 @@ fun AppRoot() {
     // 无论选「查看文档」还是「稍后」都置 true, 只打扰这一次。
     val scope = rememberCoroutineScope()
     val docsSeen by Prefs.docsSeenFlow(ctx).collectAsState(initial = true)
+
+    // 智能策略问卷提示: 智能调度开着 + 从没答过问卷 + 「稍后再说」已到期 +
+    // (已积累学习数据 或 开启满 24 小时) 时弹一次引导。initial 用占位值防加载前误判;
+    // 学习数据检查走 IO 线程; 本进程只判定/弹一次。
+    val smartOnForPrompt by Prefs.smartEnabledFlow(ctx).collectAsState(initial = null)
+    val surveyJsonForPrompt by Prefs.smartSurveyFlow(ctx).collectAsState(initial = "\u0000")
+    val surveySnooze by Prefs.smartSurveySnoozeFlow(ctx).collectAsState(initial = Long.MAX_VALUE)
+    val smartSince by Prefs.smartEnabledSinceFlow(ctx).collectAsState(initial = -1L)
+    // rememberSaveable: 旋转/进程重建不重弹(去回答后再转屏, 弹窗不会盖到答题页上)。
+    var surveyPromptChecked by rememberSaveable { mutableStateOf(false) }
+    var showSurveyPrompt by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(smartOnForPrompt, surveyJsonForPrompt, surveySnooze, smartSince, docsSeen) {
+        if (surveyPromptChecked) return@LaunchedEffect
+        if (!docsSeen) return@LaunchedEffect                  // 首启文档引导优先, 不叠两个弹窗
+        if (smartOnForPrompt != true) return@LaunchedEffect
+        if (surveyJsonForPrompt != "") return@LaunchedEffect  // 已答过 / 占位值(未加载完)
+        if (smartSince < 0) return@LaunchedEffect             // 未加载完
+        val now = System.currentTimeMillis()
+        if (now <= surveySnooze) return@LaunchedEffect        // 稍后再说未到期 / 占位值
+        // 学习数据判定(老用户): auto_state.txt 非空, 或 auto_status 已有置信度/夜间样本。
+        val hasData = withContext(Dispatchers.IO) {
+            runCatching {
+                if (com.ktwo.cts.root.RootShell.hasLearningData()) true
+                else {
+                    var conf = 0
+                    var night = 0
+                    com.ktwo.cts.root.RootShell.readAutoStatus().lineSequence().forEach { line ->
+                        val i = line.indexOf('=')
+                        if (i > 0) {
+                            val v = line.substring(i + 1).trim().toIntOrNull() ?: 0
+                            when (line.substring(0, i).trim()) {
+                                "conf" -> conf = v
+                                "night_samples" -> night = v
+                            }
+                        }
+                    }
+                    conf > 0 || night > 0
+                }
+            }.getOrDefault(false)
+        }
+        surveyPromptChecked = true
+        val ranOneDay = smartSince > 0 && now - smartSince >= 24L * 60 * 60 * 1000
+        if (hasData || ranOneDay) showSurveyPrompt = true
+    }
 
     CompositionLocalProvider(LocalHazeState provides hazeState) {
         val curDestRoute = entry?.destination?.route
@@ -161,6 +207,7 @@ fun AppRoot() {
                             onOpenApps     = { nav.navigate("apps") },
                             onOpenCpu      = { nav.navigate("cpu") },
                             onOpenAutoMode = { nav.navigate("automode") },
+                            onOpenSmartPolicy = { nav.navigate("smartpolicy") },
                             onOpenFpsRecord = { nav.navigate("fpsrecord") },
                             onOpenThreadAlloc = { nav.navigate("threadalloc") },
                             onOpenColorOs = { nav.navigate("coloros") },
@@ -188,6 +235,20 @@ fun AppRoot() {
                     composable("automode") {
                         AutoModeScreen(
                             onBack = { nav.popBackStack() },
+                            proUnlocked = proUnlocked,
+                            onNeedPro = { nav.navigate("pro") },
+                        )
+                    }
+                    composable(
+                        "smartpolicy?survey={survey}",
+                        arguments = listOf(navArgument("survey") {
+                            type = NavType.BoolType
+                            defaultValue = false
+                        }),
+                    ) { backEntry ->
+                        SmartPolicyScreen(
+                            onBack = { nav.popBackStack() },
+                            openSurvey = backEntry.arguments?.getBoolean("survey") ?: false,
                             proUnlocked = proUnlocked,
                             onNeedPro = { nav.navigate("pro") },
                         )
@@ -283,6 +344,43 @@ fun AppRoot() {
                             TextButton(onClick = {
                                 scope.launch { Prefs.setDocsSeen(ctx, true) }
                             }) { Text("稍后") }
+                        },
+                    )
+                }
+
+                // 智能策略问卷引导(条件见上面的 LaunchedEffect; 「稍后再说」压 3 天)
+                if (showSurveyPrompt) {
+                    val snoozeAndClose: () -> Unit = {
+                        showSurveyPrompt = false
+                        scope.launch {
+                            Prefs.setSmartSurveySnooze(
+                                ctx, System.currentTimeMillis() + 3L * 24 * 60 * 60 * 1000
+                            )
+                        }
+                    }
+                    AlertDialog(
+                        onDismissRequest = snoozeAndClose,
+                        title = { Text("让智能调度更懂你") },
+                        text = {
+                            Text(
+                                "智能调度已经运行了一段时间。回答几个小问题(睡眠时间、省电偏好、是否卡顿)," +
+                                    "帮它把不同负载下的频率调得更合适。"
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showSurveyPrompt = false
+                                // 也压 1 天: 万一没答完就退出 App, 下次启动不立刻再弹。
+                                scope.launch {
+                                    Prefs.setSmartSurveySnooze(
+                                        ctx, System.currentTimeMillis() + 24L * 60 * 60 * 1000
+                                    )
+                                }
+                                nav.navigate("smartpolicy?survey=true")
+                            }) { Text("去回答") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = snoozeAndClose) { Text("稍后再说") }
                         },
                     )
                 }

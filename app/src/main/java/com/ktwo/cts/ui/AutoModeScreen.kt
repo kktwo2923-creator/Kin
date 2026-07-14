@@ -39,6 +39,17 @@ fun AutoModeScreen(
 
     var showAdvanced by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+
+    // 从返回栈回到本页时重新读 config: 期间智能策略页/问卷可能已改过 AutoMode 参数,
+    // 不刷新会拿着过期的编辑副本, 下次保存把人家的修改又写回旧值。有未保存修改时不打扰。
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME && !vm.dirty.value) vm.reload()
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
     LaunchedEffect(Unit) {
         vm.saveResult.collect { r ->
             if (r != null) {

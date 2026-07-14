@@ -41,9 +41,11 @@ data class AutoModeCfg(
     val coolTemp: Int = 55,
     val hotTemp: Int = 70,
     val vhotTemp: Int = 80,
-    val vetoTemp: Int = 65,
-    val fsmSustainedEnter: Int = 57,
-    val fsmSustainedExit: Int = 49,
+    // 默认值必须与 daemon Config.hpp 一致: 保存时会把缺失键按默认补写进 config.json,
+    // 对不上就等于替用户偷偷改了守护的出厂行为(veto_temp 曾因 65/60 不一致踩过坑)。
+    val vetoTemp: Int = 60,
+    val fsmSustainedEnter: Int = 54,
+    val fsmSustainedExit: Int = 48,
     // Smart Battery Bias(ASB):手动把智能模式往省电推,直接加到有效 alpha。0=关,越大越省电、略掉跟手。仅影响智能档。
     val batteryBias: Int = 0,
     // ── 系统优化 (ASB,移植自 AutoSystemBoost,与档位无关,所有模式生效) ──
@@ -133,14 +135,16 @@ data class AutoModeCfg(
 
     /** 把当前设置合并回原始 JSON;Function 下其它节点与顶层字段原样保留。 */
     fun mergeInto(raw: String): String {
-        val o = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+        // 非空但解析失败的 config 直接抛异常, 由调用方按"保存失败"处理 ——
+        // 不能凭空造一份只剩 AutoMode 的 config 把用户的画像/模型全部抹掉。
+        val o = if (raw.isBlank()) JSONObject() else JSONObject(raw)
         val f = o.optJSONObject("Function") ?: JSONObject().also { o.put("Function", it) }
         val a = f.optJSONObject("AutoMode") ?: JSONObject().also { f.put("AutoMode", it) }
 
-        // enter 必须 > exit,否则进出抖动;非法时回退默认 57/49(与 daemon 解析护栏一致)。
+        // enter 必须 > exit,否则进出抖动;非法时回退默认 54/48(与 daemon 解析护栏一致)。
         var enter = fsmSustainedEnter
         var exit = fsmSustainedExit
-        if (enter <= exit) { enter = 57; exit = 49 }
+        if (enter <= exit) { enter = 54; exit = 48 }
 
         a.put("enable", enable.toString())
         a.put("fsm_enable", fsmEnable.toString())
