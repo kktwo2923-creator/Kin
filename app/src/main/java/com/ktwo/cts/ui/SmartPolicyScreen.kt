@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ktwo.cts.data.AutoModeCfg
+import com.ktwo.cts.data.FsmCurve
 import com.ktwo.cts.data.FsmStateOverride
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.SmartPolicyCfg
@@ -49,6 +51,7 @@ fun SmartPolicyScreen(
     val loading by vm.loading.collectAsStateWithLifecycle()
     val dirty by vm.dirty.collectAsStateWithLifecycle()
     val live by vm.live.collectAsStateWithLifecycle()
+    val autoCfg by vm.autoCfg.collectAsStateWithLifecycle()
     val hwMaxL by vm.hwMaxL.collectAsStateWithLifecycle()
     val hwMaxB by vm.hwMaxB.collectAsStateWithLifecycle()
 
@@ -140,7 +143,11 @@ fun SmartPolicyScreen(
             // ── 问答调优 ──
             SpSection("问答调优") {
                 if (latest != null) {
-                    SpAnswerRow("睡眠时间", "${latest.sleepStart} 点睡 · ${latest.sleepEnd} 点起")
+                    SpAnswerRow(
+                        "睡眠时间",
+                        if (latest.nightOk) "跟随自动学习"
+                        else "${latest.sleepStart} 点睡 · ${latest.sleepEnd} 点起",
+                    )
                     HorizontalDivider()
                     SpAnswerRow("省电偏好", SmartSurvey.optionLabel(SmartSurvey.POWER_PREF_OPTIONS, latest.powerPref))
                     HorizontalDivider()
@@ -245,9 +252,25 @@ fun SmartPolicyScreen(
         }
     }
 
-    if (showSurvey) {
+    // 数据就绪门: config(loading=false)与 auto_status(live.valid)都到位后再组合问卷,
+    // rememberSaveable 的种子值才来自真实数据 —— 否则会把"已学到的作息"误判成"未学到",
+    // 默认时段被当成纠正下发, 反把真学到的窗口冲掉。守护没跑时 auto_status 永远读不到:
+    // 3 秒超时放行, 按"未学到"处理。
+    var surveyGateTimeout by remember { mutableStateOf(false) }
+    LaunchedEffect(showSurvey) {
+        surveyGateTimeout = false
+        if (showSurvey) {
+            kotlinx.coroutines.delay(3000)
+            surveyGateTimeout = true
+        }
+    }
+    if (showSurvey && !loading && (live.valid || surveyGateTimeout)) {
         SurveySheet(
-            initial = latest,
+            live = live,
+            autoCfg = autoCfg,
+            editing = editing,
+            hwMaxL = hwMaxL,
+            hwMaxB = hwMaxB,
             onDismiss = { showSurvey = false },
             onDone = { answers ->
                 if (!proUnlocked) {
@@ -363,8 +386,8 @@ private fun FsmStateRow(
                             if (!on) onChange(FsmStateOverride())
                             else onChange(
                                 FsmStateOverride(
-                                    maxL = curvePct(idx, alpha, little = true, hwMaxKhz = hwMaxL),
-                                    maxB = curvePct(idx, alpha, little = false, hwMaxKhz = hwMaxB),
+                                    maxL = FsmCurve.curvePct(idx, alpha, little = true, hwMaxKhz = hwMaxL),
+                                    maxB = FsmCurve.curvePct(idx, alpha, little = false, hwMaxKhz = hwMaxB),
                                     gpu = 0,   // 默认仍跟随智能, 想改再拖 GPU 滑条
                                 )
                             )
@@ -376,13 +399,13 @@ private fun FsmStateRow(
                         SpSlider(
                             "小核上限", "占本机小核最高频的百分比",
                             if (ov.maxL in 10..100) ov.maxL
-                            else curvePct(idx, alpha, little = true, hwMaxKhz = hwMaxL),
+                            else FsmCurve.curvePct(idx, alpha, little = true, hwMaxKhz = hwMaxL),
                             10, 100, unit = "%",
                         ) { onChange(ov.copy(maxL = it)) }
                         SpSlider(
                             "大核上限", "占本机大核最高频的百分比",
                             if (ov.maxB in 10..100) ov.maxB
-                            else curvePct(idx, alpha, little = false, hwMaxKhz = hwMaxB),
+                            else FsmCurve.curvePct(idx, alpha, little = false, hwMaxKhz = hwMaxB),
                             10, 100, unit = "%",
                         ) { onChange(ov.copy(maxB = it)) }
                         SpSlider(
@@ -401,30 +424,51 @@ private fun FsmStateRow(
     }
 }
 
-/** 智能曲线上限换算成百分比(自定义开关打开时的初始值); 读不到本机最高频时给 100。 */
-private fun curvePct(stateIdx: Int, alpha: Int, little: Boolean, hwMaxKhz: Long): Int {
-    if (hwMaxKhz <= 0) return 100
-    val khz = FsmCurve.maxCapKhz(stateIdx, alpha, little, hwMaxKhz)
-    return (khz * 100 / hwMaxKhz).toInt().coerceIn(10, 100)
-}
-
 /* ──────────────────────────── 问卷底部弹窗 ──────────────────────────── */
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SurveySheet(
-    initial: SurveyAnswers?,
+    live: SmartLiveStatus,
+    autoCfg: AutoModeCfg,
+    editing: Map<String, FsmStateOverride>,
+    hwMaxL: Long,
+    hwMaxB: Long,
     onDismiss: () -> Unit,
     onDone: (SurveyAnswers) -> Unit,
 ) {
+    // 是否已学到作息(样本 >=3 且 daemon 已给出学习值)。
+    val learned = live.nightSamples >= 3 && live.nightSleep >= 0 && live.nightWake >= 0
+
     // rememberSaveable: 旋转/去解锁页再回来, 答题进度与已选项都不丢。
+    // 默认全是"确认现状": 学到作息时默认"准确", 其余题默认"保持现状"。
     var step by rememberSaveable { mutableStateOf(0) }
-    var sleepStart by rememberSaveable { mutableStateOf(initial?.sleepStart ?: 23) }
-    var sleepEnd by rememberSaveable { mutableStateOf(initial?.sleepEnd ?: 7) }
-    var powerPref by rememberSaveable { mutableStateOf(initial?.powerPref ?: "balanced") }
-    var dailyLag by rememberSaveable { mutableStateOf(initial?.dailyLag ?: "smooth") }
-    var heavyLag by rememberSaveable { mutableStateOf(initial?.heavyLag ?: "ok") }
-    var heat by rememberSaveable { mutableStateOf(initial?.heat ?: "normal") }
+    var nightOk by rememberSaveable { mutableStateOf(learned) }
+    // 用户是否主动改过作息(点了"不太准"或动过滑条): 只有主动纠正才下发 night_seed/改配置,
+    // 一路"保持现状"点完不会把默认时段当成回答冲掉学习数据。
+    var nightTouched by rememberSaveable { mutableStateOf(false) }
+    var sleepStart by rememberSaveable {
+        mutableStateOf(if (learned) live.nightSleep / 60 else autoCfg.nightStart)
+    }
+    var sleepEnd by rememberSaveable {
+        mutableStateOf(if (learned) live.nightWake / 60 else autoCfg.nightEnd)
+    }
+    var powerPref by rememberSaveable { mutableStateOf("keep") }
+    var dailyLag by rememberSaveable { mutableStateOf("keep") }
+    var heavyLag by rememberSaveable { mutableStateOf("keep") }
+    var heat by rememberSaveable { mutableStateOf("keep") }
+
+    // 某状态当前生效的 CPU 上限描述(覆盖优先, 否则智能曲线换算)。
+    // alpha 兜底 500 与 VM 构造 SurveyContext 的口径一致: 展示基线 = 应用基线。
+    fun effCpu(stateKey: String, idx: Int): String {
+        val a = live.alpha.takeIf { it >= 0 } ?: 500
+        val ov = editing[stateKey]
+        val l = ov?.maxL?.takeIf { it in 10..100 }
+            ?: FsmCurve.curvePct(idx, a, little = true, hwMaxKhz = hwMaxL)
+        val b = ov?.maxB?.takeIf { it in 10..100 }
+            ?: FsmCurve.curvePct(idx, a, little = false, hwMaxKhz = hwMaxB)
+        return "小核${l}%/大核${b}%"
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -444,33 +488,67 @@ private fun SurveySheet(
             )
             when (step) {
                 0 -> {
-                    Text("你一般几点睡、几点起?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "用来设置夜间安静时段: 睡觉熄屏时强制省电, 少耗电。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    SpSlider("就寝", "晚上几点睡(24 小时制)", sleepStart, 0, 23, unit = "时") { sleepStart = it }
-                    SpSlider("起床", "早上几点起", sleepEnd, 0, 23, unit = "时") { sleepEnd = it }
+                    Text("先确认下你的作息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (learned) {
+                        Text(
+                            "已学到你大约 ${fmtMin(live.nightSleep)} 睡 · ${fmtMin(live.nightWake)} 起",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = nightOk,
+                                onClick = { nightOk = true },
+                                label = { Text("准确,就按这个学") },
+                            )
+                            FilterChip(
+                                selected = !nightOk,
+                                onClick = { nightOk = false; nightTouched = true },
+                                label = { Text("不太准,我来改") },
+                            )
+                        }
+                        AnimatedVisibility(visible = !nightOk) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                SpSlider("就寝", "晚上几点睡(24 小时制)", sleepStart, 0, 23, unit = "时") { sleepStart = it; nightTouched = true }
+                                SpSlider("起床", "早上几点起", sleepEnd, 0, 23, unit = "时") { sleepEnd = it; nightTouched = true }
+                            }
+                        }
+                    } else {
+                        // 未学到分支必须视作"待纠正": 防止旧的 nightOk=true 存档残留,
+                        // 导致用户拨了滑条却因 nightOk 而被整体忽略。
+                        LaunchedEffect(Unit) { nightOk = false }
+                        Text(
+                            "还没学到你的作息(需 3 个晚上), 先手动告诉我: 夜间安静时段用来睡觉时强制省电。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        SpSlider("就寝", "晚上几点睡(24 小时制)", sleepStart, 0, 23, unit = "时") { sleepStart = it; nightTouched = true }
+                        SpSlider("起床", "早上几点起", sleepEnd, 0, 23, unit = "时") { sleepEnd = it; nightTouched = true }
+                    }
                 }
                 1 -> SurveyChips(
-                    "平时更希望手机偏省电还是偏流畅?",
-                    "决定智能调度整体的省电倾向。",
+                    "现在的省电/流畅平衡合适吗?",
+                    when {
+                        live.alpha < 0 -> "暂无学习数据"
+                        live.alpha > 650 -> "目前整体偏省电(省电倾向 ${live.alpha}‰, 手动偏移 ${autoCfg.batteryBias})"
+                        live.alpha < 350 -> "目前整体偏流畅(省电倾向 ${live.alpha}‰, 手动偏移 ${autoCfg.batteryBias})"
+                        else -> "目前整体均衡(省电倾向 ${live.alpha}‰, 手动偏移 ${autoCfg.batteryBias})"
+                    },
                     SmartSurvey.POWER_PREF_OPTIONS, powerPref,
                 ) { powerPref = it }
                 2 -> SurveyChips(
                     "日常滑动/刷视频卡不卡?",
-                    "按感受调整轻度/中度负载下的频率上限。",
+                    "当前上限: 轻度 ${effCpu(SmartPolicyCfg.LIGHT_IDLE, 1)} · 中度 ${effCpu(SmartPolicyCfg.MODERATE, 2)}",
                     SmartSurvey.DAILY_LAG_OPTIONS, dailyLag,
                 ) { dailyLag = it }
                 3 -> SurveyChips(
                     "玩游戏/重度使用时卡不卡?",
-                    "按感受调整高负载/游戏状态的频率上限。",
+                    "当前上限: 高载 ${effCpu(SmartPolicyCfg.HEAVY, 3)} · 持续 ${effCpu(SmartPolicyCfg.SUSTAINED, 4)} · 游戏 ${effCpu(SmartPolicyCfg.GAMING, 5)}",
                     SmartSurvey.HEAVY_LAG_OPTIONS, heavyLag,
                 ) { heavyLag = it }
                 4 -> SurveyChips(
-                    "手机发烫在不在意?",
-                    "决定多热开始压频散热(越在意越早压)。",
+                    "现在的降温时机合适吗?",
+                    "现在 ≥${autoCfg.fsmSustainedEnter}℃ 开始压频降温",
                     SmartSurvey.HEAT_OPTIONS, heat,
                 ) { heat = it }
             }
@@ -487,6 +565,8 @@ private fun SurveySheet(
                             SurveyAnswers(
                                 sleepStart = sleepStart,
                                 sleepEnd = sleepEnd,
+                                nightOk = nightOk,
+                                nightTouched = nightTouched,
                                 powerPref = powerPref,
                                 dailyLag = dailyLag,
                                 heavyLag = heavyLag,
@@ -530,6 +610,9 @@ private fun SurveyChips(
 
 /* ──────────────────────────── 小组件 / 工具 ──────────────────────────── */
 
+/** 当日分钟数 -> "HH:MM"。 */
+private fun fmtMin(m: Int): String = "%02d:%02d".format(m / 60, m % 60)
+
 private fun fmtSurveyTime(ts: Long): String =
     if (ts <= 0) "—"
     else java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
@@ -537,7 +620,7 @@ private fun fmtSurveyTime(ts: Long): String =
 
 /** 历史记录一行摘要: 各题答案的中文串。 */
 private fun surveySummary(a: SurveyAnswers): String = listOf(
-    "睡眠 ${a.sleepStart}–${a.sleepEnd} 点",
+    if (a.nightOk) "睡眠:跟随学习" else "睡眠 ${a.sleepStart}–${a.sleepEnd} 点",
     "省电偏好:${SmartSurvey.optionLabel(SmartSurvey.POWER_PREF_OPTIONS, a.powerPref)}",
     "日常:${SmartSurvey.optionLabel(SmartSurvey.DAILY_LAG_OPTIONS, a.dailyLag)}",
     "重度:${SmartSurvey.optionLabel(SmartSurvey.HEAVY_LAG_OPTIONS, a.heavyLag)}",

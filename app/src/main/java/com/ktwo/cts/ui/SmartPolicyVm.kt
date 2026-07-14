@@ -11,6 +11,7 @@ import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.SmartPolicyCfg
 import com.ktwo.cts.data.SmartSurvey
 import com.ktwo.cts.data.SurveyAnswers
+import com.ktwo.cts.data.SurveyContext
 import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -34,6 +35,8 @@ data class SmartLiveStatus(
     val alpha: Int = -1,           // 省电倾向 0..1000(智能曲线参考用)
     val conf: Int = -1,
     val nightSamples: Int = 0,
+    val nightSleep: Int = -1,      // 学到的就寝时刻(当日分钟数 0..1439), -1 = 未学到
+    val nightWake: Int = -1,       // 学到的起床时刻(当日分钟数), -1 = 未学到
     val cpuMaxLittle: Int = 0,     // 当前生效频率上限(kHz)
     val cpuMaxBig: Int = 0,
     val valid: Boolean = false,
@@ -52,53 +55,13 @@ data class SmartLiveStatus(
                 alpha = gi("alpha", -1),
                 conf = gi("conf", -1),
                 nightSamples = gi("night_samples", 0),
+                nightSleep = gi("night_sleep", -1),
+                nightWake = gi("night_wake", -1),
                 cpuMaxLittle = gi("cpu_max_little", 0),
                 cpuMaxBig = gi("cpu_max_big", 0),
                 valid = true,
             )
         }
-    }
-}
-
-/**
- * 内置 FSM 调频曲线(镜像 daemon AutoFsm.hpp:204,211-214 的常量), 只用于向用户展示
- * "未覆盖时智能曲线大概把上限压到多少"; 真正的调频始终由 daemon 计算。
- */
-object FsmCurve {
-    // 六状态负载级别(State 枚举顺序 0..5)
-    private val LEVEL = floatArrayOf(0.0f, 0.15f, 0.45f, 0.72f, 0.62f, 1.0f)
-    // battery/balanced 两端的上限区间(参考机型 kHz), alpha 在两端之间插值。
-    private const val BAT_F_MAXL = 921_600f
-    private const val BAT_C_MAXL = 1_670_400f
-    private const val BAT_F_MAXB = 921_600f
-    private const val BAT_C_MAXB = 1_632_000f
-    private const val BAL_F_MAXL = 1_190_400f
-    private const val BAL_C_MAXL = 2_611_200f
-    private const val BAL_F_MAXB = 1_881_600f
-    private const val BAL_C_MAXB = 3_974_400f
-    // 参考机型硬件最高频(kHz), 换算到本机时按 hwmax/REF 缩放。
-    private const val REF_HWMAX_LITTLE = 2_035_200f
-    private const val REF_HWMAX_BIG = 3_302_400f
-
-    /** 内置 GPU 上限百分比(镜像 AutoFsm::gpuPctForState)。 */
-    val GPU_BUILTIN = intArrayOf(40, 45, 60, 85, 80, 100)
-
-    private fun blend(bal: Float, bat: Float, alpha: Int): Float =
-        bal + (bat - bal) * alpha.coerceIn(0, 1000) / 1000f
-
-    /**
-     * 某状态的内置 CPU 频率上限(kHz)。
-     * hwMaxKhz<=0(读不到本机 cpuinfo_max_freq)时返回参考机型原始值, 由调用方标注"参考"。
-     */
-    fun maxCapKhz(stateIdx: Int, alpha: Int, little: Boolean, hwMaxKhz: Long): Long {
-        val t = LEVEL.getOrElse(stateIdx) { 1f }
-        val a = alpha.coerceAtLeast(0)   // 未知 alpha 按 0(均衡端)展示
-        val floor = if (little) blend(BAL_F_MAXL, BAT_F_MAXL, a) else blend(BAL_F_MAXB, BAT_F_MAXB, a)
-        val ceil = if (little) blend(BAL_C_MAXL, BAT_C_MAXL, a) else blend(BAL_C_MAXB, BAT_C_MAXB, a)
-        val k = floor + (ceil - floor) * t
-        val ref = if (little) REF_HWMAX_LITTLE else REF_HWMAX_BIG
-        return if (hwMaxKhz > 0) (k * hwMaxKhz / ref).toLong().coerceAtMost(hwMaxKhz)
-        else k.toLong()
     }
 }
 
@@ -218,15 +181,37 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * 完成问卷: 按回答改 AutoMode 参数 + 整体重写 fsm_policy, 落盘;
+     * 完成问卷(确认-或-纠正): 在当前生效值基础上按回答做相对调整, 落盘;
+     * 纠正了睡眠时间时再经 auto_control.txt 下发 night_seed 纠正 daemon 的夜间学习
+     * (学习样本 >=3 后会覆盖配置里的 night_start/end, 只改配置不够)。
      * 成功后记录最新回答 + 追加历史 + 清除「稍后再说」。结果经 surveyResult 发布。
      */
     fun applySurvey(answers: SurveyAnswers) {
         viewModelScope.launch {
             val ok = runCatching {
+                // 顺序: 先纠正学习数据(幂等, 重试无副作用), 再写配置。反过来的话
+                // 配置写成功而 night_seed 失败, 用户重试会在已抬高的基线上再叠一层相对调整。
+                // 学到窗口(样本>=3)后学习值覆盖配置, night_seed 是唯一有效纠正通道 ——
+                // 它失败必须整体算失败, 让用户看到"写入失败"并可重试。
+                val needSeed = !answers.nightOk && answers.nightTouched
+                val seeded = if (needSeed) withContext(Dispatchers.IO) {
+                    RootShell.sendAutoControl(
+                        "night_seed=" + (answers.sleepStart * 60) + "," + (answers.sleepEnd * 60)
+                    )
+                } else true
+                if (!seeded) return@runCatching false
+
+                val surveyCtx = SurveyContext(
+                    alpha = live.value.alpha.takeIf { it >= 0 } ?: 500,
+                    hwMaxL = hwMaxL.value,
+                    hwMaxB = hwMaxB.value,
+                )
                 val merged = withContext(Dispatchers.IO) {
                     val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                    SmartSurvey.apply(answers, raw)
+                    // 以界面所见为基线: 未保存的手动编辑先并入, 相对加减与问卷里展示的
+                    // "当前上限"一致(顺带把脏编辑一起落盘, 不丢用户改动)。
+                    val base = SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                    SmartSurvey.apply(answers, base, surveyCtx)
                 }
                 val written = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
                 if (written) {

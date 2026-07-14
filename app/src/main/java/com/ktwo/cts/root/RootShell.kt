@@ -271,6 +271,28 @@ object RootShell {
         return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $CONFIG; touch $CTS_DIR")
     }
 
+    /**
+     * 智能调度命令通道: 把一条命令行写入 auto_control.txt, daemon 约每 5s 轮询该文件
+     * (无 inotify, 不需要 touch)。支持命令:
+     *  night_seed=<sleep_min>,<wake_min>  纠正夜间学习(分钟制, 0..1439)
+     *  night_reset                        清空夜间学习
+     * 免 root 直写优先(daemon 运行时父目录必已存在), 失败再走 root shell base64 落地。
+     */
+    fun sendAutoControl(line: String): Boolean {
+        val path = "$CTS_DIR/auto_control.txt"
+        val text = line + "\n"
+        // 追加而非覆盖: daemon 按行解析全部命令, 追加不会冲掉恰好还没被消费的其它命令,
+        // 也缩小与 daemon"读完即删"之间的竞态窗口。
+        runCatching {
+            java.io.File(path).appendText(text)
+            return true
+        }
+        val b64 = android.util.Base64.encodeToString(
+            text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
+        )
+        return shOk("echo '$b64' | base64 -d >> $path")
+    }
+
     /** 线程分配规则文件(AppOpt applist.conf 兼容); 守护读它做 pkg{线程}=核 绑核。 */
     private const val THREAD_RULES = "$CTS_DIR/thread_alloc_rules.conf"
 
