@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ktwo.cts.data.AppCatPolicyCfg
 import com.ktwo.cts.data.AutoModeCfg
+import com.ktwo.cts.data.CatOverride
 import com.ktwo.cts.data.FsmCurve
 import com.ktwo.cts.data.FsmStateOverride
 import com.ktwo.cts.data.Prefs
@@ -48,6 +50,7 @@ fun SmartPolicyScreen(
 ) {
     val ctx = LocalContext.current
     val editing by vm.editing.collectAsStateWithLifecycle()
+    val catEditing by vm.catEditing.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val dirty by vm.dirty.collectAsStateWithLifecycle()
     val live by vm.live.collectAsStateWithLifecycle()
@@ -249,6 +252,57 @@ fun SmartPolicyScreen(
                 }
             }
 
+            // ── 应用分类策略 ──
+            SpSection("应用分类策略") {
+                Text(
+                    "智能模式识别前台 App 的分类, 在状态上限之上再按分类封顶(只压不抬)。" +
+                        "游戏/未分类默认不钳制、永远全核。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("分类封顶", fontWeight = FontWeight.Medium)
+                        Text(
+                            "关闭则只按负载状态调频, 不再按分类钳制",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = catEditing.enable, onCheckedChange = vm::setCatEnable)
+                }
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("允许分类关核", fontWeight = FontWeight.Medium)
+                        Text(
+                            "命中分类时停泊勾掉的核心更省电(绝不关 CPU0/整簇)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = catEditing.coreEnable, onCheckedChange = vm::setCatCoreEnable)
+                }
+                AnimatedVisibility(visible = catEditing.enable) {
+                    Column {
+                        var expandedCat by remember { mutableStateOf<String?>(null) }
+                        AppCatPolicyCfg.CAT_ORDER.forEach { key ->
+                            HorizontalDivider()
+                            CatPolicyRow(
+                                catKey = key,
+                                ov = catEditing.cats[key] ?: AppCatPolicyCfg.DEFAULTS.getValue(key),
+                                coreEnable = catEditing.coreEnable,
+                                expanded = expandedCat == key,
+                                onToggleExpand = {
+                                    expandedCat = if (expandedCat == key) null else key
+                                },
+                                onChange = { vm.updateCat(key, it) },
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(96.dp))
         }
     }
@@ -440,6 +494,134 @@ private fun FsmStateRow(
                         }) { Text("恢复智能") }
                     }
                 }
+                Spacer(Modifier.height(2.dp))
+            }
+        }
+    }
+}
+
+/* ──────────────────────────── 应用分类行 ──────────────────────────── */
+
+/**
+ * 单个应用分类的封顶策略行: 中文名 + 摘要, 点击展开编辑器(频率/GPU 滑条 + 关核勾选)。
+ * game/undefined: daemon 侧永远全核, 不展示关核编辑; 频率默认 100 = 不钳制。
+ */
+@Composable
+private fun CatPolicyRow(
+    catKey: String,
+    ov: CatOverride,
+    coreEnable: Boolean,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onChange: (CatOverride) -> Unit,
+) {
+    val cn = AppCatPolicyCfg.CAT_CN[catKey] ?: catKey
+    val default = AppCatPolicyCfg.DEFAULTS.getValue(catKey)
+    val noPark = catKey in AppCatPolicyCfg.NO_PARK
+    val summary = buildList {
+        if (ov.maxL >= 100 && ov.maxB >= 100 && ov.gpu == 0) add("不钳制")
+        else {
+            add("小核${ov.maxL}%")
+            add("大核${ov.maxB}%")
+            add(if (ov.gpu in 1..100) "GPU ${ov.gpu}%" else "GPU 不限")
+        }
+        if (!noPark) {
+            val parked = ov.parkedCount
+            add(if (parked > 0) "关${parked}核" else "全核")
+        }
+    }.joinToString(" · ")
+
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggleExpand)
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(cn, fontWeight = FontWeight.Medium)
+                    if (ov != default) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "已修改",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Spacer(Modifier.height(2.dp))
+                SpSlider(
+                    "小核上限", "该分类前台时小核封顶(占本机最高频)",
+                    ov.maxL, 10, 100, unit = "%",
+                ) { onChange(ov.copy(maxL = it)) }
+                SpSlider(
+                    "大核上限", "该分类前台时大核封顶",
+                    ov.maxB, 10, 100, unit = "%",
+                ) { onChange(ov.copy(maxB = it)) }
+                SpSlider(
+                    "GPU 上限", "0 = 不限制(交给状态上限)",
+                    ov.gpu, 0, 100, unit = "%",
+                ) { onChange(ov.copy(gpu = it)) }
+                if (!noPark) {
+                    Text("核心停泊", fontWeight = FontWeight.Medium)
+                    Text(
+                        if (coreEnable) "取消勾选 = 该分类前台时停泊此核心(CPU0 恒在线)"
+                        else "需先打开上方「允许分类关核」, 当前勾选不生效",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    for (row in 0 until 2) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            for (col in 0 until 4) {
+                                val i = row * 4 + col
+                                val on = ov.cores.getOrElse(i) { 1 } != 0
+                                // CPU0 恒在线(daemon 硬护栏), 直接禁用防误解。
+                                val editable = i != 0
+                                Column(
+                                    Modifier.weight(1f),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Checkbox(
+                                        checked = on,
+                                        enabled = editable,
+                                        onCheckedChange = { want ->
+                                            val next = ov.cores.toMutableList()
+                                            next[i] = if (want) 1 else 0
+                                            onChange(ov.copy(cores = next))
+                                        },
+                                    )
+                                    Text(
+                                        "CPU$i",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                TextButton(onClick = { onChange(default) }) { Text("恢复默认") }
                 Spacer(Modifier.height(2.dp))
             }
         }

@@ -4,7 +4,9 @@ package com.ktwo.cts.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ktwo.cts.data.AppCatPolicyCfg
 import com.ktwo.cts.data.AutoModeCfg
+import com.ktwo.cts.data.CatOverride
 import com.ktwo.cts.data.FsmStateOverride
 import com.ktwo.cts.data.PolicyMap
 import com.ktwo.cts.data.Prefs
@@ -81,6 +83,11 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
     private val _autoCfg = MutableStateFlow(AutoModeCfg.EMPTY)
     val autoCfg: StateFlow<AutoModeCfg> = _autoCfg.asStateFlow()
 
+    /** 应用分类封顶策略(app_policy): 落盘副本与编辑副本(rawJson 置空便于相等比较判 dirty)。 */
+    private val _catCfg = MutableStateFlow(AppCatPolicyCfg())
+    private val _catEditing = MutableStateFlow(AppCatPolicyCfg())
+    val catEditing: StateFlow<AppCatPolicyCfg> = _catEditing.asStateFlow()
+
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
@@ -125,8 +132,12 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                 val parsed = SmartPolicyCfg.parse(raw)
                 _cfg.value = parsed
                 _editing.value = normalize(parsed.states)
-                _dirty.value = false
                 _autoCfg.value = AutoModeCfg.parse(raw)
+                // 分类策略: rawJson 置空存两份, 编辑副本与落盘副本可直接相等比较。
+                val cat = AppCatPolicyCfg.parse(raw).copy(rawJson = "")
+                _catCfg.value = cat
+                _catEditing.value = cat
+                _dirty.value = false
                 // Policy 映射(c0=小核簇, c1=大核簇)-> 本机 cpuinfo_max_freq。
                 withContext(Dispatchers.IO) {
                     val pm = runCatching { PolicyMap.parse(JSONObject(raw)) }.getOrDefault(PolicyMap())
@@ -154,20 +165,44 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
             .getOrDefault(0L)
     }
 
-    /** 修改某个状态的覆盖(仅改内存副本, 标记 dirty)。 */
-    fun update(state: String, ov: FsmStateOverride) {
-        val next = _editing.value.toMutableMap().also { it[state] = ov }
-        _editing.value = next
-        _dirty.value = next != normalize(_cfg.value.states)
+    private fun recomputeDirty() {
+        _dirty.value = _editing.value != normalize(_cfg.value.states) ||
+            _catEditing.value != _catCfg.value
     }
 
-    /** 保存 fsm_policy 覆盖(读-改-写, 其余节点保留); 结果经 saveResult 发布。 */
+    /** 修改某个状态的覆盖(仅改内存副本, 标记 dirty)。 */
+    fun update(state: String, ov: FsmStateOverride) {
+        _editing.value = _editing.value.toMutableMap().also { it[state] = ov }
+        recomputeDirty()
+    }
+
+    /** 修改某个应用分类的封顶(仅改内存副本)。 */
+    fun updateCat(cat: String, ov: CatOverride) {
+        _catEditing.value = _catEditing.value.let {
+            it.copy(cats = it.cats.toMutableMap().also { m -> m[cat] = ov })
+        }
+        recomputeDirty()
+    }
+
+    fun setCatEnable(on: Boolean) {
+        _catEditing.value = _catEditing.value.copy(enable = on)
+        recomputeDirty()
+    }
+
+    fun setCatCoreEnable(on: Boolean) {
+        _catEditing.value = _catEditing.value.copy(coreEnable = on)
+        recomputeDirty()
+    }
+
+    /** 保存 fsm_policy + app_policy(读-改-写, 其余节点保留); 结果经 saveResult 发布。 */
     fun save() {
         viewModelScope.launch {
             val ok = runCatching {
                 val merged = withContext(Dispatchers.IO) {
                     val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                    SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                    _catEditing.value.mergeInto(
+                        SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                    )
                 }
                 val written = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
                 if (written) {
@@ -208,9 +243,11 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                 )
                 val merged = withContext(Dispatchers.IO) {
                     val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                    // 以界面所见为基线: 未保存的手动编辑先并入, 相对加减与问卷里展示的
-                    // "当前上限"一致(顺带把脏编辑一起落盘, 不丢用户改动)。
-                    val base = SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                    // 以界面所见为基线: 未保存的手动编辑(状态覆盖+分类策略)先并入, 相对加减
+                    // 与问卷里展示的"当前上限"一致(顺带把脏编辑一起落盘, 不丢用户改动)。
+                    val base = _catEditing.value.mergeInto(
+                        SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                    )
                     SmartSurvey.apply(answers, base, surveyCtx)
                 }
                 val written = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
