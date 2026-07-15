@@ -238,7 +238,8 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                 if (!seeded) return@runCatching false
 
                 val surveyCtx = SurveyContext(
-                    alpha = live.value.alpha.takeIf { it >= 0 } ?: 500,
+                    // alpha 不设界后负值也是合法学习值, 用 valid(是否读到状态)判"未知", 不能用符号判。
+                    alpha = if (live.value.valid) live.value.alpha else 500,
                     hwMaxL = hwMaxL.value,
                     hwMaxB = hwMaxB.value,
                 )

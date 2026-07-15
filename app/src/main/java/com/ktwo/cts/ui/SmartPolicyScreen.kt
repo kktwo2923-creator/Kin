@@ -242,7 +242,8 @@ fun SmartPolicyScreen(
                         stateKey = key,
                         ov = editing[key] ?: FsmStateOverride(),
                         active = live.fsm.equals(key, ignoreCase = true),
-                        alpha = live.alpha,
+                        // 负 alpha 也是合法学习值; 只有 auto_status 没读到时才回退 500。
+                        alpha = if (live.valid) live.alpha else 500,
                         hwMaxL = hwMaxL,
                         hwMaxB = hwMaxB,
                         expanded = expandedState == key,
@@ -359,8 +360,8 @@ private fun FsmStateRow(
     // 摘要统一为「上限 小核/大核MHz · GPU%」—— 全是封顶值(scaling_max), 不是实时频率。
     // 自定义百分比换算成 MHz(不带 ~, 固定封顶); 曲线值带 ~(随学习/省电倾向浮动)。
     // 「智能曲线/自定义」来源做成标题旁的小标签(同"当前"), 不占摘要行, 避免折行。
-    // alpha 兜底 500, 与问卷展示/应用口径一致。
-    val alphaEff = if (alpha >= 0) alpha else 500
+    // alpha 由调用方兜底(未读到状态给 500), 负值/超千是合法学习值, 直接用。
+    val alphaEff = alpha
     val gpuPct = if (ov.gpu in 1..100) ov.gpu else FsmCurve.GPU_BUILTIN.getOrElse(idx) { 100 }
     val summary = if (hwMaxL > 0 && hwMaxB > 0) {
         val lTxt = ov.maxL.takeIf { it in 10..100 }
@@ -666,7 +667,7 @@ private fun SurveySheet(
     // 某状态当前生效的 CPU 上限描述(覆盖优先, 否则智能曲线换算)。
     // alpha 兜底 500 与 VM 构造 SurveyContext 的口径一致: 展示基线 = 应用基线。
     fun effCpu(stateKey: String, idx: Int): String {
-        val a = live.alpha.takeIf { it >= 0 } ?: 500
+        val a = if (live.valid) live.alpha else 500   // 负 alpha 合法, 按 valid 判未知
         val ov = editing[stateKey]
         val l = ov?.maxL?.takeIf { it in 10..100 }
             ?: FsmCurve.curvePct(idx, a, little = true, hwMaxKhz = hwMaxL)
@@ -734,7 +735,7 @@ private fun SurveySheet(
                 1 -> SurveyChips(
                     "现在的省电/流畅平衡合适吗?",
                     when {
-                        live.alpha < 0 -> "暂无学习数据"
+                        !live.valid -> "暂无学习数据"
                         live.alpha > 650 -> "目前整体偏省电(省电倾向 ${live.alpha}‰, 手动偏移 ${autoCfg.batteryBias})"
                         live.alpha < 350 -> "目前整体偏流畅(省电倾向 ${live.alpha}‰, 手动偏移 ${autoCfg.batteryBias})"
                         else -> "目前整体均衡(省电倾向 ${live.alpha}‰, 手动偏移 ${autoCfg.batteryBias})"

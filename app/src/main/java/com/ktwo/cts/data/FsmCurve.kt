@@ -23,8 +23,10 @@ object FsmCurve {
     /** 内置 GPU 上限百分比(镜像 AutoFsm::gpuPctForState)。 */
     val GPU_BUILTIN = intArrayOf(40, 45, 60, 85, 80, 100)
 
+    // alpha 不设界(与 daemon 一致): 可负(比均衡更激进)/可超 1000(比省电包络更省),
+    // 超出两端按外插换算, 结果由下方硬件边界兜底。
     private fun blend(bal: Float, bat: Float, alpha: Int): Float =
-        bal + (bat - bal) * alpha.coerceIn(0, 1000) / 1000f
+        bal + (bat - bal) * alpha / 1000f
 
     /**
      * 某状态的内置 CPU 频率上限(kHz)。
@@ -32,13 +34,13 @@ object FsmCurve {
      */
     fun maxCapKhz(stateIdx: Int, alpha: Int, little: Boolean, hwMaxKhz: Long): Long {
         val t = LEVEL.getOrElse(stateIdx) { 1f }
-        val a = alpha.coerceAtLeast(0)   // 未知 alpha 按 0(均衡端)展示
-        val floor = if (little) blend(BAL_F_MAXL, BAT_F_MAXL, a) else blend(BAL_F_MAXB, BAT_F_MAXB, a)
-        val ceil = if (little) blend(BAL_C_MAXL, BAT_C_MAXL, a) else blend(BAL_C_MAXB, BAT_C_MAXB, a)
+        val floor = if (little) blend(BAL_F_MAXL, BAT_F_MAXL, alpha) else blend(BAL_F_MAXB, BAT_F_MAXB, alpha)
+        val ceil = if (little) blend(BAL_C_MAXL, BAT_C_MAXL, alpha) else blend(BAL_C_MAXB, BAT_C_MAXB, alpha)
         val k = floor + (ceil - floor) * t
         val ref = if (little) REF_HWMAX_LITTLE else REF_HWMAX_BIG
-        return if (hwMaxKhz > 0) (k * hwMaxKhz / ref).toLong().coerceAtMost(hwMaxKhz)
-        else k.toLong()
+        // 外插可能越过 [0, hwmax]: daemon 侧钳到 [本机最低频, hwmax], 这里展示层钳到 [0, hwmax]。
+        return if (hwMaxKhz > 0) (k * hwMaxKhz / ref).toLong().coerceIn(0L, hwMaxKhz)
+        else k.toLong().coerceAtLeast(0L)
     }
 
     /** 智能曲线上限换算成百分比(问卷/自定义开关的"当前生效值"基准); 读不到本机最高频时给 100。 */

@@ -171,7 +171,8 @@ fun AutoMonitorScreen() {
                     val weekend = st.bucket >= 0 && (st.bucket % 2 == 1)
                     MonRow("学习时段", "${periodName(st.daypart)} · ${if (weekend) "周末" else "工作日"}")
                 }
-                MonBar("省电倾向", st.alpha, 1000, "越高越省电")
+                // alpha 不设界(可负/可超 1000): 有状态就显示原值, 条按 0..1000 区间截取展示。
+                MonBar("省电倾向", st.alpha, 1000, "越高越省电", hasValue = st.valid)
                 MonBar("学习程度", st.conf, 1000, "学得越久越准 · 当前时段")
                 MonRow("睡眠时段", when {
                     st.nightSleep >= 0 && st.nightWake >= 0 && st.nightSamples >= 3 ->
@@ -205,7 +206,10 @@ fun AutoMonitorScreen() {
 }
 
 @Composable
-private fun MonBar(title: String, value: Int, max: Int, desc: String) {
+private fun MonBar(
+    title: String, value: Int, max: Int, desc: String,
+    hasValue: Boolean = value >= 0,   // 默认按符号判缺失; alpha 这类可负指标由调用方显式给
+) {
     val v = value.coerceIn(0, max)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -218,13 +222,13 @@ private fun MonBar(title: String, value: Int, max: Int, desc: String) {
                 )
             }
             Text(
-                if (value >= 0) "$value / $max" else "—",
+                if (hasValue) "$value / $max" else "—",
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
         LinearProgressIndicator(
-            progress = { if (value >= 0) v.toFloat() / max else 0f },
+            progress = { if (hasValue) v.toFloat() / max else 0f },
             modifier = Modifier.fillMaxWidth(),
         )
     }
