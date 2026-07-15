@@ -255,8 +255,9 @@ fun SmartPolicyScreen(
             // ── 应用分类策略 ──
             SpSection("应用分类策略") {
                 Text(
-                    "智能模式识别前台 App 的分类, 在状态上限之上再按分类封顶(只压不抬)。" +
-                        "游戏/未分类默认不限制、永远全核。识别不准可到「应用策略」为单个 App 手动指定分类。",
+                    "分类与「应用策略」一致: 在应用策略里给 App 选 游戏/视频/社交/阅读/音乐, " +
+                        "智能模式就按对应分类在状态上限之上再封顶(只压不抬); 没选画像的按系统识别。" +
+                        "游戏/未分类默认不限制、永远全核。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -286,7 +287,7 @@ fun SmartPolicyScreen(
                 AnimatedVisibility(visible = catEditing.enable) {
                     Column {
                         var expandedCat by remember { mutableStateOf<String?>(null) }
-                        AppCatPolicyCfg.CAT_ORDER.forEach { key ->
+                        AppCatPolicyCfg.SMART_CATS.forEach { key ->
                             HorizontalDivider()
                             CatPolicyRow(
                                 catKey = key,

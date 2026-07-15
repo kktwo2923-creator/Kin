@@ -35,17 +35,22 @@ data class AppCatPolicyCfg(
         val CAT_ORDER = listOf(
             "game", "audio", "video", "image", "social", "news", "maps", "productivity", "undefined",
         )
+        // 中文名与「应用策略」画像同名(音乐/阅读), 分类即由画像映射而来: 用户在应用策略里
+        // 给 App 选 视频/社交/阅读/音乐/游戏 画像, 智能模式就按对应分类封顶。
         val CAT_CN = mapOf(
             "game" to "游戏",
-            "audio" to "音频",
+            "audio" to "音乐",
             "video" to "视频",
             "image" to "图片",
             "social" to "社交",
-            "news" to "资讯/阅读",
-            "maps" to "地图导航",
+            "news" to "阅读",
+            "maps" to "地图",
             "productivity" to "办公",
             "undefined" to "未分类",
         )
+        // 界面展示的分类 = 应用策略画像能到达的那几类(顺序对齐应用策略) + 未分类兜底。
+        // image/maps/productivity 只有系统识别才会命中, 无画像入口, 不在界面单列(保持内置默认)。
+        val SMART_CATS = listOf("game", "video", "social", "news", "audio", "undefined")
         // 关核对 game/undefined 无效(daemon 永远全核), 频率上也默认不钳制。
         val NO_PARK = setOf("game", "undefined")
 

@@ -278,40 +278,6 @@ object RootShell {
      *  night_reset                        清空夜间学习
      * 免 root 直写优先(daemon 运行时父目录必已存在), 失败再走 root shell base64 落地。
      */
-    // ── pkg → 智能分类 覆盖表(「应用策略」页编辑, 守护 resolveCategory/fgCategory 最高优先) ──
-    // 行格式 "包名 分类名"; 分类名与智能策略页 app_policy 九分类一致(game..undefined)。
-    private const val PKG_CATEGORY = "$AI_DIR/pkg_category.txt"
-
-    fun readPkgCategories(): LinkedHashMap<String, String> {
-        val map = LinkedHashMap<String, String>()
-        val raw = runCatching {
-            val f = java.io.File(PKG_CATEGORY)
-            if (f.canRead()) f.readText() else ""
-        }.getOrDefault("").ifBlank { shOut("cat $PKG_CATEGORY 2>/dev/null").joinToString("\n") }
-        raw.lineSequence().forEach { line ->
-            val t = line.trim()
-            if (t.isEmpty() || t.startsWith("#")) return@forEach
-            val sp = t.split(Regex("\\s+"))
-            if (sp.size >= 2) map[sp[0]] = sp[1]
-        }
-        return map
-    }
-
-    /** 设置某 App 的智能分类; cat = null/空 = 恢复自动识别(删行)。整表重写, daemon inotify 热重载。 */
-    fun setPkgCategory(pkg: String, cat: String?): Boolean {
-        if (pkg.isBlank()) return false
-        val cur = readPkgCategories()
-        if (cat.isNullOrBlank()) cur.remove(pkg) else cur[pkg] = cat
-        val sb = StringBuilder()
-        sb.append("# 包名 → 智能分类(game/audio/video/image/social/news/maps/productivity/undefined)\n")
-        sb.append("# 由 App「应用策略」页管理; 优先于画像映射与系统识别\n")
-        for ((p, c) in cur) sb.append(p).append(' ').append(c).append('\n')
-        val b64 = android.util.Base64.encodeToString(
-            sb.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
-        )
-        return shOk("mkdir -p $AI_DIR; echo '$b64' | base64 -d > $PKG_CATEGORY")
-    }
-
     fun sendAutoControl(line: String): Boolean {
         val path = "$CTS_DIR/auto_control.txt"
         val text = line + "\n"
