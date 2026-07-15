@@ -10,7 +10,8 @@ import org.json.JSONObject
  *  - maxL/maxB: 该分类小核/大核 scaling_max 封顶% (本机 cpuinfo_max_freq 百分比, 10..100)。
  *  - gpu: GPU 封顶%(0..100), 0 = 不限(交给 FSM 按状态)。>0 时与状态值取小, 只压不抬。
  *  - cores: 8 字符在线掩码(cpu0..7, '0'=停泊 其余=在线)。仅 app_policy_core_enable=true
- *    且非 game/undefined 分类时生效; daemon 侧有"不关 cpu0/不关整簇"硬护栏。
+ *    且非 game/undefined 分类时生效; daemon 硬护栏为"永不关 cpu0"(首簇因此恒有核在线),
+ *    非首簇(大核簇)允许整簇停泊。
  *  - app_policy_enable 总开关默认 true; app_policy_core_enable 关核开关默认 false(显式 opt-in)。
  *  - 值统一写字符串, 与 config.json 其余键一致。
  */

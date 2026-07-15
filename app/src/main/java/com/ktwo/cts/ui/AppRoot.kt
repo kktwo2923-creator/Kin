@@ -104,11 +104,16 @@ fun AppRoot() {
     val docsSeen by Prefs.docsSeenFlow(ctx).collectAsState(initial = true)
 
     // 首启初始化引导: setup_done=false 时先走 SetupScreen(ROOT 授权/模块检测/无障碍),
-    // 完成前不进主界面。initial=true 占位, 防 DataStore 加载前误闪引导页。
-    val setupDone by Prefs.setupDoneFlow(ctx).collectAsState(initial = true)
-    if (!setupDone) {
-        SetupScreen(onDone = { scope.launch { Prefs.setSetupDone(ctx, true) } })
-        return
+    // 完成前不进主界面。initial=null: DataStore 加载完之前空一帧 —— 用 true 占位会闪现主界面
+    // 并提前触发首页的 root-shell 副作用, 用 false 占位会给老用户闪引导页。
+    val setupDone by Prefs.setupDoneFlow(ctx).collectAsState(initial = null as Boolean?)
+    when (setupDone) {
+        null -> return
+        false -> {
+            SetupScreen(onDone = { scope.launch { Prefs.setSetupDone(ctx, true) } })
+            return
+        }
+        else -> {}
     }
 
     // 智能策略问卷提示: 智能调度开着 + 从没答过问卷 + 「稍后再说」已到期 +

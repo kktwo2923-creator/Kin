@@ -8,6 +8,15 @@ import com.topjohnwu.superuser.Shell
 object RootShell {
     fun isRooted(): Boolean = try { Shell.getShell().isRoot } catch (_: Exception) { false }
 
+    /**
+     * 重新请求 ROOT: libsu 会缓存被拒绝/超时的非 root 会话, 直接再调 isRooted() 只会命中缓存
+     * 永远弹不出授权窗。先关掉缓存的非 root 会话再探测, su 弹窗才能再次出现。
+     */
+    fun retryRoot(): Boolean {
+        runCatching { Shell.getCachedShell()?.takeIf { it.isAlive && !it.isRoot }?.close() }
+        return isRooted()
+    }
+
     // Shell.cmd().exec() 在 root 会话死亡时抛 NoShellException;统一用这三个原语兜底,对外永不抛出。
     private fun sh(cmd: String): Shell.Result? =
         runCatching { Shell.cmd(cmd).exec() }.getOrNull()
@@ -490,13 +499,14 @@ object RootShell {
             val f = java.io.File(path)
             if (f.canRead()) f.readText() else ""
         }.getOrDefault("").ifBlank { shOut("cat $path 2>/dev/null").joinToString("\n") }
-        // 行格式 b<i>=alpha,obs,last_seen,...(daemon saveState)。daemon 一跑起来文件就存在,
-        // 光看存在性会把新用户误判成老用户;这里要求任一桶的观察数 obs 达到阈值才算"有数据"。
+        // 行格式 b<i>=alpha,obs,last_seen,...(daemon saveState, obs 为 ×100 定点数: 100≈1 个完整会话)。
+        // daemon 一跑起来文件就存在, 光看存在性会把新用户误判成老用户; 这里要求任一桶
+        // 累计约 8 个完整会话(800)才算"有数据"。
         return text.lineSequence().any { line ->
             val eq = line.indexOf('=')
             if (eq <= 0 || !line.startsWith("b")) return@any false
             val obs = line.substring(eq + 1).split(',').getOrNull(1)?.trim()?.toIntOrNull() ?: 0
-            obs >= 8
+            obs >= 800
         }
     }
 

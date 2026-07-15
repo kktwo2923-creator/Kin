@@ -278,7 +278,7 @@ fun SmartPolicyScreen(
                     Column(Modifier.weight(1f)) {
                         Text("允许分类关核", fontWeight = FontWeight.Medium)
                         Text(
-                            "命中分类时停泊勾掉的核心更省电(绝不关 CPU0/整簇)",
+                            "命中分类时停泊勾掉的核心更省电(CPU0 恒在线; 大核簇可整簇停泊)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -520,7 +520,12 @@ private fun CatPolicyRow(
     val cn = AppCatPolicyCfg.CAT_CN[catKey] ?: catKey
     val default = AppCatPolicyCfg.DEFAULTS.getValue(catKey)
     val noPark = catKey in AppCatPolicyCfg.NO_PARK
-    val summary = buildList {
+    // 未分类: daemon 对未识别应用跳过 CPU 封顶(防误压未声明分类的游戏), 只有 GPU 上限生效 ——
+    // 摘要/编辑器都不展示 CPU 项, 不许诺做不到的事。
+    val undefinedCat = catKey == "undefined"
+    val summary = if (undefinedCat) {
+        if (ov.gpu in 1..100) "GPU ${ov.gpu}%(CPU 不封顶)" else "不限制"
+    } else buildList {
         if (ov.maxL >= 100 && ov.maxB >= 100 && ov.gpu == 0) add("不限制")
         else {
             add("小核${ov.maxL}%")
@@ -532,6 +537,7 @@ private fun CatPolicyRow(
             add(if (parked > 0) "关${parked}核" else "全核")
         }
     }.joinToString(" · ")
+    val modified = if (undefinedCat) ov.gpu != default.gpu else ov != default
 
     Column {
         Row(
@@ -544,7 +550,7 @@ private fun CatPolicyRow(
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(cn, fontWeight = FontWeight.Medium)
-                    if (ov != default) {
+                    if (modified) {
                         Spacer(Modifier.width(6.dp))
                         Text(
                             "已修改",
@@ -569,14 +575,22 @@ private fun CatPolicyRow(
         AnimatedVisibility(visible = expanded) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Spacer(Modifier.height(2.dp))
-                SpSlider(
-                    "小核上限", "该分类前台时小核封顶(占本机最高频)",
-                    ov.maxL, 10, 100, unit = "%",
-                ) { onChange(ov.copy(maxL = it)) }
-                SpSlider(
-                    "大核上限", "该分类前台时大核封顶",
-                    ov.maxB, 10, 100, unit = "%",
-                ) { onChange(ov.copy(maxB = it)) }
+                if (undefinedCat) {
+                    Text(
+                        "未分类应用不做 CPU 封顶(避免误压未识别的游戏), 仅 GPU 上限生效。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    SpSlider(
+                        "小核上限", "该分类前台时小核封顶(占本机最高频)",
+                        ov.maxL, 10, 100, unit = "%",
+                    ) { onChange(ov.copy(maxL = it)) }
+                    SpSlider(
+                        "大核上限", "该分类前台时大核封顶",
+                        ov.maxB, 10, 100, unit = "%",
+                    ) { onChange(ov.copy(maxB = it)) }
+                }
                 SpSlider(
                     "GPU 上限", "0 = 不限制(交给状态上限)",
                     ov.gpu, 0, 100, unit = "%",

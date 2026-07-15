@@ -6,7 +6,7 @@ import org.json.JSONObject
  * 接管方式:
  *  - 默认接管 = 本 App 接管调度, 应用画像/智能分类可用(Function.AppProfile.enable=true)。
  *  - 第三方接管 = 交给 Scene 等调度管理器 —— 停用应用画像, 守护只按基础模式
- *    (省电/均衡/性能/极速)执行, 档位切换由第三方经 powercfg.sh 协议下发。
+ *    (省电/均衡/性能/风驰)执行, 档位切换由第三方经 powercfg.sh 协议下发。
  */
 object TakeoverCfg {
     /** 从 config.json 读是否第三方接管(AppProfile.enable=false 即第三方); 读不到按默认接管。 */

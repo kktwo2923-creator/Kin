@@ -238,6 +238,15 @@ object Prefs {
         ctx.dataStore.edit { it[SETUP_DONE_KEY] = b }
     }
 
+    // 初始化页选的接管方式在 config.json 尚不存在(模块未刷)时先记下, 配置出现后补写。
+    // -1 = 无待办, 0 = 默认接管, 1 = 第三方接管。
+    private val PENDING_TAKEOVER_KEY = intPreferencesKey("pending_takeover")
+    suspend fun pendingTakeover(ctx: Context): Int =
+        ctx.dataStore.data.first()[PENDING_TAKEOVER_KEY] ?: -1
+    suspend fun setPendingTakeover(ctx: Context, v: Int) {
+        ctx.dataStore.edit { it[PENDING_TAKEOVER_KEY] = v }
+    }
+
     // 使用文档已读标记:首次启动若为 false, AppRoot 弹一次「先看文档」提示; 无论选什么都置 true 不再打扰。
     private val DOCS_SEEN_KEY = booleanPreferencesKey("docs_seen")
     fun docsSeenFlow(ctx: Context): Flow<Boolean> =

@@ -38,9 +38,10 @@ object FsmCurve {
         val ceil = if (little) blend(BAL_C_MAXL, BAT_C_MAXL, alpha) else blend(BAL_C_MAXB, BAT_C_MAXB, alpha)
         val k = floor + (ceil - floor) * t
         val ref = if (little) REF_HWMAX_LITTLE else REF_HWMAX_BIG
-        // 外插可能越过 [0, hwmax]: daemon 侧钳到 [本机最低频, hwmax], 这里展示层钳到 [0, hwmax]。
+        // 外插可能越过 [0, hwmax]: daemon 侧钳到 [本机最低频, hwmax], 这里展示层钳到 [0, hwmax];
+        // 读不到本机 hwmax 的回退分支同样钳到参考机型 hwmax, 不显示超物理上限的参考值。
         return if (hwMaxKhz > 0) (k * hwMaxKhz / ref).toLong().coerceIn(0L, hwMaxKhz)
-        else k.toLong().coerceAtLeast(0L)
+        else k.toLong().coerceIn(0L, ref.toLong())
     }
 
     /** 智能曲线上限换算成百分比(问卷/自定义开关的"当前生效值"基准); 读不到本机最高频时给 100。 */

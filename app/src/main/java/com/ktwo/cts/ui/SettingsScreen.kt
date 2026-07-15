@@ -65,15 +65,21 @@ fun SettingsScreen(
     var showCalibrate by remember { mutableStateOf(false) }
     val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 1)
     // 接管方式(以 config.json 的 AppProfile.enable 为准): true = 第三方(Scene 等)接管。
+    // gen 计数防竞态: 在途的 refreshPerms 读到旧配置时, 不覆盖用户刚拨的开关。
     var thirdParty by remember { mutableStateOf(false) }
+    val thirdPartyGen = remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
     // 回到前台就重查权限状态(用户去系统设置授权后返回, 红/绿即时刷新)
     fun refreshPerms() = scope.launch {
         a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
-        thirdParty = withContext(Dispatchers.IO) {
-            runCatching {
-                com.ktwo.cts.data.TakeoverCfg.isThirdParty(RootShell.readConfigRaw())
-            }.getOrDefault(false)
+        run {
+            val gen = thirdPartyGen.intValue
+            val v = withContext(Dispatchers.IO) {
+                runCatching {
+                    com.ktwo.cts.data.TakeoverCfg.isThirdParty(RootShell.readConfigRaw())
+                }.getOrDefault(false)
+            }
+            if (thirdPartyGen.intValue == gen) thirdParty = v
         }
         batteryWhitelisted = runCatching {
             (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
@@ -228,9 +234,10 @@ fun SettingsScreen(
                 PrefDivider()
                 PrefToggleRow(
                     title = "第三方接管(Scene 等)",
-                    desc = "交给第三方调度管理器切档: 停用应用画像/智能分类, 仅保留基础模式(省电/均衡/性能/极速)",
+                    desc = "交给第三方调度管理器切档: 停用应用画像/智能分类, 仅保留基础模式(省电/均衡/性能/风驰)",
                     checked = thirdParty,
                     onCheckedChange = { want ->
+                        thirdPartyGen.intValue++   // 作废在途的 refreshPerms 回读
                         thirdParty = want
                         scope.launch(Dispatchers.IO) {
                             runCatching {
@@ -241,6 +248,12 @@ fun SettingsScreen(
                             }
                         }
                     },
+                )
+                PrefDivider()
+                PrefNavRow(
+                    title = "重新运行初始化引导",
+                    desc = "重走 ROOT 授权/模块检测(含模块下载入口)/无障碍/接管方式",
+                    onClick = { scope.launch { Prefs.setSetupDone(ctx, false) } },
                 )
             }
 

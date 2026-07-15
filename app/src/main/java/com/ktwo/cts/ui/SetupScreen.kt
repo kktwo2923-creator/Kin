@@ -60,21 +60,38 @@ fun SetupScreen(onDone: () -> Unit) {
             rootOk = withContext(Dispatchers.IO) { runCatching { RootShell.isRooted() }.getOrDefault(false) }
             moduleOk = withContext(Dispatchers.IO) { runCatching { RootShell.moduleInstalled() }.getOrDefault(false) }
             a11yOk = runCatching { AppSwitchService.isEnabled(ctx) }.getOrDefault(false)
-            // 接管方式回读 config(以配置为准, 换机/重装也能对上)。
+            // 接管方式回读 config(以配置为准); 有待补写的选择(config 之前不存在)则先补写再回读。
             thirdParty = withContext(Dispatchers.IO) {
-                runCatching { TakeoverCfg.isThirdParty(RootShell.readConfigRaw()) }.getOrDefault(false)
+                runCatching {
+                    val raw = RootShell.readConfigRaw()
+                    val pending = Prefs.pendingTakeover(ctx)
+                    when {
+                        raw.isNotBlank() && pending >= 0 -> {
+                            RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, pending == 1))
+                            Prefs.setPendingTakeover(ctx, -1)
+                            pending == 1
+                        }
+                        raw.isNotBlank() -> TakeoverCfg.isThirdParty(raw)
+                        else -> pending == 1
+                    }
+                }.getOrDefault(false)
             }
             checking = false
         }
     }
 
-    // 选择接管方式: 立即写回 config(读-改-写; 无 root/无配置时静默, 之后可在「设置」里再改)。
+    // 选择接管方式: config 已存在就立即写回; 尚不存在(模块还没刷)先记为待办, 配置出现后由 refresh 补写。
     fun setTakeover(third: Boolean) {
         thirdParty = third
         scope.launch(Dispatchers.IO) {
             runCatching {
                 val raw = RootShell.readConfigRaw()
-                if (raw.isNotBlank()) RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, third))
+                if (raw.isNotBlank()) {
+                    RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, third))
+                    Prefs.setPendingTakeover(ctx, -1)
+                } else {
+                    Prefs.setPendingTakeover(ctx, if (third) 1 else 0)
+                }
             }
         }
     }
@@ -114,7 +131,14 @@ fun SetupScreen(onDone: () -> Unit) {
                 okText = "已获得 ROOT 权限",
                 pendingText = "调频/调度需要 ROOT。弹出授权窗口时请选择「允许」。",
                 actionText = "重新请求授权",
-                onAction = { refresh() },
+                onAction = {
+                    // 被拒后的会话会被 libsu 缓存, 直接重查永远弹不出授权窗;
+                    // retryRoot 先关掉缓存的非 root 会话再探测, su 弹窗才能再现。
+                    scope.launch {
+                        withContext(Dispatchers.IO) { runCatching { RootShell.retryRoot() } }
+                        refresh()
+                    }
+                },
             )
 
             // ── 第 2 步: 内核模块 ──
@@ -178,7 +202,7 @@ fun SetupScreen(onDone: () -> Unit) {
                     Text(
                         if (thirdParty)
                             "第三方接管: 交给 Scene 等调度管理器切换档位, 停用本 App 的应用画像, " +
-                                "仅保留基础模式(省电/均衡/性能/极速)。"
+                                "仅保留基础模式(省电/均衡/性能/风驰)。"
                         else
                             "默认接管: 由本 App 负责调度, 应用画像/智能分类可用, 按前台应用自动切档。",
                         style = MaterialTheme.typography.bodySmall,
