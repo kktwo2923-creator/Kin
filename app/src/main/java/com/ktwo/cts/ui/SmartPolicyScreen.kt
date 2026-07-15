@@ -256,7 +256,7 @@ fun SmartPolicyScreen(
             SpSection("应用分类策略") {
                 Text(
                     "智能模式识别前台 App 的分类, 在状态上限之上再按分类封顶(只压不抬)。" +
-                        "游戏/未分类默认不限制、永远全核。",
+                        "游戏/未分类默认不限制、永远全核。识别不准可到「应用策略」为单个 App 手动指定分类。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

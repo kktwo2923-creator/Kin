@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import com.ktwo.cts.data.AppCatPolicyCfg
 import com.ktwo.cts.data.Mode
 import com.ktwo.cts.data.PrefsExt
 import com.ktwo.cts.root.RootShell
@@ -50,6 +51,8 @@ fun AppsScreen() {
     var query by remember { mutableStateOf(TextFieldValue("")) }
     var showSystem by remember { mutableStateOf(false) }
     val profiles = remember { mutableStateMapOf<String, String>() }
+    // pkg → 智能分类覆盖(pkg_category.txt): 智能模式按分类限频/关核, 与智能策略页同一套分类。
+    val categories = remember { mutableStateMapOf<String, String>() }
     var globalMode by remember { mutableStateOf("balance") }
     val blacklist by PrefsExt.blacklistFlow(ctx).collectAsState(initial = emptySet())
 
@@ -57,7 +60,11 @@ fun AppsScreen() {
         withContext(Dispatchers.IO) {
             globalMode = RootShell.readGlobalMode()
             val m = RootShell.readPerApp()
-            withContext(Dispatchers.Main) { profiles.clear(); profiles.putAll(m) }
+            val c = RootShell.readPkgCategories()
+            withContext(Dispatchers.Main) {
+                profiles.clear(); profiles.putAll(m)
+                categories.clear(); categories.putAll(c)
+            }
         }
     }
 
@@ -142,6 +149,7 @@ fun AppsScreen() {
                     AppCard(
                         app = app,
                         selectedKey = profiles[app.pkg] ?: "follow",
+                        selectedCat = categories[app.pkg] ?: "auto",
                         blacklisted = app.pkg in blacklist,
                         onChangeMode = { newKey ->
                             scope.launch {
@@ -150,6 +158,17 @@ fun AppsScreen() {
                                 }
                                 if (newKey == "follow") profiles.remove(app.pkg)
                                 else profiles[app.pkg] = newKey
+                            }
+                        },
+                        onChangeCat = { newCat ->
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    RootShell.setPkgCategory(
+                                        app.pkg, if (newCat == "auto") null else newCat
+                                    )
+                                }
+                                if (newCat == "auto") categories.remove(app.pkg)
+                                else categories[app.pkg] = newCat
                             }
                         },
                         onToggleBlacklist = {
@@ -167,8 +186,10 @@ fun AppsScreen() {
 private fun AppCard(
     app: AppEntry,
     selectedKey: String,
+    selectedCat: String,
     blacklisted: Boolean,
     onChangeMode: (String) -> Unit,
+    onChangeCat: (String) -> Unit,
     onToggleBlacklist: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -245,6 +266,40 @@ private fun AppCard(
                                 }
                             }
                             if (rowModes.size == 1) Box(Modifier.weight(1f)) {}
+                        }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    // 智能分类: 与「智能策略」页九分类同名同源; 智能模式按它限频/关核。
+                    Text("智能分类", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                    Text(
+                        "智能模式按分类限制频率/关核。自动 = 按画像/系统识别, 识别不准可手动指定。",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val catOptions = remember {
+                        listOf("auto" to "自动") +
+                            AppCatPolicyCfg.CAT_ORDER.map { it to (AppCatPolicyCfg.CAT_CN[it] ?: it) }
+                    }
+                    catOptions.chunked(3).forEach { rowCats ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            rowCats.forEach { (key, label) ->
+                                Box(Modifier.weight(1f)) {
+                                    FilterChip(
+                                        selected = selectedCat == key,
+                                        onClick = { onChangeCat(key) },
+                                        label = {
+                                            Text(
+                                                label,
+                                                fontSize = 12.sp,
+                                                modifier = Modifier.padding(vertical = 2.dp),
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                            repeat(3 - rowCats.size) { Box(Modifier.weight(1f)) {} }
                         }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
