@@ -101,6 +101,14 @@ fun AppRoot() {
     val scope = rememberCoroutineScope()
     val docsSeen by Prefs.docsSeenFlow(ctx).collectAsState(initial = true)
 
+    // 首启初始化引导: setup_done=false 时先走 SetupScreen(ROOT 授权/模块检测/无障碍),
+    // 完成前不进主界面。initial=true 占位, 防 DataStore 加载前误闪引导页。
+    val setupDone by Prefs.setupDoneFlow(ctx).collectAsState(initial = true)
+    if (!setupDone) {
+        SetupScreen(onDone = { scope.launch { Prefs.setSetupDone(ctx, true) } })
+        return
+    }
+
     // 智能策略问卷提示: 智能调度开着 + 从没答过问卷 + 「稍后再说」已到期 +
     // (已积累学习数据 或 开启满 24 小时) 时弹一次引导。initial 用占位值防加载前误判;
     // 学习数据检查走 IO 线程; 本进程只判定/弹一次。

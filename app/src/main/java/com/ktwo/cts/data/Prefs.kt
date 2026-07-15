@@ -230,6 +230,14 @@ object Prefs {
         }
     }
 
+    // 初始化引导完成标记: 首次打开 App 先走 SetupScreen(ROOT 授权/模块检测/无障碍), 完成后置 true。
+    private val SETUP_DONE_KEY = booleanPreferencesKey("setup_done")
+    fun setupDoneFlow(ctx: Context): Flow<Boolean> =
+        ctx.dataStore.data.map { it[SETUP_DONE_KEY] ?: false }
+    suspend fun setSetupDone(ctx: Context, b: Boolean) {
+        ctx.dataStore.edit { it[SETUP_DONE_KEY] = b }
+    }
+
     // 使用文档已读标记:首次启动若为 false, AppRoot 弹一次「先看文档」提示; 无论选什么都置 true 不再打扰。
     private val DOCS_SEEN_KEY = booleanPreferencesKey("docs_seen")
     fun docsSeenFlow(ctx: Context): Flow<Boolean> =
