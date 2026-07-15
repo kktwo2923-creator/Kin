@@ -259,6 +259,10 @@ object Prefs {
     private val SMART_SURVEY_HISTORY_KEY = stringPreferencesKey("smart_survey_history_json")
     fun smartSurveyHistoryFlow(ctx: Context): Flow<String> =
         ctx.dataStore.data.map { it[SMART_SURVEY_HISTORY_KEY] ?: "[]" }
+    /** 整体写入历史(JSON 数组原文): 供从落盘副本(survey.json)恢复时用。 */
+    suspend fun setSmartSurveyHistoryRaw(ctx: Context, json: String) {
+        ctx.dataStore.edit { it[SMART_SURVEY_HISTORY_KEY] = json }
+    }
     suspend fun appendSmartSurveyHistory(ctx: Context, entryJson: String) {
         val entry = runCatching { org.json.JSONObject(entryJson) }.getOrNull() ?: return
         ctx.dataStore.edit { p ->

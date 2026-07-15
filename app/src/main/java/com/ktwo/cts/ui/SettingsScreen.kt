@@ -64,10 +64,17 @@ fun SettingsScreen(
     var batteryWhitelisted by remember { mutableStateOf(false) }
     var showCalibrate by remember { mutableStateOf(false) }
     val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 1)
+    // 接管方式(以 config.json 的 AppProfile.enable 为准): true = 第三方(Scene 等)接管。
+    var thirdParty by remember { mutableStateOf(false) }
 
     // 回到前台就重查权限状态(用户去系统设置授权后返回, 红/绿即时刷新)
     fun refreshPerms() = scope.launch {
         a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
+        thirdParty = withContext(Dispatchers.IO) {
+            runCatching {
+                com.ktwo.cts.data.TakeoverCfg.isThirdParty(RootShell.readConfigRaw())
+            }.getOrDefault(false)
+        }
         batteryWhitelisted = runCatching {
             (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
                 .isIgnoringBatteryOptimizations(ctx.packageName)
@@ -217,6 +224,23 @@ fun SettingsScreen(
                     desc = "日志页默认只显示 运行/模式/前台 三个日志;开启后显示全部日志文件",
                     checked = moreLogs,
                     onCheckedChange = { scope.launch { Prefs.setMoreLogs(ctx, it) } },
+                )
+                PrefDivider()
+                PrefToggleRow(
+                    title = "第三方接管(Scene 等)",
+                    desc = "交给第三方调度管理器切档: 停用应用画像/智能分类, 仅保留基础模式(省电/均衡/性能/极速)",
+                    checked = thirdParty,
+                    onCheckedChange = { want ->
+                        thirdParty = want
+                        scope.launch(Dispatchers.IO) {
+                            runCatching {
+                                val raw = RootShell.readConfigRaw()
+                                if (raw.isNotBlank()) RootShell.writeConfigRaw(
+                                    com.ktwo.cts.data.TakeoverCfg.mergeInto(raw, want)
+                                )
+                            }
+                        }
+                    },
                 )
             }
 

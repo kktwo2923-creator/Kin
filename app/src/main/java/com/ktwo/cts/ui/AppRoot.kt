@@ -94,6 +94,8 @@ fun AppRoot() {
     val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { runCatching { Pro.sync(ctx) } }
+        // 问卷记录恢复: 清过 App 数据时从 /sdcard 落盘副本自动找回(有记录则不打扰重新问卷)。
+        runCatching { com.ktwo.cts.data.SmartSurveyStore.restoreIfNeeded(ctx) }
     }
 
     // 首启引导: docs_seen=false 时弹一次「先看文档」。initial=true 防止 DataStore 加载前误闪弹窗;

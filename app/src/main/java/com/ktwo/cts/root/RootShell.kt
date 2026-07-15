@@ -278,6 +278,25 @@ object RootShell {
      *  night_reset                        清空夜间学习
      * 免 root 直写优先(daemon 运行时父目录必已存在), 失败再走 root shell base64 落地。
      */
+    // ── 问卷回答落盘副本(存 /sdcard/Android/Kin/AI, 不在 App 私有目录):
+    //    清除 App 数据/缓存不会丢, 重装/清数据后自动恢复。 ──
+    private const val SURVEY_STORE = "$AI_DIR/survey.json"
+
+    fun readSurveyStore(): String {
+        runCatching {
+            val f = java.io.File(SURVEY_STORE)
+            if (f.canRead()) return f.readText()
+        }
+        return shOut("cat $SURVEY_STORE 2>/dev/null").joinToString("\n")
+    }
+
+    fun writeSurveyStore(json: String): Boolean {
+        val b64 = android.util.Base64.encodeToString(
+            json.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
+        )
+        return shOk("mkdir -p $AI_DIR; echo '$b64' | base64 -d > $SURVEY_STORE")
+    }
+
     fun sendAutoControl(line: String): Boolean {
         val path = "$CTS_DIR/auto_control.txt"
         val text = line + "\n"

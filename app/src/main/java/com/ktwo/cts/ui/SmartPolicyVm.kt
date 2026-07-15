@@ -12,6 +12,7 @@ import com.ktwo.cts.data.PolicyMap
 import com.ktwo.cts.data.Prefs
 import com.ktwo.cts.data.SmartPolicyCfg
 import com.ktwo.cts.data.SmartSurvey
+import com.ktwo.cts.data.SmartSurveyStore
 import com.ktwo.cts.data.SurveyAnswers
 import com.ktwo.cts.data.SurveyContext
 import com.ktwo.cts.root.RootShell
@@ -257,6 +258,8 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                     Prefs.setSmartSurvey(ctx, answers.toJson())
                     Prefs.appendSmartSurveyHistory(ctx, answers.toJson())
                     Prefs.setSmartSurveySnooze(ctx, 0L)
+                    // 落盘副本(存 /sdcard/Android/Kin/AI): 清 App 数据也不丢, 失败静默。
+                    SmartSurveyStore.backup(ctx)
                     reload()
                 }
                 written

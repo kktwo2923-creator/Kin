@@ -223,10 +223,12 @@ private fun RowScope.FeatureTile(item: FeatureItem) {
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // weight(fill=false): 标题过长时自己省略, 不把 PRO 徽章挤到竖排换行。
                 Text(
                     item.title, fontWeight = FontWeight.Medium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (item.locked) {
                     Spacer(Modifier.width(6.dp))
@@ -256,6 +258,8 @@ private fun ProBadge() {
             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            softWrap = false,   // 空间不足时也绝不竖排折行("PR/O")
         )
     }
 }

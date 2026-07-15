@@ -1,5 +1,11 @@
 package com.ktwo.cts.data
 
+import android.content.Context
+import com.ktwo.cts.root.RootShell
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -205,5 +211,41 @@ object SmartSurvey {
             )
         }
         return SmartPolicyCfg(states = states).mergeInto(auto.mergeInto(raw))
+    }
+}
+
+/**
+ * 问卷记录的落盘副本: 存 /sdcard/Android/Kin/AI/survey.json(daemon 数据目录, 不在 App 私有目录),
+ * 清除 App 数据/缓存、卸载重装都不会丢; App 启动时 DataStore 为空则自动从副本恢复。
+ */
+object SmartSurveyStore {
+
+    /** 把当前最新回答 + 历史写到落盘副本(问卷应用成功后调用; 失败静默, 不影响主流程)。 */
+    suspend fun backup(ctx: Context) = withContext(Dispatchers.IO) {
+        runCatching {
+            val latest = Prefs.smartSurveyFlow(ctx).first()
+            val history = Prefs.smartSurveyHistoryFlow(ctx).first()
+            if (latest.isBlank()) return@runCatching
+            val o = JSONObject().apply {
+                put("latest", JSONObject(latest))
+                put("history", runCatching { JSONArray(history) }.getOrDefault(JSONArray()))
+            }
+            RootShell.writeSurveyStore(o.toString())
+        }
+    }
+
+    /** DataStore 里没有回答(如清过 App 数据)而落盘副本存在 → 恢复; 返回是否恢复了。 */
+    suspend fun restoreIfNeeded(ctx: Context): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            if (Prefs.smartSurveyFlow(ctx).first().isNotBlank()) return@runCatching false
+            val raw = RootShell.readSurveyStore()
+            if (raw.isBlank()) return@runCatching false
+            val o = JSONObject(raw)
+            val latest = o.optJSONObject("latest")?.toString().orEmpty()
+            if (latest.isBlank() || SurveyAnswers.parse(latest) == null) return@runCatching false
+            Prefs.setSmartSurvey(ctx, latest)
+            o.optJSONArray("history")?.let { Prefs.setSmartSurveyHistoryRaw(ctx, it.toString()) }
+            true
+        }.getOrDefault(false)
     }
 }

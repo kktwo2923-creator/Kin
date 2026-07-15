@@ -26,9 +26,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.ktwo.cts.data.Prefs
+import com.ktwo.cts.data.TakeoverCfg
 import com.ktwo.cts.root.RootShell
 import com.ktwo.cts.service.AppSwitchService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -46,6 +49,8 @@ fun SetupScreen(onDone: () -> Unit) {
     var moduleOk by remember { mutableStateOf<Boolean?>(null) }
     var a11yOk by remember { mutableStateOf<Boolean?>(null) }
     var checking by remember { mutableStateOf(false) }
+    // 接管方式: false = 本 App 接管(默认), true = 第三方(Scene 等)接管。
+    var thirdParty by remember { mutableStateOf(false) }
 
     fun refresh() {
         if (checking) return
@@ -55,7 +60,22 @@ fun SetupScreen(onDone: () -> Unit) {
             rootOk = withContext(Dispatchers.IO) { runCatching { RootShell.isRooted() }.getOrDefault(false) }
             moduleOk = withContext(Dispatchers.IO) { runCatching { RootShell.moduleInstalled() }.getOrDefault(false) }
             a11yOk = runCatching { AppSwitchService.isEnabled(ctx) }.getOrDefault(false)
+            // 接管方式回读 config(以配置为准, 换机/重装也能对上)。
+            thirdParty = withContext(Dispatchers.IO) {
+                runCatching { TakeoverCfg.isThirdParty(RootShell.readConfigRaw()) }.getOrDefault(false)
+            }
             checking = false
+        }
+    }
+
+    // 选择接管方式: 立即写回 config(读-改-写; 无 root/无配置时静默, 之后可在「设置」里再改)。
+    fun setTakeover(third: Boolean) {
+        thirdParty = third
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val raw = RootShell.readConfigRaw()
+                if (raw.isNotBlank()) RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, third))
+            }
         }
     }
 
@@ -126,14 +146,58 @@ fun SetupScreen(onDone: () -> Unit) {
                 pendingText = "用于秒级识别前台应用, 应用画像/分类切换更快。不开启也能用(自动回退轮询)。",
                 actionText = "去开启",
                 onAction = {
-                    runCatching {
-                        ctx.startActivity(
-                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
+                    scope.launch {
+                        // 有 root 直接一键授权(与设置页同逻辑), 失败再跳系统无障碍设置。
+                        val ok = withContext(Dispatchers.IO) {
+                            runCatching { RootShell.setAccessibility(true) }.getOrDefault(false)
+                        }
+                        runCatching { Prefs.setA11yWanted(ctx, true) }
+                        if (!ok) runCatching {
+                            ctx.startActivity(
+                                Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                        delay(400)
+                        a11yOk = runCatching { AppSwitchService.isEnabled(ctx) }.getOrDefault(false)
                     }
                 },
             )
+
+            // ── 第 4 步: 接管方式 ──
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.Extension, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text("接管方式", fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        if (thirdParty)
+                            "第三方接管: 交给 Scene 等调度管理器切换档位, 停用本 App 的应用画像, " +
+                                "仅保留基础模式(省电/均衡/性能/极速)。"
+                        else
+                            "默认接管: 由本 App 负责调度, 应用画像/智能分类可用, 按前台应用自动切档。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = !thirdParty,
+                            onClick = { setTakeover(false) },
+                            label = { Text("默认接管(本应用)") },
+                        )
+                        FilterChip(
+                            selected = thirdParty,
+                            onClick = { setTakeover(true) },
+                            label = { Text("第三方(Scene等)") },
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.weight(1f, fill = false))
             Spacer(Modifier.height(8.dp))
@@ -148,14 +212,15 @@ fun SetupScreen(onDone: () -> Unit) {
             }
             Button(
                 onClick = onDone,
+                enabled = rootOk == true && moduleOk == true,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(16.dp),
-            ) {
-                Text(
-                    if (rootOk == true && moduleOk == true) "完成, 进入应用" else "跳过, 直接进入",
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+            ) { Text("完成, 进入应用", fontWeight = FontWeight.SemiBold) }
+            // 稍后设置: 不拦人, 三步没做完也能先进 App, 之后随时到「设置」补。
+            TextButton(
+                onClick = onDone,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("稍后设置, 直接进入") }
             Spacer(Modifier.height(16.dp))
         }
     }
