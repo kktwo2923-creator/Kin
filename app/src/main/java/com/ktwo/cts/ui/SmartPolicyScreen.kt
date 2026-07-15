@@ -256,7 +256,7 @@ fun SmartPolicyScreen(
             SpSection("应用分类策略") {
                 Text(
                     "智能模式识别前台 App 的分类, 在状态上限之上再按分类封顶(只压不抬)。" +
-                        "游戏/未分类默认不钳制、永远全核。",
+                        "游戏/未分类默认不限制、永远全核。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -264,7 +264,7 @@ fun SmartPolicyScreen(
                     Column(Modifier.weight(1f)) {
                         Text("分类封顶", fontWeight = FontWeight.Medium)
                         Text(
-                            "关闭则只按负载状态调频, 不再按分类钳制",
+                            "关闭则只按负载状态调频, 不再按分类限制",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -519,7 +519,7 @@ private fun CatPolicyRow(
     val default = AppCatPolicyCfg.DEFAULTS.getValue(catKey)
     val noPark = catKey in AppCatPolicyCfg.NO_PARK
     val summary = buildList {
-        if (ov.maxL >= 100 && ov.maxB >= 100 && ov.gpu == 0) add("不钳制")
+        if (ov.maxL >= 100 && ov.maxB >= 100 && ov.gpu == 0) add("不限制")
         else {
             add("小核${ov.maxL}%")
             add("大核${ov.maxB}%")
