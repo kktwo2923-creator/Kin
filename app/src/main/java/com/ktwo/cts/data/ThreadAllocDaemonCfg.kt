@@ -40,13 +40,12 @@ object ThreadAllocDaemonCfg {
         enabled: Boolean,
         gamePkgs: Set<String>,
         rtEnabled: Boolean,
-        ebpfEnabled: Boolean,
     ): Boolean =
         withContext(Dispatchers.IO) {
             writeMutex.withLock {
                 runCatching {
                     val raw = RootShell.readConfigRaw()
-                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled, ebpfEnabled)
+                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled)
                     val written = RootShell.writeConfigRaw(merged)
                     if (written) {
                         runCatching {
@@ -64,7 +63,6 @@ object ThreadAllocDaemonCfg {
         enabled: Boolean,
         gamePkgs: Set<String>,
         rtEnabled: Boolean,
-        ebpfEnabled: Boolean,
     ): String {
         val o = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
         val f = o.optJSONObject("Function") ?: JSONObject().also { o.put("Function", it) }
@@ -75,7 +73,7 @@ object ThreadAllocDaemonCfg {
         t.put("big_only", boolOf(t, "big_only", DEF_BIG_ONLY).toString())
         t.put("game_pkgs", gamePkgs.filter { it.isNotBlank() }.sorted().joinToString(","))
         t.put("rt_enable", rtEnabled.toString())      // 实时调度总开关(独立于 enable)
-        t.put("ebpf_enable", ebpfEnabled.toString())  // 事件驱动(eBPF/proc connector)总开关
+        t.remove("ebpf_enable")                       // eBPF/事件监听已移除, 顺手清掉遗留键
 
         // 4 空格缩进, 与出厂 config.json / AutoModeCfg 写回保持一致。
         return o.toString(4)
