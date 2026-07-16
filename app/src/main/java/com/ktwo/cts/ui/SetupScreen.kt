@@ -61,15 +61,18 @@ fun SetupScreen(onDone: () -> Unit) {
             moduleOk = withContext(Dispatchers.IO) { runCatching { RootShell.moduleInstalled() }.getOrDefault(false) }
             a11yOk = runCatching { AppSwitchService.isEnabled(ctx) }.getOrDefault(false)
             // 接管方式回读 config(以配置为准); 有待补写的选择(config 之前不存在)则先补写再回读。
+            // 只有写成功才清待办, 写失败(如 root 被拒)保留待办下次再试并按 config 现状显示。
             thirdParty = withContext(Dispatchers.IO) {
                 runCatching {
                     val raw = RootShell.readConfigRaw()
                     val pending = Prefs.pendingTakeover(ctx)
                     when {
                         raw.isNotBlank() && pending >= 0 -> {
-                            RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, pending == 1))
-                            Prefs.setPendingTakeover(ctx, -1)
-                            pending == 1
+                            val ok = RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, pending == 1))
+                            if (ok) {
+                                Prefs.setPendingTakeover(ctx, -1)
+                                pending == 1
+                            } else TakeoverCfg.isThirdParty(raw)
                         }
                         raw.isNotBlank() -> TakeoverCfg.isThirdParty(raw)
                         else -> pending == 1
@@ -80,18 +83,16 @@ fun SetupScreen(onDone: () -> Unit) {
         }
     }
 
-    // 选择接管方式: config 已存在就立即写回; 尚不存在(模块还没刷)先记为待办, 配置出现后由 refresh 补写。
+    // 选择接管方式: config 已存在且写成功即落盘并清待办; 否则(模块没刷/root 写失败)记为待办,
+    // 由 refresh / App 启动时的补写兜底重试。
     fun setTakeover(third: Boolean) {
         thirdParty = third
         scope.launch(Dispatchers.IO) {
             runCatching {
                 val raw = RootShell.readConfigRaw()
-                if (raw.isNotBlank()) {
+                val ok = raw.isNotBlank() &&
                     RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, third))
-                    Prefs.setPendingTakeover(ctx, -1)
-                } else {
-                    Prefs.setPendingTakeover(ctx, if (third) 1 else 0)
-                }
+                Prefs.setPendingTakeover(ctx, if (ok) -1 else if (third) 1 else 0)
             }
         }
     }

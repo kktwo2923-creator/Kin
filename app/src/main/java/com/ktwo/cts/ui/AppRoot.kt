@@ -96,6 +96,20 @@ fun AppRoot() {
         withContext(Dispatchers.IO) { runCatching { Pro.sync(ctx) } }
         // 问卷记录恢复: 清过 App 数据时从 /sdcard 落盘副本自动找回(有记录则不打扰重新问卷)。
         runCatching { com.ktwo.cts.data.SmartSurveyStore.restoreIfNeeded(ctx) }
+        // 接管方式待办补写: 初始化时 config 尚不存在(模块没刷)的选择, 常见路径是"稍后设置→
+        // 刷模块→重开 App", 引导页不会再出现 —— 在这里兜底补写。只有写成功才清待办。
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val pending = Prefs.pendingTakeover(ctx)
+                if (pending >= 0) {
+                    val raw = com.ktwo.cts.root.RootShell.readConfigRaw()
+                    if (raw.isNotBlank() && com.ktwo.cts.root.RootShell.writeConfigRaw(
+                            com.ktwo.cts.data.TakeoverCfg.mergeInto(raw, pending == 1)
+                        )
+                    ) Prefs.setPendingTakeover(ctx, -1)
+                }
+            }
+        }
     }
 
     // 首启引导: docs_seen=false 时弹一次「先看文档」。initial=true 防止 DataStore 加载前误闪弹窗;
