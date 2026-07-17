@@ -313,7 +313,8 @@ fun SmartPolicyScreen(
                         Text("游戏切换风驰调速器", fontWeight = FontWeight.Medium)
                         Text(
                             "进入「游戏」状态自动把 CPU 调速器切到 hmbird/scx; " +
-                                "本机没有时高通回退 walt、天玑回退 sugov_ext。离开游戏自动还原默认。",
+                                "本机没有时高通回退 walt、天玑回退 sugov_ext。离开游戏自动还原默认。" +
+                                "仅对应用策略为「风驰游戏」的应用生效。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
