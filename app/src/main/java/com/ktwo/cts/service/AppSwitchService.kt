@@ -45,11 +45,17 @@ class AppSwitchService : AccessibilityService() {
     private fun shouldIgnore(pkg: String): Boolean =
         pkg.isEmpty() || !pkg.contains('.') || pkg in ignore
 
-    // 心跳:前台长时间不变时无障碍不再回调,定时重推让 daemon 端推送值保持新鲜(否则 daemon 回退 dumpsys)
+    // 心跳:前台长时间不变时无障碍不再回调,定时重推让 daemon 端推送值保持新鲜(否则 daemon 回退 dumpsys)。
+    // 重推前【重新枚举窗口】而不是盲推 lastPkg: 若切换瞬间的事件被漏掉(节流/系统丢事件),
+    // lastPkg 是旧应用, 盲推会让 daemon 永远以为"推送新鲜且没换应用" —— 心跳自检后最多 10s 自愈。
     private val heartbeat = object : Runnable {
         override fun run() {
             // 息屏跳过重推(只保留轻量 Handler 计时, 不做 root 写 / 不唤醒 daemon); 亮屏后下一拍自然恢复。
-            if (lastPkg.isNotEmpty() && isInteractive()) RootShell.pushTopApp(lastPkg)
+            if (isInteractive()) {
+                val cur = mainAppFromWindows()
+                if (cur != null && cur != lastPkg) push(cur)               // 漏检自愈: 真实前台已换
+                else if (lastPkg.isNotEmpty()) RootShell.pushTopApp(lastPkg)  // 未换: 仅刷新鲜度
+            }
             main.postDelayed(this, HEARTBEAT_MS)
         }
     }
@@ -58,20 +64,39 @@ class AppSwitchService : AccessibilityService() {
         super.onServiceConnected()
         loadImePackages()
         push(mainAppFromWindows())   // 启用后立刻推一次, 不必等下次切换
-        // 服务可能被系统解绑后重连: 先摘旧心跳链再挂新的, 保证任意时刻只有一条
+        // 服务可能被系统解绑后重连: 先摘旧心跳链/挂起的尾沿补评再挂新的, 保证任意时刻只有一条
         main.removeCallbacks(heartbeat)
+        main.removeCallbacks(trailingEval)
+        trailingQueued = false
         main.postDelayed(heartbeat, HEARTBEAT_MS)
     }
 
     private var lastEvalMs = 0L
+    private var trailingQueued = false
+
+    // 节流的尾沿补评: 切换应用时事件在几百毫秒内连发, 首个事件评估时切换动画未完成、
+    // 窗口列表里面积最大的还是【旧应用】; 若把窗口期内后续事件直接丢弃, "反映新前台的最后一发"
+    // 就没了 → topapp.txt 卡在旧应用(心跳又不断重推旧值保新鲜, daemon 永远不回退 dumpsys)。
+    // 故节流期内只标记, 安静后统一补评一次, 保证最终状态一定被推送。
+    private val trailingEval = Runnable {
+        trailingQueued = false
+        lastEvalMs = android.os.SystemClock.uptimeMillis()
+        mainAppFromWindows()?.let { push(it) }
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val e = event ?: return
         if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             e.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return
-        // typeWindowsChanged 触发频繁: 节流避免主线程频繁枚举窗口造成卡顿
+        // typeWindowsChanged 触发频繁: 节流避免主线程频繁枚举窗口造成卡顿; 被节流的事件不丢, 尾沿补评
         val now = android.os.SystemClock.uptimeMillis()
-        if (now - lastEvalMs < 400) return
+        if (now - lastEvalMs < 400) {
+            if (!trailingQueued) {
+                trailingQueued = true
+                main.postDelayed(trailingEval, 450)
+            }
+            return
+        }
         lastEvalMs = now
         // 多窗口/小窗: 取面积最大的应用窗口(全屏主应用), 而非被触摸/聚焦的小窗;
         // 拿不到窗口列表时退回事件自身包名
@@ -114,6 +139,7 @@ class AppSwitchService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         main.removeCallbacks(heartbeat)
+        main.removeCallbacks(trailingEval)
     }
 
     companion object {
