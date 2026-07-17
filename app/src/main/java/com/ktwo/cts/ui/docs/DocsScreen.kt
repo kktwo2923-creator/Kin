@@ -215,6 +215,10 @@ private val CHAPTERS = listOf(
                     "「实时优先级」(线程名→SCHED_FIFO/RR)、「实时线程」(查看正在跑的线程, " +
                     "可一次性绑核或直接存成规则)。右上角菜单支持导入内置预设、与 AppOpt 配置互导。"
             ),
+            Para(
+                "预设里新增「多引擎自适应(Metric)」: 覆盖 Unity/UE/Roblox/Minecraft/迷你世界/DAVA/SDL 等" +
+                    "引擎的渲染主线程签名, 自动识别会据实时线程把它们绑到大核。"
+            ),
         ),
     ),
     DocChapter(

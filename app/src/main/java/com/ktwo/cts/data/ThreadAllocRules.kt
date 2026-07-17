@@ -320,6 +320,41 @@ object ThreadAllocRules {
             )
         },
         TaPreset(
+            id = "engine_metric",
+            name = "多引擎自适应 (Metric)",
+            desc = "覆盖 Unity/UE/Roblox/Minecraft/迷你世界/DAVA/SDL 等引擎的渲染主线程 → 大档, " +
+                "任务/工作线程 → 中核 (Metric 引擎签名整理)",
+            game = true,
+        ) { _, p ->
+            listOf(
+                // 渲染/游戏主线程 → 顶端(大核+超大核)
+                TaRule("UnityMain", topOf(p)),
+                TaRule("UnityGfx*", topOf(p)),
+                TaRule("GameThread", topOf(p)),          // UE
+                TaRule("*RenderThread*", topOf(p)),      // UE / 通用渲染主线程
+                TaRule("RHIThread*", topOf(p)),          // UE RHI
+                TaRule("MainThread", topOf(p)),
+                TaRule("RBX Worker", topOf(p)),          // Roblox
+                TaRule("MINECRAFT MAIN", topOf(p)),      // Minecraft 基岩
+                TaRule("SCERender", topOf(p)),
+                TaRule("MiniRender*", topOf(p)),         // 迷你世界
+                TaRule("MiniRainbow*", topOf(p)),
+                TaRule("DAVA::Rhi*", topOf(p)),          // 坦克世界闪击战
+                TaRule("DAVA Engine*", topOf(p)),
+                TaRule("SDLThread", topOf(p)),           // SDL 引擎
+                TaRule("SHPD Render", topOf(p)),
+                // 任务图 / 工作线程 → 中核
+                TaRule("TaskGraphNP*", midOf(p)),        // UE 任务图
+                TaRule("Job.worker*", midOf(p)),         // Unity 作业系统
+                TaRule("Job.Worker*", midOf(p)),
+                TaRule("Rendering Pool", midOf(p)),      // Minecraft 渲染池
+                TaRule("NativeThread", midOf(p)),
+                // 其余杂项线程 → 低中核; 包默认 → 低中核
+                TaRule("Thread-*", lowMidOf(p)),
+                TaRule("", lowMidOf(p)),
+            )
+        },
+        TaPreset(
             id = "unity_prime",
             name = "UnityMain+GLThread 绑超大核 (轻量)",
             desc = "只把 UnityMain 与 GLThread 固定到超大核, 其余线程不干预",
@@ -390,6 +425,13 @@ object ThreadAllocRules {
     private val UNITY_KEYS = listOf("UnityMain", "UnityGfx", "UnityMulti")   // Unity 引擎特征
     private val ENGINE_KEYS = listOf(   // 非 Unity 但明确是游戏引擎(UE/Cocos/自研)的主线程标志
         "GameThread", "UnrealMain", "RHIThread", "Cocos", "GameMain", "GfxThread",
+        // ── Metric 补充的各引擎特征线程(仅收游戏引擎特有名, 普通应用不会有) ──
+        "TaskGraphNP",                   // UE 任务图
+        "RBX Worker",                    // Roblox
+        "MINECRAFT MAIN", "SCERender",   // Minecraft 基岩版
+        "MiniRender", "MiniRainbow",     // 迷你世界
+        "DAVA::Rhi", "DAVA Engine",      // DAVA(坦克世界闪击战)
+        "SHPD Render",                   // 破碎的像素地牢
     )
 
     /**
@@ -419,14 +461,22 @@ object ThreadAllocRules {
      *  - 其余                                    → 普通应用模板(app_balanced)。
      * threadNames 非空时优先靠实时线程精确区分 Unity/UE(比 JZzz 更准); 读不到线程时退回 JZzz 的默认 Unity。
      */
+    // Metric 新增引擎(UE 任务图 / Roblox / Minecraft / 迷你世界 / DAVA / SDL / SHPD)的特征线程:
+    // 命中这些用「多引擎自适应(Metric)」预设(覆盖更全), 经典 UE(GameThread 等)仍走 JZzz game_ue。
+    private val METRIC_ENGINE_KEYS = listOf(
+        "TaskGraphNP", "RBX Worker", "MINECRAFT MAIN", "SCERender",
+        "MiniRender", "MiniRainbow", "DAVA::Rhi", "DAVA Engine", "SDLThread", "SHPD Render",
+    )
+
     fun detectPresetId(threadNames: List<String>, isGame: Boolean): String {
         fun hasAny(keys: List<String>): Boolean =
             threadNames.any { n -> keys.any { k -> n.contains(k, ignoreCase = true) } }
         return when {
-            hasAny(UNITY_KEYS)  -> "game_unity"
-            hasAny(ENGINE_KEYS) -> "game_ue"
-            isGame              -> "game_unity"   // JZzz 默认按 Unity 处理
-            else                -> "app_balanced"
+            hasAny(UNITY_KEYS)         -> "game_unity"
+            hasAny(METRIC_ENGINE_KEYS) -> "engine_metric"   // Metric 覆盖的多引擎 → 综合预设
+            hasAny(ENGINE_KEYS)        -> "game_ue"
+            isGame                     -> "game_unity"   // JZzz 默认按 Unity 处理
+            else                       -> "app_balanced"
         }
     }
 
