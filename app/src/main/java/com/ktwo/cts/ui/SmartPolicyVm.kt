@@ -89,6 +89,11 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
     private val _catEditing = MutableStateFlow(AppCatPolicyCfg())
     val catEditing: StateFlow<AppCatPolicyCfg> = _catEditing.asStateFlow()
 
+    /** 游戏态调速器偏好(Function.AutoMode.gaming_gov): 空 = 关; 落盘副本 + 编辑副本。 */
+    private val _gamingGov = MutableStateFlow(GAMING_GOV_DEFAULT)
+    private val _gamingGovEditing = MutableStateFlow(GAMING_GOV_DEFAULT)
+    val gamingGov: StateFlow<String> = _gamingGovEditing.asStateFlow()
+
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
@@ -138,6 +143,9 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                 val cat = AppCatPolicyCfg.parse(raw).copy(rawJson = "")
                 _catCfg.value = cat
                 _catEditing.value = cat
+                val gov = parseGamingGov(raw)
+                _gamingGov.value = gov
+                _gamingGovEditing.value = gov
                 _dirty.value = false
                 // Policy 映射(c0=小核簇, c1=大核簇)-> 本机 cpuinfo_max_freq。
                 withContext(Dispatchers.IO) {
@@ -168,8 +176,30 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
 
     private fun recomputeDirty() {
         _dirty.value = _editing.value != normalize(_cfg.value.states) ||
-            _catEditing.value != _catCfg.value
+            _catEditing.value != _catCfg.value ||
+            _gamingGovEditing.value != _gamingGov.value
     }
+
+    /** 修改游戏态调速器偏好(仅改内存副本; 空 = 关)。 */
+    fun setGamingGov(v: String) {
+        _gamingGovEditing.value = v
+        recomputeDirty()
+    }
+
+    /** 从 config.json 读 gaming_gov; 键不存在 = 守护内置默认(hm/hmbird/scx)。 */
+    private fun parseGamingGov(raw: String): String = runCatching {
+        val a = JSONObject(raw).optJSONObject("Function")?.optJSONObject("AutoMode")
+        if (a != null && a.has("gaming_gov")) a.optString("gaming_gov") else GAMING_GOV_DEFAULT
+    }.getOrDefault(GAMING_GOV_DEFAULT)
+
+    /** 把编辑中的 gaming_gov 并进 config JSON(只动这一个键, 其余原样)。 */
+    private fun mergeGamingGov(raw: String): String = runCatching {
+        val o = JSONObject(raw)
+        val f = o.optJSONObject("Function") ?: JSONObject().also { o.put("Function", it) }
+        val a = f.optJSONObject("AutoMode") ?: JSONObject().also { f.put("AutoMode", it) }
+        a.put("gaming_gov", _gamingGovEditing.value)
+        o.toString(4)
+    }.getOrDefault(raw)
 
     /** 修改某个状态的覆盖(仅改内存副本, 标记 dirty)。 */
     fun update(state: String, ov: FsmStateOverride) {
@@ -201,8 +231,10 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
             val ok = runCatching {
                 val merged = withContext(Dispatchers.IO) {
                     val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                    _catEditing.value.mergeInto(
-                        SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                    mergeGamingGov(
+                        _catEditing.value.mergeInto(
+                            SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                        )
                     )
                 }
                 val written = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
@@ -280,4 +312,9 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
 
     fun clearSaveResult() { _saveResult.value = null }
     fun clearSurveyResult() { _surveyResult.value = null }
+
+    companion object {
+        /** 守护内置默认偏好: 风驰内核 hm(全名 hmbird)/scx; 都没有时守护自回退 walt(高通)/sugov_ext(天玑)。 */
+        const val GAMING_GOV_DEFAULT = "hm,hmbird,scx"
+    }
 }

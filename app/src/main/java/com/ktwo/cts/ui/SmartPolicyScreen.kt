@@ -51,6 +51,7 @@ fun SmartPolicyScreen(
     val ctx = LocalContext.current
     val editing by vm.editing.collectAsStateWithLifecycle()
     val catEditing by vm.catEditing.collectAsStateWithLifecycle()
+    val gamingGov by vm.gamingGov.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val dirty by vm.dirty.collectAsStateWithLifecycle()
     val live by vm.live.collectAsStateWithLifecycle()
@@ -302,6 +303,27 @@ fun SmartPolicyScreen(
                             )
                         }
                     }
+                }
+            }
+
+            // ── 游戏状态调度(风驰内核调速器) ──
+            SpSection("游戏状态调度") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("游戏切换内核调速器", fontWeight = FontWeight.Medium)
+                        Text(
+                            "进入「游戏」状态自动把 CPU 调速器切到 hm(hmbird)/scx(风驰内核); " +
+                                "本机没有时高通回退 walt、天玑回退 sugov_ext。离开游戏自动还原。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = gamingGov.isNotBlank(),
+                        onCheckedChange = { on ->
+                            vm.setGamingGov(if (on) SmartPolicyVm.GAMING_GOV_DEFAULT else "")
+                        },
+                    )
                 }
             }
 
