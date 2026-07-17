@@ -83,7 +83,7 @@ object ThreadAllocator {
         ok
     }.getOrDefault(0)
 
-    // ── 手动分配: 列出目标进程全部线程 + 给指定 tid 绑核(供 ManualAllocScreen 使用) ──
+    // ── 手动分配: 列出目标进程全部线程 + 给指定 tid 绑核(供线程规则管理「实时线程」页使用) ──
 
     /** 手动分配单次列出的线程数上限, 防异常进程线程数爆炸拖垮 UI。 */
     private const val MAX_THREADS = 200

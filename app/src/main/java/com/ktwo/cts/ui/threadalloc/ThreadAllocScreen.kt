@@ -1,6 +1,6 @@
 // 线程分配(设备调优, M5) —— Metric 式布局:
 //   冲突检测横幅 → 通用配置(启用/模式/权重) → 普通 App 线程分配(启用/应用黑名单)
-//   → 游戏线程分配(启用/自适应/实时调度/游戏库) → 高级(预设导入/自动分配/规则管理/手动绑核)。
+//   → 游戏线程分配(启用/自适应/实时调度/游戏库) → 线程规则管理(绑核/优先级/实时线程 三合一)。
 // 顶栏 ⓘ 弹「线程分配说明」; 选 App 弹层为草稿式多选(搜索 + 底部「确认选择 (N)」才落盘)。
 // 游戏库里绿色名字 = 有预设/规则配置的游戏(Metric 同款约定)。
 // 智能版(Pro)功能: 未解锁时整页引导解锁, 开关点击跳转付费页(参照 AutoModeScreen 门控写法)。
@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -52,10 +51,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.ktwo.cts.data.ThreadAllocCfg
 import com.ktwo.cts.data.ThreadAllocDaemonCfg
 import com.ktwo.cts.data.ThreadAllocRuleStore
-import com.ktwo.cts.data.ThreadAllocRules
 import com.ktwo.cts.data.ThreadAllocator
-import com.ktwo.cts.service.AppSwitchService
-import com.ktwo.cts.service.ForegroundDetector
 import com.ktwo.cts.ui.SectionTitle
 import com.ktwo.cts.ui.TonalCard
 import kotlinx.coroutines.Dispatchers
@@ -73,8 +69,6 @@ fun ThreadAllocScreen(
     onOpenRules: () -> Unit = {},
     proUnlocked: Boolean = true,
     onNeedPro: () -> Unit = {},
-    onOpenManual: () -> Unit = {},
-    onOpenPriority: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -98,16 +92,6 @@ fun ThreadAllocScreen(
     var showBlacklistPicker by remember { mutableStateOf(false) }
     var showInfo by rememberSaveable { mutableStateOf(false) }
     var gameLibExpanded by rememberSaveable { mutableStateOf(false) }
-    var applying by remember { mutableStateOf(false) }
-    var applyingPreset by remember { mutableStateOf(false) }
-    var applyingAuto by remember { mutableStateOf(false) }
-    // clusterPlan() 读 sysfs(个别 ROM 回退 root), 不能在组合期主线程跑 → 先用兜底拓扑, 再异步求真值
-    var plan by remember { mutableStateOf(ThreadAllocRules.fallbackPlan()) }
-    LaunchedEffect(Unit) {
-        val p = withContext(Dispatchers.IO) { runCatching { ThreadAllocRules.clusterPlan() }.getOrNull() }
-        if (p != null) plan = p
-    }
-
     // 把总开关 + 游戏库 + 黑名单同步进守护 config.json 的 Function.ThreadAlloc 段(守护据此持续绑核)。
     // 先落 DataStore 再从 DataStore 读最新值写盘, 避免连续勾选时用到过期的 compose 状态;
     // 内部 runCatching + IO 线程, 无 root 时静默失败, 不打断用户。
@@ -301,7 +285,7 @@ fun ThreadAllocScreen(
                     HorizontalDivider()
                     TaSwitchRow(
                         "实时调度",
-                        "提高关键线程优先级(SCHED_FIFO/RR), 减少高负载下的调度延迟。规则见下方「高级」",
+                        "提高关键线程优先级(SCHED_FIFO/RR), 减少高负载下的调度延迟。规则在「线程规则管理」里配",
                         checked = gameRt && proUnlocked,
                         proUnlocked = proUnlocked, onNeedPro = onNeedPro,
                         enabled = gameEnabled || !proUnlocked,
@@ -340,106 +324,15 @@ fun ThreadAllocScreen(
                 }
             }
 
-            // ── 高级(本 App 特有能力, Metric 主页之外的进阶入口) ──
-            SectionTitle("高级")
+            // ── 线程规则管理(绑核规则/实时优先级/实时线程 全部收在这一个页面里) ──
+            SectionTitle("线程规则")
             TonalCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    TaActionRow(
-                        icon = Icons.AutoMirrored.Outlined.ListAlt,
-                        title = "一键使用预设规则",
-                        desc = "导入内置热门应用/游戏的绑核规则, 自动适配本机核心布局",
-                        buttonText = "导入", busy = applyingPreset,
-                        proUnlocked = proUnlocked, onNeedPro = onNeedPro,
-                    ) {
-                        applyingPreset = true
-                        scope.launch {
-                            val n = runCatching { ThreadAllocRuleStore.importBundledPreset(ctx) }.getOrDefault(0)
-                            if (n > 0) {
-                                com.ktwo.cts.service.ThreadRuleService.start(ctx)
-                                syncDaemon()
-                            }
-                            applyingPreset = false
-                            snackbar.showSnackbar(
-                                if (n > 0) "已导入 $n 个应用的预设规则(已适配本机核心布局)"
-                                else "导入失败, 请确认 Root 权限"
-                            )
-                        }
-                    }
-                    HorizontalDivider()
-                    TaActionRow(
-                        icon = Icons.Outlined.AutoFixHigh,
-                        title = "自动分配(前台应用)",
-                        desc = "识别前台应用的引擎类型, 自动生成绑核规则并生效",
-                        buttonText = "分配", busy = applyingAuto,
-                        proUnlocked = proUnlocked, onNeedPro = onNeedPro,
-                    ) {
-                        applyingAuto = true
-                        scope.launch {
-                            val fg = withContext(Dispatchers.IO) {
-                                AppSwitchService.foreground.ifBlank {
-                                    runCatching { ForegroundDetector(ctx).currentForegroundPackage() }.getOrNull().orEmpty()
-                                }
-                            }
-                            if (fg.isBlank() || fg == ctx.packageName) {
-                                applyingAuto = false
-                                snackbar.showSnackbar("没拿到前台应用(本应用不算), 请先切到目标应用再回来点")
-                                return@launch
-                            }
-                            val res = autoDetectRules(ctx, fg, plan)
-                            ThreadAllocRuleStore.put(ctx, fg, res.rules)
-                            com.ktwo.cts.service.ThreadRuleService.start(ctx)
-                            syncDaemon()
-                            applyingAuto = false
-                            snackbar.showSnackbar("${labelOf(ctx, fg)}: ${detectLabel(res)}, 已生成并生效")
-                        }
-                    }
-                    HorizontalDivider()
-                    TaActionRow(
-                        icon = Icons.Outlined.Bolt,
-                        title = "立即应用",
-                        desc = "把当前前台应用的重负载线程立刻归拢到大核(一次性, 守护未运行时用)",
-                        buttonText = "应用", busy = applying,
-                        proUnlocked = proUnlocked, onNeedPro = onNeedPro,
-                    ) {
-                        applying = true
-                        scope.launch {
-                            val n = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    val fg = AppSwitchService.foreground.ifBlank {
-                                        ForegroundDetector(ctx).currentForegroundPackage().orEmpty()
-                                    }
-                                    if (fg.isBlank() || fg == ctx.packageName) -1
-                                    else ThreadAllocator.applyAffinity(fg)
-                                }.getOrDefault(0)
-                            }
-                            applying = false
-                            snackbar.showSnackbar(
-                                when {
-                                    n < 0 -> "没拿到前台应用(本应用不算), 请先切到目标应用再回来点"
-                                    n == 0 -> "没有线程被处理, 请确认 Root 权限且目标应用在运行"
-                                    else -> "已把 $n 个线程归拢到大核"
-                                }
-                            )
-                        }
-                    }
-                    HorizontalDivider()
+                Column(Modifier.padding(16.dp)) {
                     TaNavRow(
                         icon = Icons.AutoMirrored.Outlined.ListAlt,
                         title = "线程规则管理",
-                        desc = "按应用配置「线程名→绑核」规则, 支持预设/导入导出 · 需要 Root",
+                        desc = "按应用管理绑核规则/实时优先级/实时线程, 支持预设与导入导出 · 需要 Root",
                     ) { if (!proUnlocked) onNeedPro() else onOpenRules() }
-                    HorizontalDivider()
-                    TaNavRow(
-                        icon = Icons.Outlined.Bolt,
-                        title = "实时优先级规则",
-                        desc = "按应用配置「线程名→实时调度策略」, 需先开「实时调度」 · 需要 Root",
-                    ) { if (!proUnlocked) onNeedPro() else onOpenPriority() }
-                    HorizontalDivider()
-                    TaNavRow(
-                        icon = Icons.Outlined.Tune,
-                        title = "手动线程绑核",
-                        desc = "选应用查看线程列表, 手动把某个线程绑到指定核心 · 需要 Root",
-                    ) { if (!proUnlocked) onNeedPro() else onOpenManual() }
                 }
             }
 
@@ -689,37 +582,6 @@ private fun TaNavRow(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-/** 动作行: 图标 + 标题/说明 + 主按钮(未解锁点按钮引导付费, busy 时禁用)。 */
-@Composable
-private fun TaActionRow(
-    icon: ImageVector,
-    title: String,
-    desc: String,
-    buttonText: String,
-    busy: Boolean,
-    proUnlocked: Boolean,
-    onNeedPro: () -> Unit,
-    onClick: () -> Unit,
-) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Medium)
-            Text(
-                desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        FilledTonalButton(
-            onClick = { if (!proUnlocked) onNeedPro() else if (!busy) onClick() },
-            enabled = !busy,
-        ) { Text(if (busy) "…" else buttonText) }
     }
 }
 
