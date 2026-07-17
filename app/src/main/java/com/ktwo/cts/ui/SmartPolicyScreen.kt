@@ -52,6 +52,7 @@ fun SmartPolicyScreen(
     val editing by vm.editing.collectAsStateWithLifecycle()
     val catEditing by vm.catEditing.collectAsStateWithLifecycle()
     val gamingGov by vm.gamingGov.collectAsStateWithLifecycle()
+    val fasEnable by vm.fasEnable.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val dirty by vm.dirty.collectAsStateWithLifecycle()
     val live by vm.live.collectAsStateWithLifecycle()
@@ -306,7 +307,7 @@ fun SmartPolicyScreen(
                 }
             }
 
-            // ── 游戏调度(风驰内核调速器) ──
+            // ── 游戏调度(风驰内核调速器 / FAS 帧感知, 二者按应用互斥) ──
             SpSection("游戏调度") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -325,6 +326,20 @@ fun SmartPolicyScreen(
                             vm.setGamingGov(if (on) SmartPolicyVm.GAMING_GOV_DEFAULT else "")
                         },
                     )
+                }
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("FAS 帧感知调频", fontWeight = FontWeight.Medium)
+                        Text(
+                            "游戏中按实际帧率闭环调频: 帧稳时降频省电, 掉帧立刻放开追帧。" +
+                                "与风驰按应用互斥 —— 风驰调速器真在位的「风驰游戏」不走 FAS, 其它游戏用 FAS; " +
+                                "风驰开关关闭或本机没有 hmbird/scx 时, 所有游戏都由 FAS 接管。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = fasEnable, onCheckedChange = vm::setFasEnable)
                 }
             }
 

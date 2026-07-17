@@ -94,6 +94,11 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
     private val _gamingGovEditing = MutableStateFlow(GAMING_GOV_DEFAULT)
     val gamingGov: StateFlow<String> = _gamingGovEditing.asStateFlow()
 
+    /** FAS 帧感知调频开关(Function.AutoMode.fas_enable, 守护默认开)。 */
+    private val _fasEnable = MutableStateFlow(true)
+    private val _fasEnableEditing = MutableStateFlow(true)
+    val fasEnable: StateFlow<Boolean> = _fasEnableEditing.asStateFlow()
+
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
@@ -146,6 +151,9 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                 val gov = parseGamingGov(raw)
                 _gamingGov.value = gov
                 _gamingGovEditing.value = gov
+                val fas = parseFasEnable(raw)
+                _fasEnable.value = fas
+                _fasEnableEditing.value = fas
                 _dirty.value = false
                 // Policy 映射(c0=小核簇, c1=大核簇)-> 本机 cpuinfo_max_freq。
                 withContext(Dispatchers.IO) {
@@ -154,8 +162,17 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                     _hwMaxB.value = readHwMaxKhz(pm.policyOf(1))
                 }
             } catch (_: Throwable) {
+                // 读盘失败: 全部副本回到默认基线并清 dirty, 否则后续编辑以内存残值为基线,
+                // 保存时可能拿默认值覆盖真实配置。
                 _cfg.value = SmartPolicyCfg()
                 _editing.value = normalize(emptyMap())
+                _catCfg.value = AppCatPolicyCfg()
+                _catEditing.value = AppCatPolicyCfg()
+                _gamingGov.value = GAMING_GOV_DEFAULT
+                _gamingGovEditing.value = GAMING_GOV_DEFAULT
+                _fasEnable.value = true
+                _fasEnableEditing.value = true
+                _dirty.value = false
             } finally {
                 _loading.value = false
             }
@@ -177,8 +194,25 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
     private fun recomputeDirty() {
         _dirty.value = _editing.value != normalize(_cfg.value.states) ||
             _catEditing.value != _catCfg.value ||
-            _gamingGovEditing.value != _gamingGov.value
+            _gamingGovEditing.value != _gamingGov.value ||
+            _fasEnableEditing.value != _fasEnable.value
     }
+
+    /** 修改 FAS 开关(仅改内存副本)。 */
+    fun setFasEnable(on: Boolean) {
+        _fasEnableEditing.value = on
+        recomputeDirty()
+    }
+
+    /** 从 config.json 读 fas_enable(容错字符串/布尔; 键缺省 = 守护默认开)。 */
+    private fun parseFasEnable(raw: String): Boolean = runCatching {
+        val a = JSONObject(raw).optJSONObject("Function")?.optJSONObject("AutoMode")
+            ?: return@runCatching true
+        when (a.optString("fas_enable", "true").trim().lowercase()) {
+            "false", "0", "no", "off" -> false
+            else -> true
+        }
+    }.getOrDefault(true)
 
     /** 修改游戏态调速器偏好(仅改内存副本; 空 = 关)。 */
     fun setGamingGov(v: String) {
@@ -192,12 +226,13 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
         if (a != null && a.has("gaming_gov")) a.optString("gaming_gov") else GAMING_GOV_DEFAULT
     }.getOrDefault(GAMING_GOV_DEFAULT)
 
-    /** 把编辑中的 gaming_gov 并进 config JSON(只动这一个键, 其余原样)。 */
+    /** 把编辑中的 gaming_gov + fas_enable 并进 config JSON(只动这两个键, 其余原样)。 */
     private fun mergeGamingGov(raw: String): String = runCatching {
         val o = JSONObject(raw)
         val f = o.optJSONObject("Function") ?: JSONObject().also { o.put("Function", it) }
         val a = f.optJSONObject("AutoMode") ?: JSONObject().also { f.put("AutoMode", it) }
         a.put("gaming_gov", _gamingGovEditing.value)
+        a.put("fas_enable", _fasEnableEditing.value.toString())
         o.toString(4)
     }.getOrDefault(raw)
 
@@ -277,10 +312,13 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                 )
                 val merged = withContext(Dispatchers.IO) {
                     val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                    // 以界面所见为基线: 未保存的手动编辑(状态覆盖+分类策略)先并入, 相对加减
-                    // 与问卷里展示的"当前上限"一致(顺带把脏编辑一起落盘, 不丢用户改动)。
-                    val base = _catEditing.value.mergeInto(
-                        SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                    // 以界面所见为基线: 未保存的手动编辑(状态覆盖+分类策略+游戏调度开关)先并入,
+                    // 相对加减与问卷里展示的"当前上限"一致(顺带把脏编辑一起落盘, 不丢用户改动)。
+                    // mergeGamingGov 必须套: 否则用户刚拨的 风驰/FAS 开关会被问卷落盘+reload 静默回弹。
+                    val base = mergeGamingGov(
+                        _catEditing.value.mergeInto(
+                            SmartPolicyCfg(states = _editing.value).mergeInto(raw)
+                        )
                     )
                     SmartSurvey.apply(answers, base, surveyCtx)
                 }
