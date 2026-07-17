@@ -657,10 +657,12 @@ class MiniOverlayWindow(ctx: Context, accent: Int, alpha: Int, textSp: Float) :
     }
 
     init {
+        // 文本标签比原版矢量图标宽, 各段在 Metric 定宽(54/32/30/38)基础上放大到实测装得下:
+        // FPS 36 装下 '120.0'; PWR 46 装下 '+12.34W'/'88.8℃'(40 会把末位裁掉)。窗口宽度自适应总和。
         seg(54, cell(segGreen).apply { text = "CPU" }, bars, vCpu)
         seg(32, cell(segBlue).apply { text = "GPU" }, vGpu)
-        seg(35, cell(segGold).apply { text = "FPS" }, vFps)   // 文本标签比原版图标宽, 30->35 装下 '120.0'
-        seg(40, cell(segPink).apply { text = "PWR" }, vPwr)   // 38->40 装下 '12.34W'
+        seg(36, cell(segGold).apply { text = "FPS" }, vFps)
+        seg(46, cell(segPink).apply { text = "PWR" }, vPwr)
     }
 
     private var tick = 0L

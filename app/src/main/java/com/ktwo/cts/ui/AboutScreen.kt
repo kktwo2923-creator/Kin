@@ -107,7 +107,7 @@ fun AboutScreen(onBack: () -> Unit) {
                 fontSize = 35.sp,
             )
             Text(
-                "v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})" +
+                "v${BuildConfig.VERSION_NAME}" +
                     (if (BuildConfig.EDITION.isNotBlank()) " · ${BuildConfig.EDITION}" else ""),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

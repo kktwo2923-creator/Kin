@@ -143,11 +143,13 @@ class FloatWindowService : Service() {
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
         lp.dimAmount = 0f
         if (type == OverlayType.MINI) {
-            // Metric 迷你条 flags=0x518: +NOT_TOUCHABLE +LAYOUT_NO_LIMITS, 固定 160×12, 顶部居中 y=0
+            // Metric 迷你条 flags=0x518: +NOT_TOUCHABLE +LAYOUT_NO_LIMITS, 高 12dp 顶部居中 y=0。
+            // 宽度自适应内容(Metric 原版 160 定宽配矢量小图标; 我们用 CPU/GPU 文字标签更宽,
+            // 定宽会把最后的 PWR 段裁掉) —— 外观不变, 只保证四段完整显示。
             lp.flags = lp.flags or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-            lp.width = px(160); lp.height = px(12)
+            lp.width = WindowManager.LayoutParams.WRAP_CONTENT; lp.height = px(12)
             lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             lp.x = 0; lp.y = 0
             lp.layoutInDisplayCutoutMode =
@@ -203,8 +205,10 @@ class FloatWindowService : Service() {
             if (windows.isEmpty()) stopSelf()
             return
         }
-        // 迷你条 show 后再钉一次固定尺寸(Metric oy2.d 同款)
-        if (type == OverlayType.MINI) runCatching { dlg.window?.setLayout(px(160), px(12)) }
+        // 迷你条 show 后再钉一次尺寸(Metric oy2.d 同款; 宽度自适应内容防 PWR 段被裁)
+        if (type == OverlayType.MINI) runCatching {
+            dlg.window?.setLayout(WindowManager.LayoutParams.WRAP_CONTENT, px(12))
+        }
         windows[type] = Holder(win, dlg)
         activeTypes = windows.keys.toSet()
         updateNotification()
