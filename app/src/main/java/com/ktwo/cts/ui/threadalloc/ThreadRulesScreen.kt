@@ -9,6 +9,7 @@ package com.ktwo.cts.ui.threadalloc
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,17 +27,22 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import com.ktwo.cts.data.TaClusterPlan
 import com.ktwo.cts.data.TaPrioRule
 import com.ktwo.cts.data.TaRule
@@ -361,7 +367,14 @@ private fun TagChip(text: String, color: Color) {
     )
 }
 
-/** 添加应用: 从已安装应用挑选(简单列表 + 过滤)。 */
+private data class AppRow(
+    val pkg: String,
+    val label: String,
+    val icon: android.graphics.drawable.Drawable?,
+)
+
+/** 添加应用: 从已安装应用挑选(带图标 + 搜索)。 */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddAppDialog(
     onDismiss: () -> Unit,
@@ -370,51 +383,84 @@ private fun AddAppDialog(
 ) {
     val ctx = LocalContext.current
     var filter by remember { mutableStateOf("") }
-    val apps = remember {
-        runCatching {
-            ctx.packageManager.getInstalledApplications(0)
-                .filter { ctx.packageManager.getLaunchIntentForPackage(it.packageName) != null }
-                .map { it.packageName to ctx.packageManager.getApplicationLabel(it).toString() }
-                .sortedBy { it.second.lowercase() }
-        }.getOrDefault(emptyList())
+    var apps by remember { mutableStateOf<List<AppRow>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        apps = withContext(Dispatchers.IO) {
+            runCatching {
+                val pm = ctx.packageManager
+                pm.getInstalledApplications(0)
+                    .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+                    .map {
+                        AppRow(
+                            it.packageName,
+                            pm.getApplicationLabel(it).toString(),
+                            runCatching { pm.getApplicationIcon(it) }.getOrNull(),
+                        )
+                    }
+                    .sortedBy { it.label.lowercase() }
+            }.getOrDefault(emptyList())
+        }
     }
     val shown = remember(filter, apps) {
         if (filter.isBlank()) apps
-        else apps.filter {
-            it.first.contains(filter, true) || it.second.contains(filter, true)
-        }
+        else apps.filter { it.pkg.contains(filter, true) || it.label.contains(filter, true) }
     }
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = filter, onValueChange = { filter = it },
-                    placeholder = { Text("搜索应用名/包名") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                LazyColumn(Modifier.height(320.dp)) {
-                    items(shown, key = { it.first }) { (pkg, label) ->
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { onAdd(pkg) }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = filter, onValueChange = { filter = it },
+                placeholder = { Text("搜索应用名/包名") },
+                leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                singleLine = true,
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)) {
+                items(shown, key = { it.pkg }) { app ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onAdd(app.pkg) }
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val bmp = remember(app.pkg) {
+                            runCatching { app.icon?.toBitmap(72, 72) }.getOrNull()
+                        }
+                        Box(
+                            Modifier.size(36.dp).clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surface),
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(pkg, style = MaterialTheme.typography.bodySmall,
+                            if (bmp != null) {
+                                Image(BitmapPainter(bmp.asImageBitmap()), null,
+                                    modifier = Modifier.fillMaxSize())
+                            } else {
+                                Text(app.label.firstOrNull()?.toString() ?: "?",
+                                    fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(app.label, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(app.pkg, fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
+        }
+    }
 }
 
 /**
@@ -447,12 +493,8 @@ private fun RuleEditorSheet(
     var threads by remember(pkg) { mutableStateOf<List<ThreadAllocator.ThreadInfo>>(emptyList()) }
     var pid by remember(pkg) { mutableStateOf(-1) }
     var loadingThreads by remember { mutableStateOf(false) }
-    var clusters by remember { mutableStateOf<List<Pair<String, List<Int>>>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        clusters = withContext(Dispatchers.IO) {
-            runCatching { ThreadAllocator.coreClusters() }.getOrDefault(emptyList())
-        }
-    }
+    // 选核对话框的分簇 = plan 的真实频率簇(与「本机核心」展示一致, 2 簇设备就 2 组, 不造重复)
+    val clusters = remember(plan) { plan.tierLabels() }
     fun reloadThreads() {
         if (loadingThreads) return
         loadingThreads = true
@@ -481,7 +523,9 @@ private fun RuleEditorSheet(
             Text(pkg, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
-                "本机核心: 小核 ${plan.small} · 中核 ${plan.mid} · 大核 ${plan.big} · 超大核 ${plan.prime}",
+                "本机核心: " + plan.tierLabels().joinToString(" · ") { (name, cpus) ->
+                    "$name ${cpus.joinToString(",", "[", "]")}"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -533,20 +577,31 @@ private fun RuleEditorSheet(
                             modifier = Modifier.padding(bottom = 4.dp),
                         )
                     }
-                    LazyColumn(Modifier.heightIn(max = 116.dp)) {
+                    // 预设选择: 每条一张卡, 名字醒目 + 一行说明, 点整卡套用(点后规则出现在下方可再改)
+                    LazyColumn(
+                        Modifier.heightIn(max = 190.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         items(ThreadAllocRules.presets(), key = { it.id }) { p ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clickable { bindRows = p.build(pkg, plan); detected = null }
-                                    .padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable { bindRows = p.build(pkg, plan); detected = null },
                             ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(p.name, style = MaterialTheme.typography.bodyMedium)
-                                    Text(p.desc, style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Row(
+                                    Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(p.name, style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold)
+                                        Text(p.brief, style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                    Text("套用", style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary)
                                 }
                             }
                         }
@@ -567,7 +622,11 @@ private fun RuleEditorSheet(
                                         bindRows = bindRows.toMutableList().also { it[i] = r.copy(thread = v) }
                                         detected = null
                                     },
-                                    placeholder = { Text("线程名, 如 UnityMain / Thread-*") },
+                                    placeholder = {
+                                        Text("线程名 / 留空=默认", maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall)
+                                    },
                                     textStyle = MaterialTheme.typography.bodySmall
                                         .copy(fontFamily = FontFamily.Monospace),
                                     singleLine = true,
@@ -643,7 +702,11 @@ private fun RuleEditorSheet(
                                     onValueChange = { v ->
                                         prioRows = prioRows.toMutableList().also { it[i] = r.copy(thread = v) }
                                     },
-                                    placeholder = { Text("线程名, 如 UnityMain") },
+                                    placeholder = {
+                                        Text("线程名", maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall)
+                                    },
                                     textStyle = MaterialTheme.typography.bodySmall
                                         .copy(fontFamily = FontFamily.Monospace),
                                     singleLine = true, modifier = Modifier.weight(1.5f),
@@ -760,12 +823,7 @@ private fun RuleEditorSheet(
         val idx = corePickIdx
         CorePickDialog(
             title = "选择核心",
-            clusters = clusters.ifEmpty {
-                listOf(
-                    "小核" to plan.small, "中核" to plan.mid,
-                    "大核" to plan.big, "超大核" to plan.prime,
-                ).filter { it.second.isNotEmpty() }.distinctBy { it.second }
-            },
+            clusters = clusters,
             initial = ThreadAllocator.parseCpuList(bindRows.getOrNull(idx)?.cpus.orEmpty()).toSet(),
             confirmText = "确定",
             onConfirm = { cpus ->

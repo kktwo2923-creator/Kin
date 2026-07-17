@@ -41,12 +41,13 @@ object ThreadAllocDaemonCfg {
         gamePkgs: Set<String>,
         rtEnabled: Boolean,
         blacklistPkgs: Set<String> = emptySet(),
+        weightEnabled: Boolean = false,
     ): Boolean =
         withContext(Dispatchers.IO) {
             writeMutex.withLock {
                 runCatching {
                     val raw = RootShell.readConfigRaw()
-                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled, blacklistPkgs)
+                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled, blacklistPkgs, weightEnabled)
                     val written = RootShell.writeConfigRaw(merged)
                     if (written) {
                         runCatching {
@@ -65,6 +66,7 @@ object ThreadAllocDaemonCfg {
         gamePkgs: Set<String>,
         rtEnabled: Boolean,
         blacklistPkgs: Set<String> = emptySet(),
+        weightEnabled: Boolean = false,
     ): String {
         val o = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
         val f = o.optJSONObject("Function") ?: JSONObject().also { o.put("Function", it) }
@@ -76,6 +78,9 @@ object ThreadAllocDaemonCfg {
         t.put("game_pkgs", gamePkgs.filter { it.isNotBlank() }.sorted().joinToString(","))
         t.put("rt_enable", rtEnabled.toString())      // 实时调度总开关(独立于 enable)
         t.put("blacklist_pkgs", blacklistPkgs.filter { it.isNotBlank() }.sorted().joinToString(","))
+        t.put("weight_enable", weightEnabled.toString())   // 权重配置(cpu.shares 子组)总开关
+        // weight_shares 若已有合法值则保留, 缺失时落默认(与守护默认一致)
+        t.put("weight_shares", intOf(t, "weight_shares", 4096).coerceIn(2, 100000).toString())
         t.remove("ebpf_enable")                       // eBPF/事件监听已移除, 顺手清掉遗留键
 
         // 4 空格缩进, 与出厂 config.json / AutoModeCfg 写回保持一致。

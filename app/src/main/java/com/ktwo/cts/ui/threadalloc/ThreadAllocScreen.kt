@@ -103,6 +103,7 @@ fun ThreadAllocScreen(
                 gamePkgs = ThreadAllocCfg.gamePkgsFlow(ctx).first(),
                 rtEnabled = ThreadAllocCfg.gameRtFlow(ctx).first(),   // 实时调度开关 → rt_enable
                 blacklistPkgs = ThreadAllocCfg.blacklistPkgsFlow(ctx).first(),
+                weightEnabled = ThreadAllocCfg.gameWeightFlow(ctx).first(),   // 权重配置 → weight_enable
             )
             // 补推一次当前规则: 用户可能先建好规则、再打开开关; 确保守护拿到最新规则文件。
             ThreadAllocRuleStore.syncToDaemon(ctx)
@@ -237,10 +238,10 @@ fun ThreadAllocScreen(
                     HorizontalDivider()
                     TaSwitchRow(
                         "权重配置",
-                        "同步调整线程 CPU 权重, 理论上帧率和流畅度更稳 · 即将支持",
+                        "把绑到大核的关键线程移入独立算力组抬高 CPU 权重(cpu.shares), 高负载下更抢得到算力",
                         checked = gameWeight && proUnlocked,
                         proUnlocked = proUnlocked, onNeedPro = onNeedPro,
-                    ) { v -> scope.launch { ThreadAllocCfg.setGameWeight(ctx, v) } }
+                    ) { v -> scope.launch { ThreadAllocCfg.setGameWeight(ctx, v); syncDaemon() } }
                 }
             }
 
@@ -363,7 +364,7 @@ fun ThreadAllocScreen(
                         "实时调度:\n" +
                         "将关键线程切到实时队列(SCHED_FIFO/RR), 以减少高负载下的调度延迟, 极端情况可能出现卡死\n\n" +
                         "权重配置:\n" +
-                        "同步调整线程 CPU 权重, 理论上帧率和流畅度更稳\n\n" +
+                        "把绑到大核的关键线程移入独立算力组(cpu.shares)抬高 CPU 权重, 高负载下更抢得到算力\n\n" +
                         "应用黑名单:\n" +
                         "黑名单中的应用一律不执行线程分配(即使配了规则)\n\n" +
                         "游戏库显示绿色名字的是有预设配置的游戏",

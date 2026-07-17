@@ -38,10 +38,29 @@ data class TaClusterPlan(
     val big: List<Int>,     // 大核(次高频簇)
     val prime: List<Int>,   // 超大核(最高频簇)
     val all: List<Int>,     // 全部核心
+    // 真实频率簇(按 cpuinfo_max_freq 升序, 低→高), 去重后每个只出现一次。
+    // 用于「本机核心」展示与选核对话框: 2 簇设备只显示 2 组, 不再造重复的小/中/大/超大。
+    val tiers: List<List<Int>> = listOf(small, mid, big, prime).distinct(),
 ) {
     /** 除超大核以外的核(游戏模板的默认兜底常用)。 */
     val nonPrime: List<Int>
         get() = all.filter { it !in prime }.ifEmpty { all }
+
+    /**
+     * 真实簇 → 展示标签对: 按簇数给中文名。
+     *  2 簇: 小核/大核; 3 簇: 小核/中核/大核; 4 簇: 小核/中核/大核/超大核; 其它: 簇N。
+     */
+    fun tierLabels(): List<Pair<String, List<Int>>> {
+        val t = tiers.filter { it.isNotEmpty() }
+        val names = when (t.size) {
+            1 -> listOf("全部核心")
+            2 -> listOf("小核", "大核")
+            3 -> listOf("小核", "中核", "大核")
+            4 -> listOf("小核", "中核", "大核", "超大核")
+            else -> t.indices.map { "簇${it + 1}" }
+        }
+        return t.mapIndexed { i, cpus -> names[i] to cpus }
+    }
 }
 
 /** 内置预设: 一键生成一套规则(核区间按 TaClusterPlan 自适应)。摘自 AppOpt 预设库代表条目。 */
@@ -50,8 +69,13 @@ data class TaPreset(
     val name: String,
     val desc: String,
     val game: Boolean,                                          // 展示「游戏/应用」标签用
+    val shortDesc: String = "",                                 // 一行简述(UI 列表用, 空则回退 desc 首句)
     val build: (pkg: String, plan: TaClusterPlan) -> List<TaRule>,
-)
+) {
+    /** UI 一行简述: 优先 shortDesc, 否则取 desc 冒号/句号前首句。 */
+    val brief: String
+        get() = shortDesc.ifBlank { desc.substringBefore(":").substringBefore("。").take(24) }
+}
 
 /**
  * 规则的解析/序列化/匹配工具 + 预设库(纯函数, 无状态)。
@@ -232,14 +256,17 @@ object ThreadAllocRules {
             if (cpus.isEmpty()) null else cpus to SysfsReader.minMaxFreqMhz(p).second
         }.sortedBy { it.second }
         if (groups.isEmpty()) return@runCatching fallbackPlan()
-        val c = groups.map { it.first }
+        val c = groups.map { it.first }   // 真实频率簇(升序), 每簇一个频率域
         val all = c.flatten().distinct().sorted()
-        when (c.size) {
-            1 -> TaClusterPlan(c[0], c[0], c[0], c[0], all)
-            2 -> TaClusterPlan(c[0], c[0], c[1], c[1], all)
-            3 -> TaClusterPlan(c[0], c[1], c[1], c[2], all)
-            else -> TaClusterPlan(c[0], c[1], c[c.size - 2], c[c.size - 1], all)
+        // 逻辑档位: 小=最低簇, 超大=最高簇; 中/大按簇数映射(不足三簇时与相邻档共用, 仅供预设核映射)。
+        val (small, mid, big, prime) = when (c.size) {
+            1 -> listOf(c[0], c[0], c[0], c[0])
+            2 -> listOf(c[0], c[0], c[1], c[1])
+            3 -> listOf(c[0], c[1], c[1], c[2])
+            else -> listOf(c[0], c[1], c[c.size - 2], c[c.size - 1])
         }
+        // tiers = 真实簇本身(用于诚实展示; 2 簇设备就 2 组, 不重复)
+        TaClusterPlan(small, mid, big, prime, all, tiers = c)
     }.getOrElse { fallbackPlan() }
 
     /** 纯按核数推断的兜底拓扑(不读 sysfs/root, 可在主线程/组合期安全用作初值)。 */
@@ -250,7 +277,9 @@ object ThreadAllocRules {
         val big = all.drop(small.size).ifEmpty { all }
         val prime = listOf(all.last())
         val mid = big.filter { it !in prime }.ifEmpty { big }
-        return TaClusterPlan(small, mid, big, prime, all)
+        // 兜底无法读真实频率, 保守按「小核簇 + 大核簇」两组展示(超大核并入大核簇避免造重复)。
+        val tiers = listOf(small, big).filter { it.isNotEmpty() }.distinct()
+        return TaClusterPlan(small, mid, big, prime, all, tiers = tiers)
     }
 
     // JZzz「自动线程分配」的三套模板核区间用的是 0-2(小)/3-5(中)/6-7(大+超大)/0-5(小+中)。
@@ -271,6 +300,7 @@ object ThreadAllocRules {
             name = "Unity 游戏 (有 UnityMain)",
             desc = "JZzz 有UnityMain模板: UnityMain/Unity*/渲染线程绑大档, Native/Job.Worker绑中核",
             game = true,
+            shortDesc = "UnityMain/渲染线程→大核, 工作线程→中核",
         ) { _, p ->
             listOf(
                 TaRule("UnityMain", topOf(p)),
@@ -289,6 +319,7 @@ object ThreadAllocRules {
             name = "UE/自研引擎游戏 (无 UnityMain)",
             desc = "JZzz 无UnityMain模板: Main/Game/Render/*Thread绑大档, Native绑中核",
             game = true,
+            shortDesc = "主/渲染/游戏线程→大核, Native→中核",
         ) { _, p ->
             listOf(
                 TaRule("Render Thread", topOf(p)),
@@ -307,6 +338,7 @@ object ThreadAllocRules {
             name = "普通应用 · 均衡",
             desc = "JZzz 普通APP模板: 主线程/媒体解码放中核, binder与默认放小核",
             game = false,
+            shortDesc = "主线程/解码→中核, binder→小核",
         ) { pkg, p ->
             listOf(
                 TaRule(mainThreadComm(pkg), midOf(p)),
@@ -325,6 +357,7 @@ object ThreadAllocRules {
             desc = "覆盖 Unity/UE/Roblox/Minecraft/迷你世界/DAVA/SDL 等引擎的渲染主线程 → 大档, " +
                 "任务/工作线程 → 中核 (Metric 引擎签名整理)",
             game = true,
+            shortDesc = "多引擎渲染线程→大核 (Metric)",
         ) { _, p ->
             listOf(
                 // 渲染/游戏主线程 → 顶端(大核+超大核)
@@ -359,6 +392,7 @@ object ThreadAllocRules {
             name = "UnityMain+GLThread 绑超大核 (轻量)",
             desc = "只把 UnityMain 与 GLThread 固定到超大核, 其余线程不干预",
             game = true,
+            shortDesc = "仅 UnityMain/GLThread→超大核",
         ) { _, p ->
             listOf(
                 TaRule("UnityMain", cpusToSpec(p.prime)),
@@ -370,6 +404,7 @@ object ThreadAllocRules {
             name = "普通应用 · 省电",
             desc = "全部线程压到小核, 优先省电(可能影响流畅度)",
             game = false,
+            shortDesc = "全部线程→小核, 省电",
         ) { _, p ->
             listOf(TaRule("", cpusToSpec(p.small)))
         },
@@ -578,12 +613,12 @@ object ThreadAllocRuleStore {
         }
 
     /**
-     * 一键导入内置预设(assets/thread_alloc_presets/applist.conf): 解析 → 按本机簇布局重映射基线核号
+     * 一键导入内置预设(assets/thread_alloc_presets/applist.prop): 解析 → 按本机簇布局重映射基线核号
      * → 合并进现有规则(同名覆盖) → 落盘并推守护。返回导入的应用数; 读不到/解析空返回 0。
      */
     suspend fun importBundledPreset(ctx: Context): Int = withContext(Dispatchers.IO) {
         val text = runCatching {
-            ctx.assets.open("thread_alloc_presets/applist.conf")
+            ctx.assets.open("thread_alloc_presets/applist.prop")
                 .bufferedReader().use { it.readText() }
         }.getOrNull().orEmpty()
         if (text.isBlank()) return@withContext 0
@@ -600,7 +635,7 @@ object ThreadAllocRuleStore {
     suspend fun bundledPresetPkgs(ctx: Context): Set<String> = withContext(Dispatchers.IO) {
         presetPkgsCache ?: run {
             val text = runCatching {
-                ctx.assets.open("thread_alloc_presets/applist.conf")
+                ctx.assets.open("thread_alloc_presets/applist.prop")
                     .bufferedReader().use { it.readText() }
             }.getOrNull().orEmpty()
             ThreadAllocRules.parse(text).keys

@@ -321,8 +321,10 @@ object RootShell {
         return shOk("echo '$b64' | base64 -d >> $path")
     }
 
-    /** 线程分配规则文件(AppOpt applist.conf 兼容); 守护读它做 pkg{线程}=核 绑核。 */
-    private const val THREAD_RULES = "$CTS_DIR/thread_alloc_rules.conf"
+    /** 线程分配规则文件(AppOpt 兼容, 沿用 AppOpt 文件名 applist.prop); 守护读它做 pkg{线程}=核 绑核。 */
+    private const val THREAD_RULES = "$CTS_DIR/applist.prop"
+    /** 旧文件名(迁移用): 曾用 thread_alloc_rules.conf, 首次写新文件时顺带清理。 */
+    private const val THREAD_RULES_OLD = "$CTS_DIR/thread_alloc_rules.conf"
 
     /**
      * 把线程分配规则文本推给守护(落到 $THREAD_RULES);守护按 mtime 变化热重载。
@@ -332,7 +334,7 @@ object RootShell {
         val b64 = android.util.Base64.encodeToString(
             text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
         )
-        return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $THREAD_RULES; chmod 0644 $THREAD_RULES; touch $CTS_DIR")
+        return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $THREAD_RULES; chmod 0644 $THREAD_RULES; rm -f $THREAD_RULES_OLD; touch $CTS_DIR")
     }
 
     /** 读回守护侧规则文件(免 root 优先, 失败再 root 读); 不存在返回空串。 */
