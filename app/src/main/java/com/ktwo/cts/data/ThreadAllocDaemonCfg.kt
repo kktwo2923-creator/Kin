@@ -1,5 +1,5 @@
 // 线程分配 → Kin 守护的配置下发: 读-改-写 config.json 的 Function.ThreadAlloc 节点。
-// 守护读该节点(enable/interval_s/big_only/game_pkgs)后有两条生效路径, 持续生效, 区别于
+// 守护读该节点(enable/interval_s/big_only/game_pkgs/blacklist_pkgs)后有两条生效路径, 持续生效, 区别于
 // ThreadAllocator.applyAffinity 的"立即应用一次":
 //   ① 规则引擎(AppOpt 式): 读 thread_alloc_rules.conf(见 ThreadAllocRuleStore.syncToDaemon /
 //      RootShell.writeThreadRules), 扫 /proc 对命中 "pkg{线程}=核" 规则的所有进程逐线程绑核;
@@ -40,12 +40,13 @@ object ThreadAllocDaemonCfg {
         enabled: Boolean,
         gamePkgs: Set<String>,
         rtEnabled: Boolean,
+        blacklistPkgs: Set<String> = emptySet(),
     ): Boolean =
         withContext(Dispatchers.IO) {
             writeMutex.withLock {
                 runCatching {
                     val raw = RootShell.readConfigRaw()
-                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled)
+                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled, blacklistPkgs)
                     val written = RootShell.writeConfigRaw(merged)
                     if (written) {
                         runCatching {
@@ -63,6 +64,7 @@ object ThreadAllocDaemonCfg {
         enabled: Boolean,
         gamePkgs: Set<String>,
         rtEnabled: Boolean,
+        blacklistPkgs: Set<String> = emptySet(),
     ): String {
         val o = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
         val f = o.optJSONObject("Function") ?: JSONObject().also { o.put("Function", it) }
@@ -73,6 +75,7 @@ object ThreadAllocDaemonCfg {
         t.put("big_only", boolOf(t, "big_only", DEF_BIG_ONLY).toString())
         t.put("game_pkgs", gamePkgs.filter { it.isNotBlank() }.sorted().joinToString(","))
         t.put("rt_enable", rtEnabled.toString())      // 实时调度总开关(独立于 enable)
+        t.put("blacklist_pkgs", blacklistPkgs.filter { it.isNotBlank() }.sorted().joinToString(","))
         t.remove("ebpf_enable")                       // eBPF/事件监听已移除, 顺手清掉遗留键
 
         // 4 空格缩进, 与出厂 config.json / AutoModeCfg 写回保持一致。

@@ -543,6 +543,23 @@ object ThreadAllocRuleStore {
         importRules(ctx, remapped)
     }
 
+    // 内置预设覆盖的主包名集合(游戏库里绿色名字 = 有预设配置)。asset 只读, 解析一次缓存。
+    @Volatile private var presetPkgsCache: Set<String>? = null
+
+    /** 返回内置预设(applist.conf)覆盖的主包名集合; 读取/解析失败返回空集。 */
+    suspend fun bundledPresetPkgs(ctx: Context): Set<String> = withContext(Dispatchers.IO) {
+        presetPkgsCache ?: run {
+            val text = runCatching {
+                ctx.assets.open("thread_alloc_presets/applist.conf")
+                    .bufferedReader().use { it.readText() }
+            }.getOrNull().orEmpty()
+            ThreadAllocRules.parse(text).keys
+                .map { it.substringBefore(':') }
+                .toSet()
+                .also { presetPkgsCache = it }
+        }
+    }
+
     /** 导出为 AppOpt 兼容文本(labelOf 提供应用名注释)。 */
     suspend fun exportText(ctx: Context, labelOf: (String) -> String? = { null }): String =
         withContext(Dispatchers.IO) {

@@ -29,6 +29,7 @@ object ThreadAllocCfg {
     private val GAME_RT       = booleanPreferencesKey("ta_game_rt")        // 实时调度(SCHED_FIFO/RR)
     private val GAME_WEIGHT   = booleanPreferencesKey("ta_game_weight")    // 权重调整(即将支持)
     private val GAME_PKGS     = stringPreferencesKey("ta_game_pkgs")       // 逗号分隔的游戏包名
+    private val BLACKLIST_PKGS = stringPreferencesKey("ta_blacklist_pkgs") // 应用黑名单: 不执行线程分配
 
     fun enabledFlow(ctx: Context): Flow<Boolean> =
         ctx.taDataStore.data.map { it[ENABLED] ?: false }
@@ -95,6 +96,21 @@ object ThreadAllocCfg {
                 .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
             if (!cur.add(pkg)) cur.remove(pkg)
             p[GAME_PKGS] = cur.sorted().joinToString(",")
+        }
+    }
+
+    /** 应用黑名单(不执行线程分配), 逗号分隔存储。 */
+    fun blacklistPkgsFlow(ctx: Context): Flow<Set<String>> =
+        ctx.taDataStore.data.map { p ->
+            (p[BLACKLIST_PKGS] ?: "")
+                .split(',')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .toSet()
+        }
+    suspend fun setBlacklistPkgs(ctx: Context, pkgs: Set<String>) {
+        ctx.taDataStore.edit { p ->
+            p[BLACKLIST_PKGS] = pkgs.filter { it.isNotBlank() }.sorted().joinToString(",")
         }
     }
 }
