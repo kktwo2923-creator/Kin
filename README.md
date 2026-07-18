@@ -6,6 +6,8 @@
 
 Kin 调度守护的图形控制端 —— 智能调度 · 应用画像 · 线程分配 · 实时监控
 
+简体中文 | [English](README_EN.md)
+
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](#协议)
 [![Platform](https://img.shields.io/badge/Platform-Android%2013%2B-3DDC84?logo=android&logoColor=white)](#)
 [![Language](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](#)
