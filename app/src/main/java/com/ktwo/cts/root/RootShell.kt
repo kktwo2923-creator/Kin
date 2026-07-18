@@ -280,6 +280,30 @@ object RootShell {
         return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $CONFIG; touch $CTS_DIR")
     }
 
+    // ── App 开关覆盖层 settings.json: 出厂值在 config.json, App 的所有开关/智能设置存这里,
+    //    守护先读 config 再用本文件覆盖同名键 —— 模块升级/恢复出厂只动 config, 用户设置不丢。 ──
+    private const val SETTINGS = "$CTS_DIR/settings.json"
+
+    /** 读取 settings.json(免 root 优先, 失败再 root 读); 不存在返回空串。 */
+    fun readSettingsRaw(): String {
+        runCatching {
+            val f = java.io.File(SETTINGS)
+            if (f.canRead()) {
+                val s = f.readText()
+                if (s.isNotBlank()) return s
+            }
+        }
+        return shOut("cat $SETTINGS 2>/dev/null").joinToString("\n")
+    }
+
+    /** 写回 settings.json(base64 落地 + touch 目录补 inotify, 同 writeConfigRaw)。 */
+    fun writeSettingsRaw(json: String): Boolean {
+        val b64 = android.util.Base64.encodeToString(
+            json.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
+        )
+        return shOk("mkdir -p $CTS_DIR; echo '$b64' | base64 -d > $SETTINGS; touch $CTS_DIR")
+    }
+
     /**
      * 智能调度命令通道: 把一条命令行写入 auto_control.txt, daemon 约每 5s 轮询该文件
      * (无 inotify, 不需要 touch)。支持命令:

@@ -25,6 +25,6 @@ object TakeoverCfg {
         val f = o.optJSONObject("Function") ?: JSONObject().also { o.put("Function", it) }
         val a = f.optJSONObject("AppProfile") ?: JSONObject().also { f.put("AppProfile", it) }
         a.put("enable", (!thirdParty).toString())
-        return o.toString(4)
+        return o.toStableString()
     }
 }

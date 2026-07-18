@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.ktwo.cts.data.toStableString
 import org.json.JSONObject
 
 /**
@@ -139,7 +140,8 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _loading.value = true
             try {
-                val raw = withContext(Dispatchers.IO) { RootShell.readConfigRaw() }
+                // 读合并视图(config 出厂 ⊕ settings 覆盖): 展示的即守护实际生效值。
+                val raw = withContext(Dispatchers.IO) { com.ktwo.cts.data.KinSettings.merged() }
                 val parsed = SmartPolicyCfg.parse(raw)
                 _cfg.value = parsed
                 _editing.value = normalize(parsed.states)
@@ -233,7 +235,7 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
         val a = f.optJSONObject("AutoMode") ?: JSONObject().also { f.put("AutoMode", it) }
         a.put("gaming_gov", _gamingGovEditing.value)
         a.put("fas_enable", _fasEnableEditing.value.toString())
-        o.toString(4)
+        o.toStableString()
     }.getOrDefault(raw)
 
     /** 修改某个状态的覆盖(仅改内存副本, 标记 dirty)。 */
@@ -264,19 +266,18 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
     fun save() {
         viewModelScope.launch {
             val ok = runCatching {
-                val merged = withContext(Dispatchers.IO) {
-                    val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
+                // 本页是 app_policy 家族的编辑器 → includeAppPolicy=true, 用户的分类策略编辑进覆盖层;
+                // 读改写整体在 updateOverlay 锁内完成, config.json 不动。
+                val written = com.ktwo.cts.data.KinSettings.updateOverlay(
+                    getApplication(), includeAppPolicy = true,
+                ) { raw ->
                     mergeGamingGov(
                         _catEditing.value.mergeInto(
                             SmartPolicyCfg(states = _editing.value).mergeInto(raw)
                         )
                     )
                 }
-                val written = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
-                if (written) {
-                    backup(merged)
-                    reload()
-                }
+                if (written) reload()
                 written
             }.getOrDefault(false)
             _saveResult.value = ok
@@ -310,8 +311,10 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                     hwMaxL = hwMaxL.value,
                     hwMaxB = hwMaxB.value,
                 )
-                val merged = withContext(Dispatchers.IO) {
-                    val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
+                // 问卷结果同样只落覆盖层 settings.json(本页编辑 app_policy → includeAppPolicy=true)
+                val written = com.ktwo.cts.data.KinSettings.updateOverlay(
+                    getApplication(), includeAppPolicy = true,
+                ) { raw ->
                     // 以界面所见为基线: 未保存的手动编辑(状态覆盖+分类策略+游戏调度开关)先并入,
                     // 相对加减与问卷里展示的"当前上限"一致(顺带把脏编辑一起落盘, 不丢用户改动)。
                     // mergeGamingGov 必须套: 否则用户刚拨的 风驰/FAS 开关会被问卷落盘+reload 静默回弹。
@@ -322,9 +325,7 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                     )
                     SmartSurvey.apply(answers, base, surveyCtx)
                 }
-                val written = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
                 if (written) {
-                    backup(merged)
                     val ctx = getApplication<Application>()
                     Prefs.setSmartSurvey(ctx, answers.toJson())
                     Prefs.appendSmartSurveyHistory(ctx, answers.toJson())
@@ -336,15 +337,6 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
                 written
             }.getOrDefault(false)
             _surveyResult.value = ok
-        }
-    }
-
-    private suspend fun backup(merged: String) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                java.io.File(getApplication<Application>().filesDir, "config_backup.json")
-                    .writeText(merged)
-            }
         }
     }
 

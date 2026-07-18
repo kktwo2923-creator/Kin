@@ -76,7 +76,7 @@ fun SettingsScreen(
             val gen = thirdPartyGen.intValue
             val v = withContext(Dispatchers.IO) {
                 runCatching {
-                    com.ktwo.cts.data.TakeoverCfg.isThirdParty(RootShell.readConfigRaw())
+                    com.ktwo.cts.data.TakeoverCfg.isThirdParty(com.ktwo.cts.data.KinSettings.merged())
                 }.getOrDefault(false)
             }
             if (thirdPartyGen.intValue == gen) thirdParty = v
@@ -241,10 +241,9 @@ fun SettingsScreen(
                         thirdParty = want
                         scope.launch(Dispatchers.IO) {
                             runCatching {
-                                val raw = RootShell.readConfigRaw()
-                                val ok = raw.isNotBlank() && RootShell.writeConfigRaw(
-                                    com.ktwo.cts.data.TakeoverCfg.mergeInto(raw, want)
-                                )
+                                val ok = com.ktwo.cts.data.KinSettings.updateOverlay(ctx) { r ->
+                                    com.ktwo.cts.data.TakeoverCfg.mergeInto(r, want)
+                                }
                                 // 直接写成功后必须清掉初始化页留下的待办, 否则日后重跑引导会
                                 // 用过期待办覆盖这里的明确选择。
                                 if (ok) Prefs.setPendingTakeover(ctx, -1)

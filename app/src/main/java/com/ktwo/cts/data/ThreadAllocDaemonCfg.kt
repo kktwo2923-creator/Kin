@@ -10,10 +10,7 @@
 package com.ktwo.cts.data
 
 import android.content.Context
-import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -22,17 +19,13 @@ object ThreadAllocDaemonCfg {
     private const val DEF_INTERVAL_S = 3
     private const val DEF_BIG_ONLY = true
 
-    // config.json 里同时存着用户的调度画像/智能档设置。连点勾选游戏会并发触发 read-改-write,
-    // 后发先至可能丢写。用一把 Mutex 串行化整个"读→合并→写→刷备份", 保证每次基于最新全量落盘。
-    private val writeMutex = Mutex()
-
     /**
-     * 把线程分配的总开关与游戏库同步进 config.json 的 Function.ThreadAlloc。
-     *  - enable / game_pkgs 以传入值为准; interval_s / big_only 若 config 里已有合法值则保留,
+     * 把线程分配的总开关与游戏库同步进覆盖层的 Function.ThreadAlloc(settings.json)。
+     *  - enable / game_pkgs 以传入值为准; interval_s / big_only 若已有合法值则保留,
      *    缺失或非法时才落默认("3" / "true"), 不会每次强制覆盖。
      *  - 值统一写字符串("true"/"3"), 与既有 config.json 及守护 readBool/readInt 容错约定一致。
-     *  - 成功写回后同步刷新私有备份 config_backup.json, 否则重启时 BootReceiver 会用旧备份
-     *    覆盖掉刚写入的 ThreadAlloc 段。
+     *  - 并发安全: 连点勾选游戏的 read-改-write 由 KinSettings.updateOverlay 的全局写锁串行化
+     *    (含备份刷新), 与其它写入方(智能档保存/接管开关)也不互相丢写。
      *  - 全程 runCatching, IO 线程执行; 无 root/读写失败时静默返回 false, 不打断用户。
      */
     suspend fun sync(
@@ -44,19 +37,11 @@ object ThreadAllocDaemonCfg {
         weightEnabled: Boolean = false,
     ): Boolean =
         withContext(Dispatchers.IO) {
-            writeMutex.withLock {
-                runCatching {
-                    val raw = RootShell.readConfigRaw()
-                    val merged = mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled, blacklistPkgs, weightEnabled)
-                    val written = RootShell.writeConfigRaw(merged)
-                    if (written) {
-                        runCatching {
-                            java.io.File(ctx.filesDir, "config_backup.json").writeText(merged)
-                        }
-                    }
-                    written
-                }.getOrDefault(false)
-            }
+            runCatching {
+                KinSettings.updateOverlay(ctx) { raw ->
+                    mergeThreadAlloc(raw, enabled, gamePkgs, rtEnabled, blacklistPkgs, weightEnabled)
+                }
+            }.getOrDefault(false)
         }
 
     /** 读-改-写: 只更新 Function.ThreadAlloc, 其余节点原样保留。raw 为空/非法时从 {} 起。 */
@@ -84,7 +69,7 @@ object ThreadAllocDaemonCfg {
         t.remove("ebpf_enable")                       // eBPF/事件监听已移除, 顺手清掉遗留键
 
         // 4 空格缩进, 与出厂 config.json / AutoModeCfg 写回保持一致。
-        return o.toString(4)
+        return o.toStableString()
     }
 
     /** 兼容字符串/数字/布尔三种写法读 Bool(与 AutoModeCfg 同款容错)。 */

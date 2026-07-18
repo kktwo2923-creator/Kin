@@ -105,6 +105,6 @@ data class SmartPolicyCfg(
         }
         if (node.length() == 0) a.remove("fsm_policy") else a.put("fsm_policy", node)
         // 4 空格缩进,与出厂 config.json / AutoModeCfg 保持一致。
-        return o.toString(4)
+        return o.toStableString()
     }
 }

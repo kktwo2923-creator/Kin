@@ -64,11 +64,13 @@ fun SetupScreen(onDone: () -> Unit) {
             // 只有写成功才清待办, 写失败(如 root 被拒)保留待办下次再试并按 config 现状显示。
             thirdParty = withContext(Dispatchers.IO) {
                 runCatching {
-                    val raw = RootShell.readConfigRaw()
+                    val raw = com.ktwo.cts.data.KinSettings.merged()
                     val pending = Prefs.pendingTakeover(ctx)
                     when {
                         raw.isNotBlank() && pending >= 0 -> {
-                            val ok = RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, pending == 1))
+                            val ok = com.ktwo.cts.data.KinSettings.updateOverlay(ctx) { r ->
+                                TakeoverCfg.mergeInto(r, pending == 1)
+                            }
                             if (ok) {
                                 Prefs.setPendingTakeover(ctx, -1)
                                 pending == 1
@@ -89,9 +91,9 @@ fun SetupScreen(onDone: () -> Unit) {
         thirdParty = third
         scope.launch(Dispatchers.IO) {
             runCatching {
-                val raw = RootShell.readConfigRaw()
-                val ok = raw.isNotBlank() &&
-                    RootShell.writeConfigRaw(TakeoverCfg.mergeInto(raw, third))
+                val ok = com.ktwo.cts.data.KinSettings.updateOverlay(ctx) { r ->
+                    TakeoverCfg.mergeInto(r, third)
+                }
                 Prefs.setPendingTakeover(ctx, if (ok) -1 else if (third) 1 else 0)
             }
         }

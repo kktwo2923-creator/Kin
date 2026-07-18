@@ -39,19 +39,18 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     /**
-     * 模块开机脚本会用默认 config.json 覆盖 sdcard 上的用户配置。
-     * BOOT_COMPLETED 晚于模块拷贝,用 App 私有备份写回,触发 daemon inotify 热重载。
+     * 模块开机/更新脚本可能用默认 config.json 覆盖 sdcard 上的用户配置。
+     * BOOT_COMPLETED 晚于模块拷贝, 用 App 私有备份写回, 触发 daemon inotify 热重载。
+     * 覆盖层架构: config_backup(频率表等) + settings_backup(所有 App 开关/智能设置)两份都恢复。
+     * 走 KinSettings.restoreFromBackup: 与 App 写入器同一把锁, 不会把旧备份横插进正在进行的保存。
      */
     private suspend fun restoreUserConfig(ctx: Context) {
+        if (!RootShell.isRooted()) return
         runCatching {
-            val backup = java.io.File(ctx.filesDir, "config_backup.json")
-            if (!backup.exists()) return
-            val txt = backup.readText()
-            if (txt.isBlank() || !RootShell.isRooted()) return
-            // 延迟 5s 再写一次,覆盖"模块拷贝略晚于 BOOT_COMPLETED"的竞态
-            RootShell.writeConfigRaw(txt)
+            // 延迟 5s 再写一次, 覆盖"模块拷贝略晚于 BOOT_COMPLETED"的竞态
+            com.ktwo.cts.data.KinSettings.restoreFromBackup(ctx)
             delay(5000)
-            RootShell.writeConfigRaw(txt)
+            com.ktwo.cts.data.KinSettings.restoreFromBackup(ctx)
         }
     }
 }

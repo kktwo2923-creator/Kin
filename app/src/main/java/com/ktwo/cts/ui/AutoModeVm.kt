@@ -46,7 +46,7 @@ class AutoModeVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _loading.value = true
             try {
-                val raw = withContext(Dispatchers.IO) { RootShell.readConfigRaw() }
+                val raw = withContext(Dispatchers.IO) { com.ktwo.cts.data.KinSettings.merged() }
                 val parsed = AutoModeCfg.parse(raw)
                 _cfg.value = parsed
                 _editing.value = parsed
@@ -70,24 +70,16 @@ class AutoModeVm(app: Application) : AndroidViewModel(app) {
         _dirty.value = next != _cfg.value
     }
 
-    /** 把当前编辑保存回 config.json,保留其它字段;成功后备份并 reload。返回结果经 saveResult 发布。 */
+    /** 把当前编辑保存进覆盖层(settings.json),保留其它字段;成功后 reload。返回结果经 saveResult 发布。 */
     fun save() {
         viewModelScope.launch {
             val ok = runCatching {
-                val merged = withContext(Dispatchers.IO) {
-                    val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                    _editing.value.mergeInto(raw)
+                // 智能调度设置属覆盖层 → 读改写整体在 updateOverlay 锁内完成, config.json 不动。
+                val editing = _editing.value
+                val written = com.ktwo.cts.data.KinSettings.updateOverlay(getApplication()) { raw ->
+                    editing.mergeInto(raw)
                 }
-                val written = withContext(Dispatchers.IO) { RootShell.writeConfigRaw(merged) }
-                if (written) {
-                    withContext(Dispatchers.IO) {
-                        runCatching {
-                            java.io.File(getApplication<Application>().filesDir, "config_backup.json")
-                                .writeText(merged)
-                        }
-                    }
-                    reload()
-                }
+                if (written) reload()
                 written
             }.getOrDefault(false)
             _saveResult.value = ok
@@ -102,17 +94,10 @@ class AutoModeVm(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ok = runCatching {
                 if (on) {
-                    // 落盘当前设置(强制 enable=true),保证 auto 真正接管。
-                    val merged = withContext(Dispatchers.IO) {
-                        val raw = RootShell.readConfigRaw().ifBlank { _cfg.value.rawJson }
-                        _editing.value.copy(enable = true).mergeInto(raw)
-                    }
-                    withContext(Dispatchers.IO) {
-                        RootShell.writeConfigRaw(merged)
-                        runCatching {
-                            java.io.File(getApplication<Application>().filesDir, "config_backup.json")
-                                .writeText(merged)
-                        }
+                    // 落盘当前设置(强制 enable=true),保证 auto 真正接管。写覆盖层 settings.json。
+                    val editing = _editing.value.copy(enable = true)
+                    com.ktwo.cts.data.KinSettings.updateOverlay(getApplication()) { raw ->
+                        editing.mergeInto(raw)
                     }
                 }
                 val target = if (on) "auto" else "balance"

@@ -137,6 +137,6 @@ data class AppCatPolicyCfg(
             })
         }
         a.put("app_policy", node)
-        return o.toString(4)
+        return o.toStableString()
     }
 }
