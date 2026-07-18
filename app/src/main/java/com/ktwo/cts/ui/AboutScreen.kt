@@ -34,7 +34,7 @@ private data class LinkInfo(val fullText: String, val url: String)
 
 private val LINKS = listOf(
     LinkInfo("源代码 GitHub", "https://github.com/kktwo2923-creator/CTS"),
-    LinkInfo("调度守护进程 CTS-Daemon", "https://github.com/kktwo2923-creator/CTS-Daemon"),
+    LinkInfo("Kin 调度守护进程", "https://github.com/kktwo2923-creator/CTS-Daemon"),
     LinkInfo("UI 设计参考 SukiSU-Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
 )
 

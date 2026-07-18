@@ -1,10 +1,10 @@
 # App 防破解加固说明 (Anti-Repackage Hardening)
 
-> 与守护端(CTS-Daemon)的 Ed25519 授权校验配套。App 这层主要防「重打包 / 重签名」:
+> 与 Kin 守护端的 Ed25519 授权校验配套。App 这层主要防「重打包 / 重签名」:
 > 别人改了你的 APK 就必须用他自己的私钥重新签名,签名证书随之改变,运行时一比对即可识破。
 >
 > **现实预期**:GPL 源码公开 + root 设备,**做不到绝对防破解**;目标是让随手破解失效、抬高成本。
-> 真正的授权强保证在守护端的非对称签名(见 CTS-Daemon/HARDENING.md),App 层是纵深防御。
+> 真正的授权强保证在 Kin 守护端的非对称签名(见守护仓库 HARDENING.md),App 层是纵深防御。
 
 ## 这次加了什么
 - **签名指纹校验**(`app/src/main/java/com/ktwo/cts/license/Integrity.kt`):运行时取本应用签名证书

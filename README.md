@@ -1,15 +1,15 @@
 <div align="center">
 
-# CTS · 接管助手
+# Kin · 接管助手
 
-**CoreTurboScheduler Companion**
+**OnePlus V Pro**
 
-替代 Scene 的轻量接管前端 —— 监听前台 App,按应用画像自动切换 CPU 调度模式
+Kin 调度守护的图形控制端 —— 智能调度 · 应用画像 · 线程分配 · 实时监控
 
-[![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](#license)
-[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)](#)
+[![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](#协议)
+[![Platform](https://img.shields.io/badge/Platform-Android%2013%2B-3DDC84?logo=android&logoColor=white)](#)
 [![Language](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](#)
-[![Daemon](https://img.shields.io/badge/Daemon-CoreTurboScheduler-orange)](https://github.com/kktwo2923-creator/CTS-Daemon)
+[![Daemon](https://img.shields.io/badge/Daemon-Kin-orange)](https://github.com/kktwo2923-creator/CTS-Daemon)
 
 </div>
 
@@ -17,90 +17,44 @@
 
 ## 这是什么
 
-**CTS 接管助手** 是 [CoreTurboScheduler (CTS-Daemon)](https://github.com/kktwo2923-creator/CTS-Daemon) 的图形控制端,二者分工明确:
+**Kin 接管助手** 是 [Kin 调度守护](https://github.com/kktwo2923-creator/CTS-Daemon) 的图形控制端,二者分工明确:
 
-- **守护进程(CTS-Daemon)** 负责真正的 CPU 调频与 governor 参数;
-- **本 App** 负责"什么时候、对哪个 App、切到哪个模式"—— 监听屏幕开关与前台 App 变化,自动下发模式。
+- **Kin 守护**(Magisk/KernelSU 模块)负责真正的 CPU/GPU 调频、governor 参数、线程绑核与实时调度;
+- **本 App** 负责配置与感知 —— 应用画像、智能策略、线程规则的编辑下发,以及无障碍前台推送(精准识别前台应用,含小窗/分屏)。
 
-两者通过 root 调用 `/data/powercfg.sh <mode>`(Scene 接管协议)对接,完整替代 Scene 的接管能力。
+两者通过 `/sdcard/Android/Kin/` 下的配置文件对接(config.json 热重载、mode.txt、applist.prop 等),App 被杀不影响调度持续生效。
 
-## 核心特性
+## 核心功能
 
-- 🎯 **按应用画像接管** —— 每个 App 可绑定独立调度模式,切到前台自动生效
-- 🔋 **灭屏自动省电** —— 息屏切省电模式(默认 powersave),亮屏恢复当前 App 画像
-- 🧩 **Scene 风格忽略规则** —— 输入法 / 系统 UI / 启动器 / 锁屏永不接管
-- 🚫 **用户黑名单** —— Apps 屏长按任意 App 即可加入,加入后不接管
-- 🔁 **STRICT 同模式重发** —— 部分游戏切回同模式需重发,可在设置开启
-- 🔍 **前台双轨探测** —— 有 root 用 `dumpsys`,无 root 退回 `UsageStatsManager`
-- 🎨 **Material You 界面** —— Jetpack Compose + Material 3 动态取色
+- 🧠 **智能调度(auto)** —— 六状态负载 FSM 按需调频;省电倾向/夜间作息自学习;问答调优(确认-或-纠正学习结果)
+- 📊 **智能策略** —— 每状态频率上限可视化自定义;应用分类封顶/关核;游戏调度(风驰调速器 hmbird/scx 切换、FAS 帧感知调频,按应用互斥)
+- 🎯 **应用画像** —— 每个 App 绑定独立调度档(风驰游戏/普通游戏/视频/社交/阅读/音乐…),切前台自动生效
+- 🧵 **线程分配** —— Metric 式界面:冲突检测、游戏库、应用黑名单;三合一线程规则管理(绑核/实时优先级/实时线程),AppOpt applist.prop 兼容互导
+- 🖥️ **悬浮监控** —— 负载/进程/线程/迷你/温度五种悬浮窗;迷你条 Metric 同款样式
+- 🔋 **电量记录** —— 充放电曲线、功耗统计、续航估算(守护采样,不依赖 App 前台)
+- 🚀 **初始化引导** —— 首次启动引导 ROOT 授权、模块检测下载、无障碍授权、接管方式选择(本 App / Scene 等第三方)
+- 🎨 **Material You** —— Jetpack Compose + Material 3 动态取色,双排功能页
 
-> **平台**:OnePlus V Pro(骁龙 8 至尊版 / 8 Elite Gen 5) · **技术栈**:Kotlin + Jetpack Compose
+> **技术栈**:Kotlin + Jetpack Compose · minSdk 33
 >
-> **致谢**:UI 风格参考 [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)(GPL-3.0),接管逻辑参考 [helloklf/vtools](https://github.com/helloklf/vtools)(GPL-3.0)。
+> **致谢**:UI 风格参考 [SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)(GPL-3.0);接管逻辑参考 [helloklf/vtools](https://github.com/helloklf/vtools)(GPL-3.0);线程模板移植自 SutoLiu 的 AppOpt / JZzz 生态(GPL-3.0);智能模式算法移植 [AutoSystemBoost](https://github.com/krilikd/AutoSystemBoost) Smart Mode(MIT);FAS 移植 [fas-rs](https://github.com/shadow3aaa/fas-rs) 控制器;界面与引擎签名对齐 Metric。
 
 ## 工作方式
 
-监听屏幕开关 + 前台 App 变化,按 **App 画像 → 全局默认 → 灭屏模式** 决定要切的模式,
-通过 root 调用 `/data/powercfg.sh <mode>`(Scene 接管协议)由 CoreTurboScheduler 模块执行。
+```
+无障碍服务 ──前台推送──▶ /sdcard/Android/Kin/topapp.txt ──▶ Kin 守护(inotify 即时消费)
+App 配置页 ──读改写──▶ config.json / applist.prop / perapp_powermode.txt ──▶ 守护热重载
+守护 ──状态回写──▶ AI/auto_status.txt ──▶ App 实时展示(智能监控/智能策略)
+```
 
-### Scene 风格的接管细节
-
-- **输入法包永远忽略**(切到搜狗/讯飞不动模式)
-- **系统 UI / 启动器 / 锁屏永远忽略**(builtin ignored list)
-- **用户黑名单**:在 Apps 屏内每个 App 长按可加入,加入后不接管
-- **STRICT 同模式重发**:某些游戏切回同模式需要重发,Settings 可开
-- **灭屏切设定模式**(默认 powersave),亮屏强制重发当前前台 App 的画像
-
-### 前台 App 双轨探测
-
-- 有 root → `dumpsys window | grep mCurrentFocus`(最快)
-- 无 root → `UsageStatsManager`(需要"查看使用情况"权限)
+- 前台识别以无障碍推送为准(小窗/分屏取面积最大主应用);推送失效时守护自动回退自检,双保险
+- 学习与问卷数据存放在 `/sdcard/Android/Kin/AI/`,清 App 数据不丢失
 
 ## 编译
 
-### 方式 1 — GitHub Actions(推荐,免本地装 SDK)
+本地 Android Studio 打开工程即可(JDK 17);或推送到 GitHub 用 Actions 自动构建。
+Release 签名与防重打包配置见 [HARDENING.md](HARDENING.md)。
 
-1. 在 GitHub 新建一个仓库
-2. 把这个 zip 解压后 `git push` 上去
-3. Actions 自动跑 `gradle assembleDebug + assembleRelease`
-4. 5 分钟后在 Actions 页面下载 `app-debug.apk` / `app-release.apk`
+## 协议
 
-我已经在 `.github/workflows/build.yml` 写好了 workflow,push 上去就触发。
-
-### 方式 2 — 本地 Android Studio
-
-打开整个 `cts_app/` 文件夹,Android Studio 会自动 sync,然后:
-- Build → Build APK(s) → 出 debug APK
-- Build → Generate Signed Bundle / APK → 出签名 release APK
-
-需要:Android Studio Koala/Ladybug+ 和 JDK 17。
-
-## 项目结构
-
-```
-app/src/main/
-├── AndroidManifest.xml
-├── java/com/ktwo/cts/
-│   ├── CtsApp.kt                  Application + libsu 全局
-│   ├── data/
-│   │   ├── Mode.kt                5 个模式枚举 (FOLLOW/POWERSAVE/BALANCE/PERFORMANCE/FAST)
-│   │   └── Prefs.kt               DataStore 持久化 + PrefsExt(strict/blacklist)
-│   ├── root/
-│   │   └── RootShell.kt           libsu 封装,触发 powercfg.sh / switch.sh
-│   ├── service/
-│   │   ├── ScheduleService.kt     前台服务,Scene 风格接管(IME 过滤+黑名单+STRICT)
-│   │   ├── ForegroundDetector.kt  双轨探测(dumpsys/UsageStats)
-│   │   └── BootReceiver.kt        开机自启
-│   └── ui/   (Compose Material 3, 仿 SukiSU 风格)
-│       ├── MainActivity.kt
-│       ├── AppRoot.kt             3 tab 底部导航
-│       ├── HomeScreen.kt          大状态卡 + 2x2 信息网格 + 模式选择
-│       ├── AppsScreen.kt          应用画像列表(卡片化) + 黑名单
-│       ├── SettingsScreen.kt      接管行为 + 权限 + 性能 + STRICT
-│       └── Theme.kt               Material You dynamic color
-└── res/
-```
-
-## License
-
-GPL-3.0 (因参考了 GPL-3.0 的 Scene/vtools 与 SukiSU-Ultra)
+GPL-3.0 —— 引用的各上游项目版权归原作者所有,详见源码内署名。

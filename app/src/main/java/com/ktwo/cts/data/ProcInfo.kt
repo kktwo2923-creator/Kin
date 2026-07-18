@@ -85,7 +85,7 @@ object ProcInfo {
         return rows
     }
 
-    private const val SEP = "==@CTS@=="
+    private const val SEP = "==@KIN@=="
 
     /**
      * 单进程详情: 一次 root exec 串读 6 个 /proc 文件, 用分段标记切块。

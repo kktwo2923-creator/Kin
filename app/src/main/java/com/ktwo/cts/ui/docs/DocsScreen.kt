@@ -1,5 +1,5 @@
 // 使用文档页(M7): 分页的使用手册。目录弹窗选章、一页一章、底部上一页/下一页。
-// 内容为 CTS 功能的原创说明文字, 与实际代码功能对齐。
+// 内容为 Kin 功能的原创说明文字, 与实际代码功能对齐。
 package com.ktwo.cts.ui.docs
 
 import androidx.compose.foundation.clickable
@@ -198,7 +198,7 @@ private val CHAPTERS = listOf(
             Bullets(
                 listOf(
                     "「启用线程分配」是总开关, 由 Kin 守护常驻执行, 关闭即全部还原。",
-                    "模式可选亲和(强制绑核)或迁移(即将支持); 权重配置即将支持。",
+                    "模式可选亲和(强制绑核)或迁移(即将支持); 权重配置把绑到大核的关键线程移入独立算力组抬高 CPU 权重。",
                 )
             ),
             SubHead("普通 App / 游戏"),
