@@ -8,6 +8,6 @@
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows"
-    android:notificationTimeout="100"
+    android:notificationTimeout="50"
     android:canRetrieveWindowContent="true"
     android:description="@string/a11y_desc" />

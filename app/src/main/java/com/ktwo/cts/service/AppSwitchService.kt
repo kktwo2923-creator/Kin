@@ -90,10 +90,10 @@ class AppSwitchService : AccessibilityService() {
             e.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED) return
         // typeWindowsChanged 触发频繁: 节流避免主线程频繁枚举窗口造成卡顿; 被节流的事件不丢, 尾沿补评
         val now = android.os.SystemClock.uptimeMillis()
-        if (now - lastEvalMs < 400) {
+        if (now - lastEvalMs < 300) {
             if (!trailingQueued) {
                 trailingQueued = true
-                main.postDelayed(trailingEval, 450)
+                main.postDelayed(trailingEval, 300)   // 尾沿补评: 450→300ms, 切换更跟手
             }
             return
         }
