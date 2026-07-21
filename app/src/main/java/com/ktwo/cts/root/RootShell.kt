@@ -149,6 +149,15 @@ object RootShell {
         return mode == "auto"
     }
 
+    /**
+     * 写 ADPF 热余量(getThermalHeadroom 归一化 0.0-1.0, -1=无 ADPF/NaN)供守护融合进热管理。
+     * 纯数字, 无需 base64; 守护按 mtime 判新鲜(>30s 陈旧作废)。低频调用(~15s)。
+     */
+    fun writeThermalHeadroom(v: Float): Boolean {
+        val s = String.format(java.util.Locale.US, "%.3f", v)
+        return shOk("mkdir -p $AI_DIR; echo '$s' > $AI_DIR/thermal_headroom.txt")
+    }
+
     /** 写回整个画像表 + 全局默认;base64 落地避免特殊字符破坏 shell。 */
     fun writePerApp(profiles: Map<String, String>, globalMode: String): Boolean {
         val sb = StringBuilder()

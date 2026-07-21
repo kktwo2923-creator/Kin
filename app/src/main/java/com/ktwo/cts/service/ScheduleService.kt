@@ -119,6 +119,9 @@ class ScheduleService : Service() {
         while (isActive) {
             try {
                 if (!Prefs.enabled(this@ScheduleService)) { delay(3000); continue }
+                // ADPF 热余量推送(P2-⑧): 亮屏时周期读 getThermalHeadroom 推给守护融合进热管理。
+                // 独立于 daemon 存活与否(守护也需要这个跨机型热信号), ~15s 一次(API 限 10s 一读)。
+                pushThermalHeadroom()
                 // daemon 存活时退为纯 GUI,避免与 daemon 同时写 sysfs 打架
                 if (RootShell.daemonAlive()) { delay(5000); continue }
                 if (!screenOn) { delay(5000); continue }
@@ -139,6 +142,28 @@ class ScheduleService : Service() {
               catch (_: Exception) { /* ignore */ }
             delay(Prefs.pollMs(this@ScheduleService).toLong())
         }
+    }
+
+    private var lastHeadroomMs = 0L
+    /**
+     * P2-⑧ ADPF: 亮屏时 ~15s 读一次 getThermalHeadroom(forecast=10s) 推给守护。
+     * getThermalHeadroom 限 10s 一读(过频返回 NaN); API<30 或无 ADPF 时推 -1(守护据此忽略)。
+     * 归一化 0.0(凉快)→1.0(重度节流), 守护用它在物理温度到阈值前预测性削频。
+     */
+    private suspend fun pushThermalHeadroom() {
+        if (!screenOn) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastHeadroomMs < 15000) return
+        lastHeadroomMs = now
+        val v: Float = if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                val hr = pm.getThermalHeadroom(10)
+                if (hr.isNaN()) -1f else hr        // NaN(限频/不支持) → -1
+            } catch (_: Throwable) { -1f }
+        } else -1f
+        if (v < 0f) return                          // 无有效值就不推(守护 30s 后自然作废旧值)
+        withContext(Dispatchers.IO) { runCatching { RootShell.writeThermalHeadroom(v) } }
     }
 
     private suspend fun dispatchForPackage(pkg: String) {
