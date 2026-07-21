@@ -55,9 +55,23 @@ class AppSwitchService : AccessibilityService() {
                 val cur = mainAppFromWindows()
                 if (cur != null && cur != lastPkg) push(cur)               // 漏检自愈: 真实前台已换
                 else if (lastPkg.isNotEmpty()) RootShell.pushTopApp(lastPkg)  // 未换: 仅刷新鲜度
+                maybePushHeadroom()   // P2-⑧ ADPF 热余量: 与前台推送同栖(守护存活时本服务仍在跑)
             }
             main.postDelayed(this, HEARTBEAT_MS)
         }
+    }
+
+    // P2-⑧ ADPF 热余量: ~15s 读一次 getThermalHeadroom(10) 推给守护(root 写放后台线程, 不卡主线程)。
+    // 放在无障碍心跳里 —— 它才是守护存活时仍在运行的伴生组件(ScheduleService 见守护存活会自停)。
+    private var lastHrMs = 0L
+    private fun maybePushHeadroom() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastHrMs < 15_000L) return
+        lastHrMs = now
+        if (android.os.Build.VERSION.SDK_INT < 30) return
+        val hr = runCatching { power.getThermalHeadroom(10) }.getOrDefault(Float.NaN)
+        if (hr.isNaN() || hr < 0f) return                 // 限频/不支持 → 不推(守护 30s 后作废旧值)
+        Thread { runCatching { RootShell.writeThermalHeadroom(hr) } }.start()
     }
 
     override fun onServiceConnected() {
