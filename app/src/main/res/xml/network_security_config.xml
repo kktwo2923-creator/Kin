@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 放行国内自建服务器(纯 IP, HTTP 明文): 安全靠服务端限流 + 守护端 Ed25519 验签兜底 -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">YOUR_SERVER_IP</domain>
+    </domain-config>
+</network-security-config>
