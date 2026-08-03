@@ -25,15 +25,11 @@
 # JNI 按「全限定类名 + 方法名」绑定符号(Java_com_ktwo_cts_nativebridge_NativeSampler_*),
 # R8 改名会导致 UnsatisfiedLinkError, 故整类保留。
 -keep class com.ktwo.cts.nativebridge.NativeSampler { *; }
--keepclasseswithmembernames class * { native <methods>; }
 
 # ============ 防破解:JNI 绑定 + 混淆强化 ============
-# JNI 通过「全限定类名 + 方法名」绑定 C 符号(Java_com_ktwo_cts_license_Integrity_nativeVerify),
-# 因此 Integrity 类名与其 native 方法名必须保留,否则 native 层失效。
--keepclasseswithmembernames class com.ktwo.cts.license.Integrity {
-    native <methods>;
-}
-# 通用:任何 native 方法名都保留(JNI 需要)
+# JNI 通过「全限定类名 + 方法名」绑定 C 符号(如 Java_com_ktwo_cts_license_Integrity_nativeVerify),
+# 故所有含 native 方法的类(含 Integrity、NativeSampler)的类名与方法名都需保留。
+# 下方通用规则已覆盖 Integrity 等所有含 native 方法的类,无需单独 keep。
 -keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
 }

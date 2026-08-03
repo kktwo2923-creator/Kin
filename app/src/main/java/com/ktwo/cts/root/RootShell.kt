@@ -51,11 +51,20 @@ object RootShell {
     fun execTimed(sec: Int, cmd: String): String =
         if (hasTimeout()) exec("timeout -s KILL $sec $cmd") else exec(cmd)
 
+    /** 带超时的静默执行(返回是否成功)。与 execTimed 同款, 供需 Boolean 结果的调用方用。 */
+    fun shOkTimed(sec: Int, cmd: String): Boolean =
+        if (hasTimeout()) shOk("timeout -s KILL $sec $cmd") else shOk(cmd)
+
     fun execSilent(cmd: String): Boolean = shOk(cmd)
 
     /** 优先走 /data/powercfg.sh(Scene 接管协议入口),失败则 fallback 到 switch.sh。 */
     fun applyMode(mode: String): Boolean {
         if (mode.isBlank()) return false
+        // ⚠️ 安全(P0-1): mode 来源是 /sdcard 上的 perapp_powermode.txt(用户/其它应用可写),
+        // 直接拼 `sh /data/powercfg.sh $mode` 会 shell 注入(如 "* balance; reboot")。
+        // 强制白名单: 只接受 Mode 枚举定义的 key, 杜绝任意命令执行。
+        val allowed = com.ktwo.cts.data.Mode.entries.any { it.key == mode }
+        if (!allowed) return false
         if (shOk("[ -s /data/powercfg.sh ] && sh /data/powercfg.sh $mode")) return true
         // libsu 持久 shell 里 exit 会终止会话,用变量记结果代替 exit
         return shOk(
@@ -100,15 +109,21 @@ object RootShell {
             .map { it.trim() }
             .filter { it.isNotEmpty() && it.substringAfterLast('/') !in PROTECTED_FILES }
 
-    /** 读取日志末尾若干行(默认 2000,避免大文件卡 UI)。 */
+    /**
+     * 读取日志末尾若干行(默认 2000,避免大文件卡 UI)。
+     * path 经 [shellQuote] 转义, 防异常文件名(含单引号)破坏 shell(原 P1-9)。
+     */
     fun readLogTail(path: String, lines: Int = 2000): List<String> =
-        shOut("tail -n $lines '$path' 2>/dev/null")
+        shOut("tail -n $lines ${shellQuote(path)} 2>/dev/null")
 
-    /** 截断日志文件;受保护文件拒绝操作。 */
+    /** 截断日志文件;受保护文件拒绝操作。path 经 [shellQuote] 转义(原 P1-9)。 */
     fun clearLog(path: String): Boolean {
         if (path.substringAfterLast('/') in PROTECTED_FILES) return false
-        return shOk(": > '$path'")
+        return shOk(": > ${shellQuote(path)}")
     }
+
+    /** 单引号转义: 把 path 里的 ' 替换为 '"'"', 安全地包进单引号喂给 shell。 */
+    private fun shellQuote(s: String): String = "'" + s.replace("'", "'\"'\"'") + "'"
 
     fun readPerApp(): LinkedHashMap<String, String> {
         val map = LinkedHashMap<String, String>()
@@ -422,7 +437,7 @@ object RootShell {
         val b64 = android.util.Base64.encodeToString(
             json.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP
         )
-        return shOk("mkdir -p $AI_DIR; echo '$b64' | base64 -d > $DAEMON_AUTH; chmod 0644 $DAEMON_AUTH; touch $CTS_DIR")
+        return shOk("mkdir -p $AI_DIR; echo '$b64' | base64 -d > $DAEMON_AUTH; chmod 0600 $DAEMON_AUTH; touch $CTS_DIR")
     }
 
     /** 守护是否在运行：直接查进程(daemon 已不再写 daemon.alive 心跳)。 */
@@ -497,7 +512,8 @@ object RootShell {
             if (modeW > 0 && modeH > 0)
                 cmds += "cmd display set-user-preferred-display-mode $modeW $modeH $hz"
         }
-        return shOk(cmds.joinToString("; "))
+        // P1-l: setRefreshRate 含 settings/cmd display 类命令, 高负载时可能卡死 su 会话; 加 8s 超时保护
+        return shOkTimed(8, cmds.joinToString("; "))
     }
 
     /** 读功耗记录(daemon 每 30s 追加的 power_log.txt: ts,level,curMa,voltMv,tempDc,chg)。 */

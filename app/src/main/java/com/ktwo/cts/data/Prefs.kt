@@ -260,6 +260,11 @@ object Prefs {
     private val SMART_SURVEY_KEY = stringPreferencesKey("smart_survey_json")
     fun smartSurveyFlow(ctx: Context): Flow<String> =
         ctx.dataStore.data.map { it[SMART_SURVEY_KEY] ?: "" }
+    /**
+     * 保存最近一次智能问卷(评估)回答。
+     * P2-19: 评估流程不应提前收口 —— 调用方须让用户走完整套问卷后再写入,
+     * 不因「已答过 / 部分作答」而短路返回或拦截用户继续, 保证评估数据完整。
+     */
     suspend fun setSmartSurvey(ctx: Context, json: String) {
         ctx.dataStore.edit { it[SMART_SURVEY_KEY] = json }
     }
@@ -272,6 +277,11 @@ object Prefs {
     suspend fun setSmartSurveyHistoryRaw(ctx: Context, json: String) {
         ctx.dataStore.edit { it[SMART_SURVEY_HISTORY_KEY] = json }
     }
+    /**
+     * 追加一条问卷(评估)历史, 上限 50 条, 超出丢最旧。
+     * P2-19: 评估流程不收口 —— 不在「已答过 / 历史已满」时拦截写入, 让用户始终能完成并记录完整评估;
+     * 下面的 `?: return` 仅是入参(非法 JSON)校验, 不阻断评估主流程。
+     */
     suspend fun appendSmartSurveyHistory(ctx: Context, entryJson: String) {
         val entry = runCatching { org.json.JSONObject(entryJson) }.getOrNull() ?: return
         ctx.dataStore.edit { p ->

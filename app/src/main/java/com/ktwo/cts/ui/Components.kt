@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -49,6 +51,8 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** 当前页面的 Haze 模糊源状态;为 null 时玻璃退化为半透明拟态。 */
 val LocalHazeState = compositionLocalOf<HazeState?> { null }
@@ -79,23 +83,26 @@ fun WallpaperBackground(
     modifier: Modifier = Modifier,
 ) {
     val ctx = LocalContext.current
-    val bitmap = remember(wallpaperUri) {
-        if (wallpaperUri.isBlank()) null
-        else runCatching {
-            if (wallpaperUri.startsWith("/")) {
+    // 壁纸解码是重 IO, 不能在主线程组合期做 → produceState + Dispatchers.IO 异步解码
+    val bitmap by produceState<ImageBitmap?>(null, wallpaperUri) {
+        value = if (wallpaperUri.isBlank()) null
+        else withContext(Dispatchers.IO) {
+            runCatching {
+                if (wallpaperUri.startsWith("/")) {
                     android.graphics.BitmapFactory.decodeFile(wallpaperUri)?.asImageBitmap()
-            } else {
-                ctx.contentResolver.openInputStream(android.net.Uri.parse(wallpaperUri)).use { ins ->
-                    android.graphics.BitmapFactory.decodeStream(ins)?.asImageBitmap()
+                } else {
+                    ctx.contentResolver.openInputStream(android.net.Uri.parse(wallpaperUri)).use { ins ->
+                        android.graphics.BitmapFactory.decodeStream(ins)?.asImageBitmap()
+                    }
                 }
-            }
-        }.getOrNull()
+            }.getOrNull()
+        }
     }
 
     Box(modifier.fillMaxSize().hazeSource(hazeState)) {
         if (bitmap != null) {
             Image(
-                bitmap = bitmap,
+                bitmap = bitmap!!,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

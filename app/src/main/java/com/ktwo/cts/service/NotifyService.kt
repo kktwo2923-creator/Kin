@@ -56,17 +56,25 @@ class NotifyService : Service() {
         registerReceiver(batteryRx, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         scope.launch {
             while (isActive) {
-                val active = withContext(Dispatchers.IO) {
-                    // 优先用无障碍服务进程内的前台(零 root); 未启用则 root 兜底探测
-                    val fg = AppSwitchService.foreground.ifEmpty {
-                        ForegroundDetector(this@NotifyService).currentForegroundPackage().orEmpty()
+                // 循环体加 try/catch: CancellationException 必须重抛以保留协程取消语义,
+                // 其他异常静默处理, 防止单个异常终止整个轮询循环。
+                try {
+                    val active = withContext(Dispatchers.IO) {
+                        // 优先用无障碍服务进程内的前台(零 root); 未启用则 root 兜底探测
+                        val fg = AppSwitchService.foreground.ifEmpty {
+                            ForegroundDetector(this@NotifyService).currentForegroundPackage().orEmpty()
+                        }
+                        RootShell.resolveActiveMode(fg)
                     }
-                    RootShell.resolveActiveMode(fg)
+                    if (active.key != modeKey || active.isProfile != isProfile) {
+                        modeKey = active.key; isProfile = active.isProfile; updateNotification()
+                    }
+                    delay(4000)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 静默, 继续下一轮
                 }
-                if (active.key != modeKey || active.isProfile != isProfile) {
-                    modeKey = active.key; isProfile = active.isProfile; updateNotification()
-                }
-                delay(4000)
             }
         }
     }
@@ -79,7 +87,15 @@ class NotifyService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         runCatching { unregisterReceiver(batteryRx) }
-        removeOverlay()
+        // 直接同步 removeView: scope.cancel 是异步的, 进程退出前悬浮窗可能来不及移除,
+        // 不要只依赖协程取消。用 runCatching 包裹防视图未附加等异常。
+        val v = overlay
+        if (v != null) {
+            overlay = null
+            runCatching {
+                (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v)
+            }
+        }
         scope.cancel()
     }
 

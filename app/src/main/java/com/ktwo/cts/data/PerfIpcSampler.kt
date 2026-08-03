@@ -69,6 +69,8 @@ object PerfIpcSampler {
         runCatching { sh?.close() }   // 关掉专用会话, simpleperf 随会话终止
         // 精确杀本会话 pid(而非 pkill 按名), 绝不误伤紧接着 start 新起的 simpleperf
         if (pid > 0) runCatching { RootShell.execSilent("kill $pid 2>/dev/null") }
+        // 兜底清理可能残留的采样进程(精确 kill 失败/历史会话未退净)
+        runCatching { RootShell.execSilent("pkill -f 'simpleperf stat -a --per-core' 2>/dev/null") }
     }
 
     private fun launch(myGen: Int) {
@@ -81,6 +83,8 @@ object PerfIpcSampler {
         var rawMode = false   // false=按累计值差分; 观察到回落自动切增量直读
 
         fun publish() {
+            // 代际已变(被 stop/重启作废), 跳过写入防止过期异步回调污染共享状态
+            if (gen != myGen) return
             val maxCpu = maxOf(cycles.keys.maxOrNull() ?: -1, instrs.keys.maxOrNull() ?: -1)
             if (maxCpu < 0) return
             // 回落检测: 任一核当前值 < 上一块值 → 输出本身就是每区间增量

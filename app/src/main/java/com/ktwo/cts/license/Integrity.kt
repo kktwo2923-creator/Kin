@@ -2,6 +2,7 @@ package com.ktwo.cts.license
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.util.Log
 import com.ktwo.cts.BuildConfig
 import java.security.MessageDigest
 
@@ -33,7 +34,11 @@ object Integrity {
     fun verify(context: Context): Boolean {
         val pin = BuildConfig.SIGNING_CERT_SHA256.trim().lowercase()
         if (pin.isEmpty()) {
-            return true   // 未配置指纹则放行(静默, 不写系统日志)
+            // P2-7: release 构建未配置完整性校验 pin → 写一条告警日志(不崩溃);debug/未配置 CI 仍放行
+            if (!BuildConfig.DEBUG) {
+                Log.w("Integrity", "release 构建未配置完整性校验 pin(SIGNING_CERT_SHA256 为空), 重签名检测未生效")
+            }
+            return true
         }
         val actual = currentSignatureSha256(context)
         if (actual == null) {
@@ -43,7 +48,11 @@ object Integrity {
         // native 层独立再判一次(已加载时);未编译 native 则只看 Kotlin 层
         val nativeOk = if (BuildConfig.NATIVE_GUARD && nativeLoaded) {
             runCatching { nativeVerify(rawSignature(context) ?: ByteArray(0), pin) }.getOrDefault(false)
-        } else true
+        } else {
+            // P1-m fail-closed: release 构建 + 非公益版(NO_LICENSE=false) + native .so 缺失 → 不放行,
+            // 防剥离 .so 绕过 native 校验层;debug 构建 / 公益版(NO_LICENSE=true)允许 native 缺失(开发与公益环境)
+            !( !BuildConfig.DEBUG && !BuildConfig.NO_LICENSE && !nativeLoaded )
+        }
         return kotlinOk && nativeOk
     }
 

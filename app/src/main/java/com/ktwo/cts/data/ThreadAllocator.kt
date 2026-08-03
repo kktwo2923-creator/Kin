@@ -64,7 +64,8 @@ object ThreadAllocator {
         val pid = findPid(pkg) ?: return@runCatching 0
 
         // 一条命令列出 "tid 线程名", 减少 shell 往返
-        val listing = RootShell.exec(
+        // execTimed(P1-l): /proc 遍历在高负载时可能挂起, 加 5s 超时保护
+        val listing = RootShell.execTimed(5,
             "for t in /proc/$pid/task/*; do " +
             "echo \"\${t##*/} \$(cat \$t/comm 2>/dev/null)\"; done"
         )
@@ -114,7 +115,8 @@ object ThreadAllocator {
             "echo \"@S \$(cat \$t/stat 2>/dev/null)\"; " +
             "echo \"@A \$(grep Cpus_allowed_list \$t/status 2>/dev/null)\"; " +
             "done"
-        val out = RootShell.exec(cmd)
+        // execTimed(P1-l): 线程数多的进程遍历 /proc 可能耗时, 加 5s 超时保护
+        val out = RootShell.execTimed(5, cmd)
         if (out.isBlank()) return@runCatching emptyList()
 
         val result = ArrayList<ThreadInfo>()

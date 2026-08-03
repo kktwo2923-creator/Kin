@@ -119,7 +119,7 @@ object KinDaemon {
             } finally {
                 runCatching { shm?.close() }
             }
-            frame = null
+            // 不断开/读空时不覆写为 null, 保留上一帧由 fresh() 的 FRESH_MS 兜底过期, 避免 UI 抖动
             try { Thread.sleep(backoff) } catch (_: InterruptedException) { return }
         }
     }

@@ -47,8 +47,32 @@ object MetricReader {
     )
 
     // ── CPU 占用率: /proc/stat 差分 ──
-    @Volatile private var lastIdle = -1L
-    @Volatile private var lastTotal = -1L
+    // P2-18: CpuLoadDiffer 持上次 idle/total jiffies, 只有 total 增长才计算差分负载,
+    // 否则返回上次结果(防止两次采样间隔太短 / 同一批数据被重复处理, 导致负载出现负值或 100%+)。
+    private class CpuLoadDiffer {
+        private var lastIdle = -1L
+        private var lastTotal = -1L
+        private var lastRatio = 0f   // 上次算出的负载比(0..1);total 未增长时直接返回它, 避免异常值
+
+        /** 返回 0..1 的负载比;total 未增长(采样过短 / 重复数据)时返回上次结果, 不计算差分。 */
+        @Synchronized
+        fun diff(idle: Long, total: Long): Float {
+            val prevIdle = lastIdle
+            val prevTotal = lastTotal
+            lastIdle = idle
+            lastTotal = total
+            // 首帧(无上次值)或 total 未增长(采样间隔太短 / 同一批数据被重复处理)→ 不计算差分, 返回上次结果
+            if (prevIdle < 0 || total <= prevTotal) return lastRatio
+            val dTotal = (total - prevTotal).toDouble()
+            val dIdle = (idle - prevIdle).toDouble()
+            if (dTotal <= 0) return lastRatio
+            val ratio = ((dTotal - dIdle) / dTotal).toFloat().coerceIn(0f, 1f)
+            lastRatio = ratio
+            return ratio
+        }
+    }
+
+    private val cpuLoadDiffer = CpuLoadDiffer()
 
     // Android 10+ 普通应用读全局 /proc/stat 被 SELinux 挡(只能读到自己), 故 File 读不到时用 root 兜底。
     private fun procStatCpuLine(): String? {
@@ -79,20 +103,9 @@ object MetricReader {
         if (parts.size < 5) return -1
         val idle = parts[3] + (parts.getOrElse(4) { 0L })      // idle + iowait
         val total = parts.sum()
-        // 差分基线读改写需原子(悬浮窗/录制/仪表盘会并发 snapshot, 交错会让占用率随机跳变)
-        val prevIdle: Long
-        val prevTotal: Long
-        synchronized(this) {
-            prevIdle = lastIdle
-            prevTotal = lastTotal
-            lastIdle = idle
-            lastTotal = total
-        }
-        if (prevIdle < 0 || total <= prevTotal) return -1
-        val dTotal = (total - prevTotal).toDouble()
-        val dIdle = (idle - prevIdle).toDouble()
-        if (dTotal <= 0) return -1
-        return (((dTotal - dIdle) / dTotal) * 100.0).toInt().coerceIn(0, 100)
+        // P2-18: 用 CpuLoadDiffer 差分(diff 内部 @Synchronized 自锁, total 未增长时返回上次结果, 防止负值或 100%+)
+        val ratio = cpuLoadDiffer.diff(idle, total)
+        return (ratio * 100f).toInt().coerceIn(0, 100)
     }
 
     // ── 簇命名: 按核数与频率顺序给「小核/中核/大核/超大核」──
@@ -121,9 +134,8 @@ object MetricReader {
         }
     }
 
-    // ── 每核占用率: /proc/stat 的 cpu0..cpuN 行差分(与整体 CPU 同法, 按核各自持有上次值)──
-    private val lastCoreIdle = HashMap<Int, Long>()
-    private val lastCoreTotal = HashMap<Int, Long>()
+    // ── 每核占用率: /proc/stat 的 cpu0..cpuN 行差分(与整体 CPU 同法, 按核各自持有一个 CpuLoadDiffer)──
+    private val coreLoadDiffer = HashMap<Int, CpuLoadDiffer>()
 
     // 整读 /proc/stat 文本(免 root 优先, 读不到 root 兜底); null=均不可用。
     private fun procStatText(): String? {
@@ -147,7 +159,7 @@ object MetricReader {
         val txt = procStatText() ?: return emptyList()
         val out = MutableList(n) { -1 }
         // snapshot() 可能被多个采样方并发调用, 差分缓存加锁防 HashMap 并发写坏
-        synchronized(lastCoreIdle) {
+        synchronized(coreLoadDiffer) {
             for (line in txt.lineSequence()) {
                 if (!line.startsWith("cpu")) continue
                 val id = line.substring(3).takeWhile { it.isDigit() }.toIntOrNull() ?: continue
@@ -156,14 +168,9 @@ object MetricReader {
                 if (parts.size < 5) continue
                 val idle = parts[3] + parts[4]
                 val total = parts.sum()
-                val prevIdle = lastCoreIdle[id]
-                val prevTotal = lastCoreTotal[id]
-                lastCoreIdle[id] = idle
-                lastCoreTotal[id] = total
-                if (prevIdle == null || prevTotal == null || total <= prevTotal) continue
-                val dTotal = (total - prevTotal).toDouble()
-                val dIdle = (idle - prevIdle).toDouble()
-                out[id] = (((dTotal - dIdle) / dTotal) * 100.0).toInt().coerceIn(0, 100)
+                // P2-18: 用 CpuLoadDiffer 差分, total 未增长时返回上次结果, 防止负值或 100%+
+                val differ = coreLoadDiffer.getOrPut(id) { CpuLoadDiffer() }
+                out[id] = (differ.diff(idle, total) * 100f).toInt().coerceIn(0, 100)
             }
         }
         return out

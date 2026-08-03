@@ -37,6 +37,9 @@ android {
         versionName = "1.1"
         vectorDrawables { useSupportLibrary = true }
 
+        // P2-15: 只构建 arm64-v8a,收口 ABI 减小包体(目标设备均为 64 位 ARM)
+        ndk { abiFilters += "arm64-v8a" }
+
         // 防破解:编译期固定签名指纹 + native 层开关,供 Integrity.kt 读取
         buildConfigField("String", "SIGNING_CERT_SHA256", "\"$ctsCertSha256\"")
         buildConfigField("boolean", "NATIVE_GUARD", ctsNative.toString())

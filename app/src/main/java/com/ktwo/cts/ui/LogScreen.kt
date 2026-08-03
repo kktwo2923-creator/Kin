@@ -172,7 +172,7 @@ fun LogScreen() {
                                 .fillMaxSize()
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
-                            items(lines) { line ->
+                            items(lines, key = { it.hashCode() }) { line ->
                                 Text(
                                     text = line.ifEmpty { " " },
                                     fontFamily = FontFamily.Monospace,

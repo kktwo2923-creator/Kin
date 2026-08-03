@@ -27,12 +27,15 @@ object ProcSampler {
     @Volatile private var topUsable = true
 
     // ── /proc 差分缓存(回退用)──
+    private val diffLock = Any()
     private var lastTotalJiffies = -1L
     private val lastProcJiffies = HashMap<Int, Long>()
 
     fun reset() {
-        lastTotalJiffies = -1L
-        lastProcJiffies.clear()
+        synchronized(diffLock) {
+            lastTotalJiffies = -1L
+            lastProcJiffies.clear()
+        }
     }
 
     private fun baseName(cmd: String): String {
@@ -116,7 +119,7 @@ object ProcSampler {
                 cmd.append("echo \"@S \$(cat /proc/${r.tid}/stat 2>/dev/null)\"; ")
                 cmd.append("echo \"@A \$(grep Cpus_allowed_list /proc/${r.tid}/status 2>/dev/null)\"; ")
             }
-            val out = RootShell.exec(cmd.toString())
+            val out = RootShell.execTimed(5, cmd.toString())
             val cores = HashMap<Int, Int>()
             val affs = HashMap<Int, String>()
             val comms = HashMap<Int, String>()   // 每线程自身的 comm(Met COMM 列显示它, 非进程名)
@@ -155,7 +158,7 @@ object ProcSampler {
 
     // ── /proc 差分回退(仅进程)──
     private fun totalJiffies(): Long {
-        val line = runCatching { RootShell.exec("cat /proc/stat 2>/dev/null | head -n 1") }.getOrDefault("")
+        val line = runCatching { RootShell.execTimed(5, "cat /proc/stat 2>/dev/null | head -n 1") }.getOrDefault("")
         if (!line.startsWith("cpu ")) return -1
         return line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }.sum()
     }
@@ -164,11 +167,15 @@ object ProcSampler {
         val ncpu = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
         // 一次性 dump 所有 pid 的 stat + comm
         val dump = runCatching {
-            RootShell.exec("for p in /proc/[0-9]*; do echo \"@@\$(basename \$p) \$(cat \$p/stat 2>/dev/null)\"; done")
+            RootShell.execTimed(5, "for p in /proc/[0-9]*; do echo \"@@\$(basename \$p) \$(cat \$p/stat 2>/dev/null)\"; done")
         }.getOrDefault("")
         val total = totalJiffies()
-        val prevTotal = lastTotalJiffies
-        lastTotalJiffies = total
+        // 差分基线读写均加锁, 防并发采样错乱
+        val prevTotal: Long
+        synchronized(diffLock) {
+            prevTotal = lastTotalJiffies
+            lastTotalJiffies = total
+        }
         val curJiffies = HashMap<Int, Long>()
         data class Row(val pid: Int, val name: String, val j: Long)
         val rows = ArrayList<Row>()
@@ -186,19 +193,23 @@ object ProcSampler {
             curJiffies[pid] = j
             rows.add(Row(pid, name, j))
         }
+        // 快照上一轮进程基线, 循环内不再持锁
+        val prevProc = synchronized(diffLock) { HashMap(lastProcJiffies) }
         val result = ArrayList<Proc>()
         if (prevTotal > 0 && total > prevTotal) {
             val dTotal = (total - prevTotal).toDouble()
             for (r in rows) {
-                val prev = lastProcJiffies[r.pid] ?: continue
+                val prev = prevProc[r.pid] ?: continue
                 val dj = (r.j - prev).toDouble()
                 if (dj <= 0) continue
                 val pct = (dj / dTotal * 100.0 * ncpu).toFloat().coerceIn(0f, 100f * ncpu)
                 if (pct > 0.1f) result.add(Proc(r.pid, r.name, pct, -1))
             }
         }
-        lastProcJiffies.clear()
-        lastProcJiffies.putAll(curJiffies)
+        synchronized(diffLock) {
+            lastProcJiffies.clear()
+            lastProcJiffies.putAll(curJiffies)
+        }
         return result.sortedByDescending { it.cpuPct }.take(limit)
     }
 }

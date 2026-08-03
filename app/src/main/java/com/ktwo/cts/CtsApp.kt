@@ -40,26 +40,30 @@ class CtsApp : Application() {
     private fun installCrashLogger() {
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
-            runCatching {
-                val sw = java.io.StringWriter()
-                e.printStackTrace(java.io.PrintWriter(sw))
-                val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
-                    .format(java.util.Date())
-                val text = "==== APP CRASH $ts thread=${t.name} ====\n$sw\n"
-                // 崩溃线程同步新建 su 会话会卡授权窗/超时乃至 ANR;只复用已存活的 shell。
-                val shell = Shell.getCachedShell()
-                if (shell != null && shell.isAlive) {
-                    val b64 = android.util.Base64.encodeToString(
-                        text.toByteArray(), android.util.Base64.NO_WRAP,
-                    )
-                    Shell.cmd(
-                        "mkdir -p /sdcard/Android/Kin; " +
-                            "echo '$b64' | base64 -d >> /sdcard/Android/Kin/app_crash.log",
-                    ).exec()
-                } else {
-                    java.io.File(filesDir, "app_crash.log").appendText(text)
+            // 崩溃路径上同步落盘(尤其 su 会话会卡授权窗/超时乃至 ANR)会阻塞崩溃线程甚至二次崩溃;
+            // 改为 daemon 线程异步写, 异常路径不阻塞。
+            Thread {
+                runCatching {
+                    val sw = java.io.StringWriter()
+                    e.printStackTrace(java.io.PrintWriter(sw))
+                    val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                        .format(java.util.Date())
+                    val text = "==== APP CRASH $ts thread=${t.name} ====\n$sw\n"
+                    // 崩溃线程同步新建 su 会话会卡授权窗/超时乃至 ANR;只复用已存活的 shell。
+                    val shell = Shell.getCachedShell()
+                    if (shell != null && shell.isAlive) {
+                        val b64 = android.util.Base64.encodeToString(
+                            text.toByteArray(), android.util.Base64.NO_WRAP,
+                        )
+                        Shell.cmd(
+                            "mkdir -p /sdcard/Android/Kin; " +
+                                "echo '$b64' | base64 -d >> /sdcard/Android/Kin/app_crash.log",
+                        ).exec()
+                    } else {
+                        java.io.File(filesDir, "app_crash.log").appendText(text)
+                    }
                 }
-            }
+            }.apply { isDaemon = true }.start()
             prev?.uncaughtException(t, e)
         }
     }

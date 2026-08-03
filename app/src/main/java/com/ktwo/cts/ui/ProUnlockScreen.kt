@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,12 +45,39 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val unlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
 
-    var cardKey by remember { mutableStateOf("") }
-    var orderNo by remember { mutableStateOf("") }
+    var cardKey by rememberSaveable { mutableStateOf("") }
+    var orderNo by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf("") }
     var msgOk by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
+    // 在线支付待轮询的订单号: 非空时启动轮询, 订单号变化时重启轮询
+    var pendingOrderNo by rememberSaveable { mutableStateOf("") }
+
+    // 轮询订单支付状态: 仅当 pendingOrderNo 非空时启动, 订单号变化时自动重启轮询
+    LaunchedEffect(pendingOrderNo) {
+        val no = pendingOrderNo
+        if (no.isBlank()) return@LaunchedEffect
+        val r = withContext(Dispatchers.IO) {
+            var res = License.Result(false, "PENDING")
+            repeat(100) {
+                res = License.queryPayAndActivate(no)
+                if (res.ok || res.message != "PENDING") return@withContext res
+                kotlinx.coroutines.delay(3000)
+            }
+            res
+        }
+        if (r.ok) Pro.markUnlocked(ctx)
+        busy = false
+        msgOk = r.ok
+        msg = when {
+            r.ok -> "解锁成功, 感谢支持!"
+            r.message == "PENDING" -> "还没查到付款。付了但没到账? 用账单里的订单号在下方'订单号'激活。"
+            else -> r.message
+        }
+        if (r.ok) onUnlocked()
+        pendingOrderNo = ""   // 轮询结束清空, 避免重复触发
+    }
 
     // 「曾购买过会员」——诚信自助:点激活直接本地解锁, 不联网/不验证(同 Metric)。
     fun doHonorUnlock() {
@@ -80,25 +108,8 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                 )
             }
             msgOk = true; msg = "已打开收银台, 付款后自动到账(约 5 分钟内轮询)…"
-            // 轮询查询: 每 3s 一次, 最多 ~5 分钟
-            val r = withContext(Dispatchers.IO) {
-                var res = License.Result(false, "PENDING")
-                repeat(100) {
-                    res = License.queryPayAndActivate(order.outTradeNo)
-                    if (res.ok || res.message != "PENDING") return@withContext res
-                    kotlinx.coroutines.delay(3000)
-                }
-                res
-            }
-            if (r.ok) Pro.markUnlocked(ctx)
-            busy = false
-            msgOk = r.ok
-            msg = when {
-                r.ok -> "解锁成功, 感谢支持!"
-                r.message == "PENDING" -> "还没查到付款。付了但没到账? 用账单里的订单号在下方'订单号'激活。"
-                else -> r.message
-            }
-            if (r.ok) onUnlocked()
+            // 触发 LaunchedEffect(pendingOrderNo) 启动轮询: 订单号变化时自动重启
+            pendingOrderNo = order.outTradeNo
         }
     }
 

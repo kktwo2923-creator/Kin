@@ -10,13 +10,13 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 构建任务:取消同分支旧构建,节省 CI 资源(发布任务见下方 publish job,独立组不取消)。
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: true
     # secret 不能直接用于步骤 if:,先映射到 job 级 env 再判断
     env:
       CTS_KEYSTORE_BASE64: ${{ secrets.CTS_KEYSTORE_BASE64 }}
@@ -35,6 +35,12 @@ jobs:
         with:
           gradle-version: '9.5.1'
 
+      # 缓存 Cargo 编译产物,加速 Rust native 采样库构建。
+      - name: Cache Rust cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/ctssampler
+
       # 可选: 编 Rust native 采样库(libctssampler.so)进 jniLibs。
       # continue-on-error: 即使 Rust 没编成也不挡 APK——没有 .so 时
       # Kotlin 侧 NativeSampler.available=false, 自动退回纯 Kotlin 实现。
@@ -50,6 +56,7 @@ jobs:
           ls -R app/src/main/jniLibs || true
 
       # 可选:有配置发布密钥库的 secret 才解码;没有则跳过,release 自动回退 debug 签名。
+      # keystore 全程从 GitHub secret 注入(base64 解码到临时文件),无硬编码。
       - name: Decode release keystore (optional)
         if: ${{ env.CTS_KEYSTORE_BASE64 != '' }}
         run: |
@@ -67,6 +74,16 @@ jobs:
           CTS_KEY_PASSWORD: ${{ secrets.CTS_KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon -PctsCertSha256="${{ secrets.CTS_CERT_SHA256 }}"
 
+      # 发布前校验(仅发布路径触发):native .so 必须存在,防止发布无 native 库的包。
+      - name: Verify native .so exists before publish
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ ! -f app/src/main/jniLibs/arm64-v8a/libctssampler.so ]; then
+            echo "::error::native .so 缺失 (app/src/main/jniLibs/arm64-v8a/libctssampler.so),中止发布。"
+            exit 1
+          fi
+          echo "OK: native .so 存在"
+
       - name: Collect & rename APKs
         run: |
           mkdir -p dist
@@ -82,11 +99,26 @@ jobs:
           path: |
             dist/kin-release.apk
             dist/kin-debug.apk
-          retention-days: 2          # APK 较大, 短期保留, 避免占满 Actions 存储配额
+          retention-days: 14         # 收紧保留到 14 天,节省 Actions 存储配额
+
+  # 发布路径:独立 concurrency 组,不被新 push 取消,保护对外发售的滚动 Release。
+  # 仅手动触发(workflow_dispatch),依赖 build 完成。
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Download APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kin
+          path: dist
 
       # 滚动 "latest" Release 仅手动触发, 避免推送时自动覆盖对外发售的正版 APK。
       - name: Publish to rolling "latest" Release
-        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
