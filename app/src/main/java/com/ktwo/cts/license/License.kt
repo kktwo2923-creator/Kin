@@ -28,7 +28,7 @@ object License {
     // 国内自建服务器(纯 IP, HTTP 明文): 安全靠服务端限流 + 守护端 Ed25519 验签兜底。
     // 部署后把下面的 IP:端口 改成你的服务器地址。HTTP 明文已放行(见 network_security_config.xml)。
     // 购买页: $BASE_URL/buy.html
-    const val BASE_URL = "http://YOUR_SERVER_IP:8080"
+    const val BASE_URL = "http://license.example.com"
     // ⚠️ 安全风险(P2-16): API_KEY 硬编码在客户端, 反编译即可获取。当前仅 verify 权限且服务端可按 device_id
     // 限流兜底, 风险可控。后续若引入更高权限操作(如退款/封禁)必须迁移到服务端代理转发, 客户端
     // 只持短期令牌。所有 verify/report 请求已携带 device_id(=ro.serialno), 服务端可据此实施:
