@@ -13,6 +13,8 @@ class BootReceiver : BroadcastReceiver() {
         // goAsync 协程只做即时动作, 受 10s 限制; 耗时的延迟补偿/重试交独立 daemon 线程, 避免阻塞超时。
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // AI/ 子目录迁移: 老版本运行数据在 CTS_DIR 根目录, 先搬进 AI/ 再做后续读操作
+                runCatching { RootShell.migrateAiDirIfNeeded() }
                 restoreUserConfig(ctx)   // 数据恢复与自启开关无关, 始终执行(仅即时写一次)
                 // 开机把当前付费状态同步给守护(App 是付费权威, 守护据此知道是否已付费)
                 if (RootShell.isRooted()) com.ktwo.cts.license.License.pushEntitlementToDaemon()

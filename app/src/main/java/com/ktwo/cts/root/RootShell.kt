@@ -100,6 +100,30 @@ object RootShell {
     /** 运行数据子目录:auto_status / power_log / power_sessions / perapp_powermode 均收于此。 */
     const val AI_DIR = "/sdcard/Android/Kin/AI"
 
+    /**
+     * 一次性迁移: 把散落在 CTS_DIR 根目录的运行数据文件搬进 AI_DIR。
+     * 幂等可重入: 新路径已存在则跳过, 仅当目标缺失且源文件非空时才 cp, 不删旧文件(防回滚丢数据)。
+     * 覆盖: perapp_powermode.txt / pkg_label.txt / thermal_headroom.txt / auto_status/ / power_log/ / power_sessions/。
+     * 应在首次获取 root 后尽早调用(早于任何读 perapp/pkg_label 的逻辑)。
+     */
+    fun migrateAiDirIfNeeded() {
+        if (!isRooted()) return
+        val files = listOf("perapp_powermode.txt", "pkg_label.txt", "thermal_headroom.txt")
+        val dirs = listOf("auto_status", "power_log", "power_sessions")
+        val sb = StringBuilder("mkdir -p '$AI_DIR'; ")
+        for (f in files) {
+            val old = "$CTS_DIR/$f"
+            val new = "$AI_DIR/$f"
+            sb.append("if [ ! -s '$new' ] && [ -s '$old' ]; then cp -f '$old' '$new' && chmod 666 '$new'; fi; ")
+        }
+        for (d in dirs) {
+            val old = "$CTS_DIR/$d"
+            val new = "$AI_DIR/$d"
+            sb.append("if [ ! -d '$new' ] && [ -d '$old' ]; then cp -rf '$old/' '$new/' 2>/dev/null; fi; ")
+        }
+        sh(sb.toString())
+    }
+
     /** 受保护文件(禁止清空):perapp_powermode.txt */
     private val PROTECTED_FILES = setOf(PERAPP.substringAfterLast('/'))
 

@@ -21,6 +21,8 @@ class CtsApp : Application() {
         Shell.getShell {
             Thread {
                 runCatching { com.ktwo.cts.root.RootShell.detectSoc() }
+                // AI/ 子目录迁移: 老版本运行数据在 CTS_DIR 根目录, 统一搬进 AI/, 早于任何 perapp 读取
+                runCatching { com.ktwo.cts.root.RootShell.migrateAiDirIfNeeded() }
                 // 自动 root 授权无障碍前台推送: 未启用则用 root 写 secure settings 开启, 省去手动去系统设置。
                 runCatching {
                     if (com.ktwo.cts.root.RootShell.isRooted()
