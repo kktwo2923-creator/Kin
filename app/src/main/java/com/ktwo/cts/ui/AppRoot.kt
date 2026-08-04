@@ -38,6 +38,8 @@ import com.ktwo.cts.ui.threadalloc.ThreadRulesScreen
 import com.ktwo.cts.ui.threadalloc.ThreadAllocScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
+import com.ktwo.cts.updater.UpdateChecker
+import com.ktwo.cts.updater.UpdateDialog
 import dev.chrisbanes.haze.HazeState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
@@ -109,6 +111,23 @@ fun AppRoot() {
                     if (ok) Prefs.setPendingTakeover(ctx, -1)
                 }
             }
+        }
+    }
+
+    // 自动检查更新:启动 3 秒后静默查一次(非强制更新距上次检查 4 小时内不重复打扰)
+    var autoUpdateResult by remember { mutableStateOf<UpdateChecker.CheckResult?>(null) }
+    LaunchedEffect(setupDone) {
+        if (setupDone != true) return@LaunchedEffect
+        kotlinx.coroutines.delay(3000)
+        val sp = ctx.getSharedPreferences("kin_updater", android.content.Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val last = sp.getLong("last_check_ts", 0L)
+        val r = UpdateChecker.check()
+        sp.edit().putLong("last_check_ts", now).apply()
+        // 有强制更新:必弹;普通更新:4 小时内不重复弹
+        val hasForce = (r.appUpdate?.forceUpdate == true) || (r.daemonUpdate?.forceUpdate == true)
+        if (r.hasUpdate && (hasForce || now - last > 4L * 60 * 60 * 1000)) {
+            autoUpdateResult = r
         }
     }
 
@@ -400,6 +419,11 @@ fun AppRoot() {
                             TextButton(onClick = snoozeAndClose) { Text("稍后再说") }
                         },
                     )
+                }
+
+                // 自动检查更新弹窗(启动时静默检测到有新版本时弹出)
+                autoUpdateResult?.let { r ->
+                    UpdateDialog(result = r) { autoUpdateResult = null }
                 }
             }
         }
