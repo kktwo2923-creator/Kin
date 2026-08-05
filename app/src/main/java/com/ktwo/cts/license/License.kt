@@ -6,6 +6,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.KeyFactory
+import java.security.Signature
+import java.security.spec.X509EncodedKeySpec
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,17 +41,24 @@ object License {
     private const val LICENSE_FILE = "${RootShell.CTS_DIR}/license.json"
     private const val TAG = "License"
 
+    // 服务端 Ed25519 签名公钥(SPKI DER, base64) —— 与服务端 LICENSE_SIGNING_PRIVATE_KEY 配对。
+    // 公钥泄露无妨(无法伪造签名); 伪造 license.json 拿不到合法签名, 本地校验即拒绝。
+    private val LICENSE_PUBLIC_KEY_BYTES = Base64.decode(
+        "MCowBQYDK2VwAyEA70GMLQKZ3xu8+d0QKnJ/dv0P4lw1RL/lcxfmjyU2atE=", Base64.DEFAULT
+    )
+
     /** 本机设备号(需 Root)。 */
     fun serialNo(): String = RootShell.exec("getprop ro.serialno").trim()
 
-    /** 本地是否已激活(有令牌且未过期)。仅快速放行,真正防伪在守护端公钥验签。 */
+    /** 本地是否已激活(有令牌、未过期、且签名合法)。 */
     fun isActivated(): Boolean {
         val raw = readLicenseRaw()
         if (raw.isBlank()) return false
         return runCatching {
             val o = JSONObject(raw)
             val exp = o.optString("expires_at", "")
-            o.optString("token", "").isNotEmpty() && (exp.isBlank() || exp > nowIso())
+            o.optString("token", "").isNotEmpty() && verifyTokenSignature(o) &&
+                (exp.isBlank() || exp > nowIso())
         }.getOrDefault(false)
     }
 
@@ -57,20 +67,10 @@ object License {
 
     /**
      * 本机授权状态判定(供授权门用):
-     * - 无授权文件 / 解析失败 / 令牌为空 / 已过期 → NOT_ACTIVATED(引导输入卡密)。
+     * - 无授权文件 / 解析失败 / 令牌为空 / 签名非法 / 已过期 → NOT_ACTIVATED(引导输入卡密)。
      * - 本地被标记 revoked(联网确认吊销)→ TAMPERED(红色锁定页)。
-     * - 有令牌且未过期 → VALID。
-     * 注意:令牌真伪(签名)由守护端内嵌公钥离线验签裁定,App 不再做签名格式硬校验,
-     * 以免不同服务端令牌格式 / 历史令牌把正版误判为"伪造"而锁红屏。
-     *
-     * ⚠️ 安全依赖(P0-3): 此函数不验 token 签名, 攻击者写一份 {"token":"x","revoked":false,
-     *  expires_at":""} 到 /sdcard license.json 即得 VALID。安全完全依赖守护端对 license.json
-     *  的 token 做公钥验签——守护必须独立验签, 不可仅信任 App 写来的 auth.json(见 P0-2)。
-     *  当前 NO_LICENSE=true 下 LicenseGate 不触发, 但 Pro 功能付费点(Pro.kt)仍调
-     *  pushEntitlementToDaemon, 伪造 license.json 可解锁 Pro。完整修复需:
-     *    ① 守护侧强制对 license.json token 验签(TODO, 需改 native);
-     *    ② 验签结果回执给 App 作为唯一真值, App 不再自行判 VALID;
-     *    ③ native fail-closed(见 Integrity, P1-m)防 patch 绕过。
+     * - 有令牌、未过期且 Ed25519 签名校验通过 → VALID。
+     * 签名校验杜绝"写一份伪造 license.json 解锁 Pro"的绕过(见 P0-3)。
      */
     fun state(): State {
         val raw = readLicenseRaw()
@@ -80,8 +80,42 @@ object License {
             if (o.optBoolean("revoked", false)) return State.TAMPERED   // 联网确认被吊销(本地标记)
             val tok = o.optString("token", "")
             val exp = o.optString("expires_at", "")
-            if (tok.isNotEmpty() && (exp.isBlank() || exp > nowIso())) State.VALID else State.NOT_ACTIVATED
+            if (tok.isNotEmpty() && verifyTokenSignature(o) && (exp.isBlank() || exp > nowIso())) State.VALID else State.NOT_ACTIVATED
         }.getOrDefault(State.NOT_ACTIVATED)
+    }
+
+    /**
+     * 校验令牌 Ed25519 签名(防本地伪造解锁)。
+     * 服务端 signToken 对消息 `${license_key}|${device_id}|${expires_at||"0"}|${token_not_after}`
+     * 做 Ed25519 签名(纯算法、无预哈希), 对应公钥内嵌本端(见 LICENSE_PUBLIC_KEY_BYTES)。
+     * 伪造 license.json 拿不到私钥, 必无法通过; 字段缺失/签名不合法一律返回 false(按未激活处理)。
+     * 若合法令牌意外校验失败(理论不发生), 联网 revalidate 会刷新一份新文件。
+     */
+    private fun verifyTokenSignature(o: JSONObject): Boolean = runCatching {
+        val lk = o.optString("license_key", "")
+        val dev = o.optString("device_id", "")
+        val exp = o.optString("expires_at", "")
+        val tna = o.optString("token_not_after", "")
+        val tokenHex = o.optString("token", "")
+        if (lk.isEmpty() || tokenHex.isEmpty()) return@runCatching false
+        // 与服务端 signToken 的 `expiresAt || "0"` 保持一致: 空到期按 "0" 参与签名
+        val msg = "${lk}|${dev}|${if (exp.isEmpty()) "0" else exp}|${tna}".toByteArray(Charsets.UTF_8)
+        val sig = hexToBytes(tokenHex) ?: return@runCatching false
+        val pubKey = KeyFactory.getInstance("Ed25519").generatePublic(
+            X509EncodedKeySpec(LICENSE_PUBLIC_KEY_BYTES)
+        )
+        Signature.getInstance("Ed25519").run {
+            initVerify(pubKey)
+            update(msg)
+            verify(sig)
+        }
+    }.getOrDefault(false)
+
+    private fun hexToBytes(hex: String): ByteArray? {
+        if (hex.length % 2 != 0) return null
+        return ByteArray(hex.length / 2) { i ->
+            hex.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+        }
     }
 
     @Volatile private var autoRevalInstalled = false
@@ -411,9 +445,15 @@ object License {
                         result = "已发送重启指令"
                     }
                     "stop" -> {
-                        RootShell.execSilent("am force-stop ${parsed.optString("package", "com.ktwo.kin")}")
-                        success = true
-                        result = "已发送停止指令"
+                        // P0-4: package 必须通过字符白名单(字母/数字/./_), 拒绝注入 shell 元字符
+                        val pkg = parsed.optString("package", "")
+                        if (pkg.isBlank() || !pkg.all { it.isLetterOrDigit() || it == '.' || it == '_' }) {
+                            error = "拒绝的 package: $pkg"
+                        } else {
+                            RootShell.execSilent("am force-stop $pkg")
+                            success = true
+                            result = "已发送停止指令"
+                        }
                     }
                     else -> {
                         error = "未知 action: $action"
