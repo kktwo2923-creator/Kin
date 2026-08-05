@@ -9,6 +9,9 @@
 -keepclassmembers class kotlinx.coroutines.** { *; }
 -dontwarn kotlinx.coroutines.**
 
+# ============ Ed25519 验签库(net.i2p.crypto:eddsa, License.kt 直接类调用) ============
+-keep class net.i2p.crypto.eddsa.** { *; }
+
 # ============ AndroidX ViewModel(CpuControlVm 由框架反射构造) ============
 -keep class * extends androidx.lifecycle.ViewModel { *; }
 -keep class * extends androidx.lifecycle.AndroidViewModel { *; }

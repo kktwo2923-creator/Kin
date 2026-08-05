@@ -131,4 +131,7 @@ dependencies {
     implementation("com.github.topjohnwu.libsu:service:6.0.0")
 
     implementation("org.json:json:20240303")
+
+    // Ed25519 验签(纯 Java, 全 Android 版本可用; 平台自带 Ed25519 需 API 34+, 而 minSdk=33)
+    implementation("net.i2p.crypto:eddsa:0.3.0")
 }

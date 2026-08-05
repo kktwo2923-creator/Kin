@@ -2,13 +2,15 @@ package com.ktwo.cts.license
 
 import android.util.Base64
 import com.ktwo.cts.root.RootShell
+import net.i2p.crypto.eddsa.EdDSAPublicKey
+import net.i2p.crypto.eddsa.EdDSASecurityProvider
+import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
+import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.KeyFactory
 import java.security.Signature
-import java.security.spec.X509EncodedKeySpec
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -41,10 +43,10 @@ object License {
     private const val LICENSE_FILE = "${RootShell.CTS_DIR}/license.json"
     private const val TAG = "License"
 
-    // 服务端 Ed25519 签名公钥(SPKI DER, base64) —— 与服务端 LICENSE_SIGNING_PRIVATE_KEY 配对。
+    // 服务端 Ed25519 签名公钥(原始 32 字节) —— 与服务端 LICENSE_SIGNING_PRIVATE_KEY 配对。
     // 公钥泄露无妨(无法伪造签名); 伪造 license.json 拿不到合法签名, 本地校验即拒绝。
     private val LICENSE_PUBLIC_KEY_BYTES = Base64.decode(
-        "MCowBQYDK2VwAyEA70GMLQKZ3xu8+d0QKnJ/dv0P4lw1RL/lcxfmjyU2atE=", Base64.DEFAULT
+        "70GMLQKZ3xu8+d0QKnJ/dv0P4lw1RL/lcxfmjyU2atE=", Base64.DEFAULT
     )
 
     /** 本机设备号(需 Root)。 */
@@ -90,6 +92,8 @@ object License {
      * 做 Ed25519 签名(纯算法、无预哈希), 对应公钥内嵌本端(见 LICENSE_PUBLIC_KEY_BYTES)。
      * 伪造 license.json 拿不到私钥, 必无法通过; 字段缺失/签名不合法一律返回 false(按未激活处理)。
      * 若合法令牌意外校验失败(理论不发生), 联网 revalidate 会刷新一份新文件。
+     * 实现用纯 Java 库 net.i2p.crypto:eddsa —— 平台自带 Ed25519(JCA)需 API 34+, 而 minSdk=33,
+     * 故不依赖系统加密实现, 全版本一致可用。显式指定本库 provider, 不受平台 provider 顺序影响。
      */
     private fun verifyTokenSignature(o: JSONObject): Boolean = runCatching {
         val lk = o.optString("license_key", "")
@@ -101,14 +105,13 @@ object License {
         // 与服务端 signToken 的 `expiresAt || "0"` 保持一致: 空到期按 "0" 参与签名
         val msg = "${lk}|${dev}|${if (exp.isEmpty()) "0" else exp}|${tna}".toByteArray(Charsets.UTF_8)
         val sig = hexToBytes(tokenHex) ?: return@runCatching false
-        val pubKey = KeyFactory.getInstance("Ed25519").generatePublic(
-            X509EncodedKeySpec(LICENSE_PUBLIC_KEY_BYTES)
+        val pubKey = EdDSAPublicKey(
+            EdDSAPublicKeySpec(LICENSE_PUBLIC_KEY_BYTES, EdDSANamedCurveTable.ED_25519_CURVE_SPEC)
         )
-        Signature.getInstance("Ed25519").run {
-            initVerify(pubKey)
-            update(msg)
-            verify(sig)
-        }
+        val sgr = Signature.getInstance("EdDSA", EdDSASecurityProvider())
+        sgr.initVerify(pubKey)
+        sgr.update(msg)
+        sgr.verify(sig)
     }.getOrDefault(false)
 
     private fun hexToBytes(hex: String): ByteArray? {
