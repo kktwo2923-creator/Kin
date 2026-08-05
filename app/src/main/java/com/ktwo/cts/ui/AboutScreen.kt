@@ -29,10 +29,6 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import com.ktwo.cts.BuildConfig
 import com.ktwo.cts.R
-import com.ktwo.cts.updater.NoUpdateDialog
-import com.ktwo.cts.updater.UpdateChecker
-import com.ktwo.cts.updater.UpdateDialog
-import kotlinx.coroutines.launch
 
 private data class LinkInfo(val fullText: String, val url: String)
 
@@ -44,9 +40,11 @@ private val LINKS = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(onBack: () -> Unit) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    onOpenUpdate: () -> Unit = {},
+) {
     val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     val appIcon = remember {
         runCatching {
@@ -55,39 +53,12 @@ fun AboutScreen(onBack: () -> Unit) {
         }.getOrNull()
     }
 
-    // 更新对话框状态
-    var checking by remember { mutableStateOf(false) }
-    var updateResult by remember { mutableStateOf<UpdateChecker.CheckResult?>(null) }
-    var showNoUpdate by remember { mutableStateOf(false) }
-
     fun openLink(url: String) {
         runCatching {
             ctx.startActivity(
                 Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         }
-    }
-
-    fun checkUpdate() {
-        if (checking) return
-        checking = true
-        scope.launch {
-            val r = UpdateChecker.check()
-            checking = false
-            if (r.hasUpdate) {
-                updateResult = r
-            } else {
-                showNoUpdate = true
-            }
-        }
-    }
-
-    // 对话框
-    updateResult?.let { r ->
-        UpdateDialog(result = r) { updateResult = null }
-    }
-    if (showNoUpdate) {
-        NoUpdateDialog { showNoUpdate = false }
     }
 
     Scaffold(
@@ -147,12 +118,12 @@ fun AboutScreen(onBack: () -> Unit) {
             )
 
             Spacer(Modifier.height(32.dp))
-            // 检查更新卡片
+            // 检查更新卡片 → 跳转独立更新页(对齐 AStop: 入口统一进 UpdateScreen)
             TonalCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = !checking) { checkUpdate() }
+                        .clickable { onOpenUpdate() }
                         .padding(horizontal = 16.dp, vertical = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -163,22 +134,15 @@ fun AboutScreen(onBack: () -> Unit) {
                         tint = MaterialTheme.colorScheme.primary,
                     )
                     Text(
-                        if (checking) "检查中…" else "检查更新",
+                        "检查更新",
                         modifier = Modifier.weight(1f),
                         fontWeight = FontWeight.Medium,
                     )
-                    if (checking) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 

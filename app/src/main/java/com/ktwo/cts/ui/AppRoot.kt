@@ -38,8 +38,9 @@ import com.ktwo.cts.ui.threadalloc.ThreadRulesScreen
 import com.ktwo.cts.ui.threadalloc.ThreadAllocScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
+import com.ktwo.cts.updater.UpdateAvailableDialog
 import com.ktwo.cts.updater.UpdateChecker
-import com.ktwo.cts.updater.UpdateDialog
+import com.ktwo.cts.updater.UpdateScreen
 import dev.chrisbanes.haze.HazeState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
@@ -67,7 +68,7 @@ private val FULLSCREEN_ROUTES =
     setOf(
         "about", "automode", "pro", "perfmon", "fpsrecord",
         "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
-        "threadalloc_rules", "memory", "governor", "docs", "coloros",
+        "threadalloc_rules", "memory", "governor", "docs", "coloros", "update",
         "smartpolicy?survey={survey}",
     )
 
@@ -144,7 +145,9 @@ fun AppRoot() {
         val r = UpdateChecker.check()
         sp.edit().putLong("last_check_ts", now).apply()
         // 有强制更新:必弹;普通更新:4 小时内不重复弹
-        val hasForce = (r.appUpdate?.forceUpdate == true) || (r.daemonUpdate?.forceUpdate == true)
+        val hasForce = (r.appUpdate?.forceUpdate == true) ||
+            (r.binaryUpdate?.forceUpdate == true) ||
+            (r.daemonUpdate?.forceUpdate == true)
         if (r.hasUpdate && (hasForce || now - last > 4L * 60 * 60 * 1000)) {
             autoUpdateResult = r
         }
@@ -273,13 +276,20 @@ fun AppRoot() {
                             onOpenAbout = { nav.navigate("about") },
                             onOpenPro = { nav.navigate("pro") },
                             onOpenDocs = { nav.navigate("docs") },
+                            onOpenUpdate = { nav.navigate("update") },
                         )
                     }
                     composable("about") {
-                        AboutScreen(onBack = { nav.popBackStack() })
+                        AboutScreen(
+                            onBack = { nav.popBackStack() },
+                            onOpenUpdate = { nav.navigate("update") },
+                        )
                     }
                     composable("docs") {
                         DocsScreen(onBack = { nav.popBackStack() })
+                    }
+                    composable("update") {
+                        UpdateScreen(onBack = { nav.popBackStack() })
                     }
                     composable("automode") {
                         AutoModeScreen(
@@ -422,9 +432,16 @@ fun AppRoot() {
                     )
                 }
 
-                // 自动检查更新弹窗(启动时静默检测到有新版本时弹出)
+                // 自动检查更新弹窗(启动时静默检测到有新版本时弹出, 点"去更新"跳转更新页)
                 autoUpdateResult?.let { r ->
-                    UpdateDialog(result = r) { autoUpdateResult = null }
+                    UpdateAvailableDialog(
+                        result = r,
+                        onGoUpdate = {
+                            autoUpdateResult = null
+                            nav.navigate("update")
+                        },
+                        onDismiss = { autoUpdateResult = null },
+                    )
                 }
             }
         }

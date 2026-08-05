@@ -42,6 +42,7 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit = {},
     onOpenPro: () -> Unit = {},
     onOpenDocs: () -> Unit = {},
+    onOpenUpdate: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -416,8 +417,15 @@ fun SettingsScreen(
                 )
             }
 
-            // —— 其他(对齐 Metric settings_other: 文档/关于收尾) ——
+            // —— 其他(对齐 Metric settings_other: 更新/文档/关于收尾) ——
             PrefGroup("其他") {
+                PrefNavRow(
+                    icon = Icons.Outlined.SystemUpdate,
+                    title = "检测更新",
+                    desc = "App / 调度二进制 / 模块 三通道独立检测与更新",
+                    onClick = onOpenUpdate,
+                )
+                PrefDivider()
                 PrefNavRow(
                     icon = Icons.AutoMirrored.Outlined.MenuBook,
                     title = "使用文档",
