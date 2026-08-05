@@ -58,7 +58,7 @@ import java.util.Locale
  * Scaffold + TopAppBar(标题"检测更新" + 返回 + 刷新) + 滚动内容
  *   - HeroCard: 概览(图标 + 标题 + 副标题 + 上次检查时间)
  *   - 错误卡(若检查失败)
- *   - 三张 ComponentUpdateCard: APP / 调度二进制 / 模块
+ *   - 三张 ComponentUpdateCard: APP / Kinetic / 模块
  *   - WaitingRebootCard: 模块下载完, 引导去 Magisk/KSU 刷入并重启
  *
  * 进入页面自动检查一次; 点刷新手动重查。
@@ -145,7 +145,7 @@ fun UpdateScreen(onBack: () -> Unit) {
             )
 
             ComponentUpdateCard(
-                title = "调度二进制 Kinetic",
+                title = "Kinetic",
                 icon = Icons.Outlined.Memory,
                 info = s.binaryInfo,
                 state = s.binary,
@@ -228,7 +228,7 @@ private fun HeroCard(
                 )
                 Spacer(Modifier.size(2.dp))
                 Text(
-                    "App / 调度二进制 / 模块 三通道独立检测与更新",
+                    "App / Kinetic / 模块 三通道独立检测与更新",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                 )

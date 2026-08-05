@@ -45,7 +45,7 @@ import com.ktwo.cts.updater.UpdateChecker.VersionInfo
  * 图标 + 标题 + 当前版本 + StatusBadge + (有更新时)分隔线 + 新版本/大小 + 更新日志(Markdown 可折叠) +
  * 下载进度 + DownloadProgressButton。
  *
- * @param title          卡片标题(如 "App 应用" / "调度二进制" / "模块")
+ * @param title          卡片标题(如 "App 应用" / "Kinetic" / "模块")
  * @param icon           leading 图标
  * @param info           服务端返回的版本信息(null = 该通道无更新)
  * @param state          该通道的下载/安装状态

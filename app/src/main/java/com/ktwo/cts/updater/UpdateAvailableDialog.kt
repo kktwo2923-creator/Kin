@@ -41,7 +41,7 @@ fun UpdateAvailableDialog(
 
     val channels = buildList {
         result.appUpdate?.let { add("App v${it.versionName}") }
-        result.binaryUpdate?.let { add("调度二进制 v${it.versionName}") }
+        result.binaryUpdate?.let { add("Kinetic v${it.versionName}") }
         result.daemonUpdate?.let { add("模块 v${it.versionName}") }
     }
 
@@ -74,7 +74,7 @@ fun UpdateAvailableDialog(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "在更新页面可分别更新 App / 调度二进制 / 模块三个通道。",
+                    "在更新页面可分别更新 App / Kinetic / 模块三个通道。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

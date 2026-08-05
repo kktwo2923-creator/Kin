@@ -422,7 +422,7 @@ fun SettingsScreen(
                 PrefNavRow(
                     icon = Icons.Outlined.SystemUpdate,
                     title = "检测更新",
-                    desc = "App / 调度二进制 / 模块 三通道独立检测与更新",
+                    desc = "App / Kinetic / 模块 三通道独立检测与更新",
                     onClick = onOpenUpdate,
                 )
                 PrefDivider()
