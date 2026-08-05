@@ -11,6 +11,8 @@
 
 # ============ Ed25519 验签库(net.i2p.crypto:eddsa, License.kt 直接类调用) ============
 -keep class net.i2p.crypto.eddsa.** { *; }
+# 该库编译时引用了 JDK 内部类 sun.security.x509.X509Key(仅 JCA 互操作用, Android 无此包), R8 会误报缺失类, 忽略
+-dontwarn sun.security.**
 
 # ============ AndroidX ViewModel(CpuControlVm 由框架反射构造) ============
 -keep class * extends androidx.lifecycle.ViewModel { *; }
