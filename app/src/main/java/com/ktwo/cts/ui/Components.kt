@@ -14,6 +14,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -432,4 +435,149 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.primary,
         modifier = modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
     )
+}
+
+// ============ 统一的 preference 行规范(组=标题+卡片; 行自带内距; 分隔线 16dp 缩进) ============
+// 从 SettingsScreen.kt 提取为公共组件, 供 AboutSettingScreen / FeaturesScreen 等复用。
+
+/** 设置分组: 组标题 + 一张卡片; 标题与卡片间 8dp, 组间距由父级 spacedBy(16dp) 控制。 */
+@Composable
+fun PrefGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionTitle(title)
+        TonalCard(modifier = Modifier.fillMaxWidth()) {
+            Column(content = content)
+        }
+    }
+}
+
+/** 组内分隔线, 两侧 16dp 缩进, 与行内距对齐。 */
+@Composable
+fun PrefDivider() {
+    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+}
+
+/** 开关行: 标题 + 说明 + Switch, 行自带内距。 */
+@Composable
+fun PrefToggleRow(
+    title: String, desc: String,
+    checked: Boolean, onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** 导航/对话框行: (可选图标 +) 标题 + 说明 + 右箭头, 整行(含内距)可点击。 */
+@Composable
+fun PrefNavRow(
+    title: String, desc: String,
+    icon: ImageVector? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(12.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** 选择行: 标题 (+ 说明) + FilterChip 流式排列。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun PrefChipsRow(
+    title: String,
+    desc: String?,
+    chips: @Composable FlowRowScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(title, fontWeight = FontWeight.Medium)
+        if (desc != null) {
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            content = chips,
+        )
+    }
+}
+
+/** 权限状态行: 图标颜色表示已授/未授, 尾部对勾或「设置」按钮, 行自带内距。 */
+@Composable
+fun PermRow(
+    name: String, granted: Boolean, desc: String,
+    icon: ImageVector,
+    onAction: (() -> Unit)?,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon, null,
+            modifier = Modifier.size(24.dp),
+            tint = if (granted) MaterialTheme.colorScheme.primary
+                  else MaterialTheme.colorScheme.error
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, fontWeight = FontWeight.Medium)
+            Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (granted) {
+            Icon(Icons.Outlined.CheckCircle, null,
+                tint = MaterialTheme.colorScheme.primary)
+        } else if (onAction != null) {
+            TextButton(onClick = onAction) { Text("设置") }
+        }
+    }
 }

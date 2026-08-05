@@ -1,11 +1,9 @@
-// 「设置」页, 对齐 Metric 设置页组织: 顶部 Pro 会员卡(无组标题, 强调色),
-// 之后为「组标题 + 组内条目 + 说明文案」的分组卡片, 组序参照 Metric: 常规→外观→电池→采样→(权限)→其他。
-// 所有条目行统一为一套 preference 行规范: 行自带内距、整行点击热区、分隔线统一 16dp 缩进。
+// 关于 tab 下的「设置」子页 — 对齐 OShin about_setting.kt 模式:
+// 独立全屏页, 收 App 级偏好(外观/检测更新入口/文档) + 功能行为开关(常规/电池/采样/权限)。
 package com.ktwo.cts.ui
 
 import android.content.Context
 import android.content.Intent
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,9 +14,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.BatteryFull
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,17 +42,14 @@ import kotlinx.coroutines.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(
-    onOpenAbout: () -> Unit = {},
-    onOpenPro: () -> Unit = {},
-    onOpenDocs: () -> Unit = {},
+fun AboutSettingScreen(
+    onBack: () -> Unit,
     onOpenUpdate: () -> Unit = {},
+    onOpenDocs: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val proUnlocked by Prefs.proUnlockedFlow(ctx).collectAsState(initial = false)
-    val autostart by Prefs.autostartFlow(ctx).collectAsState(initial = true)
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
     val uiStyleKey by Prefs.uiStyleFlow(ctx).collectAsState(initial = "glass")
     var showStyleDialog by remember { mutableStateOf(false) }
@@ -56,21 +57,21 @@ fun SettingsScreen(
     val enableFloatingBar by Prefs.enableFloatingBottomBarFlow(ctx).collectAsState(initial = true)
     val enableFloatingBarBlur by Prefs.enableFloatingBottomBarBlurFlow(ctx)
         .collectAsState(initial = true)
+
+    // —— 常规/电池/采样/权限(功能行为开关, 与 OShin 设置子页对齐) ——
+    val autostart by Prefs.autostartFlow(ctx).collectAsState(initial = true)
     val notifyEnabled by Prefs.notifyEnabledFlow(ctx).collectAsState(initial = false)
-    val refreshRate by Prefs.refreshRateFlow(ctx).collectAsState(initial = 0)
     val moreLogs by Prefs.moreLogsFlow(ctx).collectAsState(initial = false)
+    val refreshRate by Prefs.refreshRateFlow(ctx).collectAsState(initial = 0)
+    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 1)
+    var showCalibrate by remember { mutableStateOf(false) }
     var hasUsagePerm by remember { mutableStateOf(false) }
     var isRoot by remember { mutableStateOf(true) }
     var a11yEnabled by remember { mutableStateOf(false) }
     var batteryWhitelisted by remember { mutableStateOf(false) }
-    var showCalibrate by remember { mutableStateOf(false) }
-    val cellCount by Prefs.cellCountFlow(ctx).collectAsState(initial = 1)
-    // 接管方式(以 config.json 的 AppProfile.enable 为准): true = 第三方(Scene 等)接管。
-    // gen 计数防竞态: 在途的 refreshPerms 读到旧配置时, 不覆盖用户刚拨的开关。
     var thirdParty by remember { mutableStateOf(false) }
     val thirdPartyGen = remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
-    // 回到前台就重查权限状态(用户去系统设置授权后返回, 红/绿即时刷新)
     fun refreshPerms() = scope.launch {
         a11yEnabled = com.ktwo.cts.service.AppSwitchService.isEnabled(ctx)
         run {
@@ -93,11 +94,11 @@ fun SettingsScreen(
     fun enableNotify() = scope.launch {
         Prefs.setNotifyEnabled(ctx, true)
         com.ktwo.cts.service.NotifyService.start(ctx)
-        if (!Settings.canDrawOverlays(ctx)) {
+        if (!android.provider.Settings.canDrawOverlays(ctx)) {
             runCatching {
                 ctx.startActivity(
                     Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         android.net.Uri.parse("package:${ctx.packageName}")
                     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 )
@@ -120,6 +121,11 @@ fun SettingsScreen(
         }
     }
 
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        refreshPerms()
+        onPauseOrDispose { }
+    }
+
     // 把选中图片复制到 App 私有目录存绝对路径,避免临时 content URI 重启失效
     val pickWallpaper = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
@@ -138,21 +144,21 @@ fun SettingsScreen(
         }
     }
 
-    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
-        refreshPerms()
-        onPauseOrDispose { }
-    }
-
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = { Text("设置") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                    }
+                },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent,
                 ),
@@ -167,100 +173,9 @@ fun SettingsScreen(
                 .padding(inner)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // —— 顶部 Pro 会员卡(仿 Metric Pro 卡: 无组标题, 强调色与普通组拉开) ——
-            TonalCard(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primaryContainer,
-            ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onOpenPro)
-                        .padding(horizontal = 16.dp, vertical = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Outlined.AutoAwesome,
-                        contentDescription = null,
-                        modifier = Modifier.size(28.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "解锁智能版 · Pro",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            if (proUnlocked) "已解锁 · 智能模式 / 系统优化 已可用"
-                            else "解锁智能模式 + 系统优化(WiFi/网络/内存)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (proUnlocked) MaterialTheme.colorScheme.primary
-                                    else LocalContentColor.current.copy(alpha = 0.8f),
-                        )
-                    }
-                    Icon(
-                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = LocalContentColor.current.copy(alpha = 0.7f),
-                    )
-                }
-            }
-
-            // —— 常规(对齐 Metric settings_general; 「更多日志」并入常规, 避免单条目成组) ——
-            PrefGroup("常规") {
-                PrefToggleRow(
-                    title = "开机自启动",
-                    desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
-                    checked = autostart,
-                    onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } },
-                )
-                PrefDivider()
-                PrefToggleRow(
-                    title = "状态栏常驻通知",
-                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
-                    checked = notifyEnabled,
-                    onCheckedChange = { toggleNotify(it) },
-                )
-                PrefDivider()
-                PrefToggleRow(
-                    title = "更多日志",
-                    desc = "日志页默认只显示 运行/模式/前台 三个日志;开启后显示全部日志文件",
-                    checked = moreLogs,
-                    onCheckedChange = { scope.launch { Prefs.setMoreLogs(ctx, it) } },
-                )
-                PrefDivider()
-                PrefToggleRow(
-                    title = "第三方接管(Scene 等)",
-                    desc = "交给第三方调度管理器切档: 停用应用画像/智能分类, 仅保留基础模式(省电/均衡/性能/风驰)",
-                    checked = thirdParty,
-                    onCheckedChange = { want ->
-                        thirdPartyGen.intValue++   // 作废在途的 refreshPerms 回读
-                        thirdParty = want
-                        scope.launch(Dispatchers.IO) {
-                            runCatching {
-                                val ok = com.ktwo.cts.data.KinSettings.updateOverlay(ctx) { r ->
-                                    com.ktwo.cts.data.TakeoverCfg.mergeInto(r, want)
-                                }
-                                // 直接写成功后必须清掉初始化页留下的待办, 否则日后重跑引导会
-                                // 用过期待办覆盖这里的明确选择。
-                                if (ok) Prefs.setPendingTakeover(ctx, -1)
-                            }
-                        }
-                    },
-                )
-                PrefDivider()
-                PrefNavRow(
-                    title = "重新运行初始化引导",
-                    desc = "重走 ROOT 授权/模块检测(含模块下载入口)/无障碍/接管方式",
-                    onClick = { scope.launch { Prefs.setSetupDone(ctx, false) } },
-                )
-            }
-
-            // —— 外观(CTS 特有组, 位置对应 Metric 常规组内的「主题设置」) ——
+            // —— 外观(对齐 OShin about_setting 的 App 级偏好) ——
             PrefGroup("外观") {
                 PrefChipsRow(title = "主题", desc = null) {
                     val cur = ThemeMode.fromKey(themeKey)
@@ -274,7 +189,6 @@ fun SettingsScreen(
                     }
                 }
                 PrefDivider()
-                // 界面风格: 液态玻璃(默认) / Metric 仪表盘
                 PrefNavRow(
                     title = "界面风格",
                     desc = "当前: ${UiStyle.fromKey(uiStyleKey).label} · 仅切换主页布局, 全局保留液态玻璃",
@@ -309,7 +223,6 @@ fun SettingsScreen(
                     }) { Text("选择") }
                 }
                 PrefDivider()
-                // SukiSU-Ultra 主题设置同款开关
                 PrefToggleRow(
                     title = "悬浮底栏",
                     desc = "使用 Apple 风格的悬浮底栏",
@@ -333,7 +246,55 @@ fun SettingsScreen(
                 }
             }
 
-            // —— 电池(对齐 Metric settings_battery: 串联双电芯/电流校准) ——
+            // —— 常规(服务行为开关) ——
+            PrefGroup("常规") {
+                PrefToggleRow(
+                    title = "开机自启动",
+                    desc = "开机后自动拉起常驻通知/兜底调度(无障碍服务由系统在开机后自动恢复)",
+                    checked = autostart,
+                    onCheckedChange = { scope.launch { Prefs.setAutostart(ctx, it) } },
+                )
+                PrefDivider()
+                PrefToggleRow(
+                    title = "状态栏常驻通知",
+                    desc = "显示当前模式 + 电量;点击在任意应用上弹出快切悬浮窗(需通知 + 悬浮窗权限)",
+                    checked = notifyEnabled,
+                    onCheckedChange = { toggleNotify(it) },
+                )
+                PrefDivider()
+                PrefToggleRow(
+                    title = "更多日志",
+                    desc = "日志页默认只显示 运行/模式/前台 三个日志;开启后显示全部日志文件",
+                    checked = moreLogs,
+                    onCheckedChange = { scope.launch { Prefs.setMoreLogs(ctx, it) } },
+                )
+                PrefDivider()
+                PrefToggleRow(
+                    title = "第三方接管(Scene 等)",
+                    desc = "交给第三方调度管理器切档: 停用应用画像/智能分类, 仅保留基础模式(省电/均衡/性能/风驰)",
+                    checked = thirdParty,
+                    onCheckedChange = { want ->
+                        thirdPartyGen.intValue
+                        thirdParty = want
+                        scope.launch(Dispatchers.IO) {
+                            runCatching {
+                                val ok = com.ktwo.cts.data.KinSettings.updateOverlay(ctx) { r ->
+                                    com.ktwo.cts.data.TakeoverCfg.mergeInto(r, want)
+                                }
+                                if (ok) Prefs.setPendingTakeover(ctx, -1)
+                            }
+                        }
+                    },
+                )
+                PrefDivider()
+                PrefNavRow(
+                    title = "重新运行初始化引导",
+                    desc = "重走 ROOT 授权/模块检测(含模块下载入口)/无障碍/接管方式",
+                    onClick = { scope.launch { Prefs.setSetupDone(ctx, false) } },
+                )
+            }
+
+            // —— 电池 ——
             PrefGroup("电池") {
                 PrefNavRow(
                     title = "重新矫正电池",
@@ -342,7 +303,7 @@ fun SettingsScreen(
                 )
             }
 
-            // —— 采样(对齐 Metric settings_realtime_fps 组位次) ——
+            // —— 采样 ——
             PrefGroup("采样") {
                 PrefChipsRow(
                     title = "屏幕刷新率",
@@ -365,7 +326,7 @@ fun SettingsScreen(
                 }
             }
 
-            // —— 权限(CTS 特有的状态诊断组, Metric 无对应组; 红绿状态 + 一键跳系统设置) ——
+            // —— 权限(状态诊断) ——
             PrefGroup("权限") {
                 PermRow(
                     name = "Root 权限",
@@ -381,7 +342,7 @@ fun SettingsScreen(
                     desc = "无 root 时的前台检测兜底",
                     icon = Icons.Outlined.Visibility,
                     onAction = {
-                        ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                        ctx.startActivity(Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
                 )
@@ -396,7 +357,7 @@ fun SettingsScreen(
                             val ok = withContext(Dispatchers.IO) { RootShell.setAccessibility(true) }
                             Prefs.setA11yWanted(ctx, true)
                             if (!ok) runCatching {
-                                ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                ctx.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
                                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                             }
                             kotlinx.coroutines.delay(400)
@@ -411,13 +372,13 @@ fun SettingsScreen(
                     desc = "防止后台被杀",
                     icon = Icons.Outlined.BatteryFull,
                     onAction = {
-                        ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        ctx.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
                 )
             }
 
-            // —— 其他(对齐 Metric settings_other: 更新/文档/关于收尾) ——
+            // —— 其他(检测更新 / 使用文档, 对齐原设置页「其他」组的剩余项) ——
             PrefGroup("其他") {
                 PrefNavRow(
                     icon = Icons.Outlined.SystemUpdate,
@@ -432,20 +393,13 @@ fun SettingsScreen(
                     desc = "功能说明 · 常见问题",
                     onClick = onOpenDocs,
                 )
-                PrefDivider()
-                PrefNavRow(
-                    icon = Icons.Outlined.Info,
-                    title = "关于",
-                    desc = "版本信息 · 开源地址",
-                    onClick = onOpenAbout,
-                )
             }
 
             Spacer(Modifier.height(96.dp))
         }
     }
 
-    // 设置里主动重新矫正:可取消(cancelable=true)
+    // 电池矫正对话框
     if (showCalibrate) {
         CellCalibrationDialog(cancelable = true, onDone = { showCalibrate = false })
     }
@@ -491,149 +445,5 @@ fun SettingsScreen(
                 TextButton(onClick = { showStyleDialog = false }) { Text("完成") }
             },
         )
-    }
-}
-
-// ============ 统一的 preference 行规范(组=标题+卡片; 行自带内距; 分隔线 16dp 缩进) ============
-
-/** 设置分组: 组标题 + 一张卡片; 标题与卡片间 8dp, 组间距由父级 spacedBy(16dp) 控制。 */
-@Composable
-private fun PrefGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionTitle(title)
-        TonalCard(modifier = Modifier.fillMaxWidth()) {
-            Column(content = content)
-        }
-    }
-}
-
-/** 组内分隔线, 两侧 16dp 缩进, 与行内距对齐。 */
-@Composable
-private fun PrefDivider() {
-    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-}
-
-/** 开关行: 标题 + 说明 + Switch, 行自带内距。 */
-@Composable
-private fun PrefToggleRow(
-    title: String, desc: String,
-    checked: Boolean, onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Medium)
-            Text(
-                desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-/** 导航/对话框行: (可选图标 +) 标题 + 说明 + 右箭头, 整行(含内距)可点击。 */
-@Composable
-private fun PrefNavRow(
-    title: String, desc: String,
-    icon: ImageVector? = null,
-    onClick: () -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (icon != null) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(12.dp))
-        }
-        Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Medium)
-            Text(
-                desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Icon(
-            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/** 选择行: 标题 (+ 说明) + FilterChip 流式排列。 */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun PrefChipsRow(
-    title: String,
-    desc: String?,
-    chips: @Composable FlowRowScope.() -> Unit,
-) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(title, fontWeight = FontWeight.Medium)
-        if (desc != null) {
-            Text(
-                desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            content = chips,
-        )
-    }
-}
-
-/** 权限状态行: 图标颜色表示已授/未授, 尾部对勾或「设置」按钮, 行自带内距。 */
-@Composable
-private fun PermRow(
-    name: String, granted: Boolean, desc: String,
-    icon: ImageVector,
-    onAction: (() -> Unit)?,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            icon, null,
-            modifier = Modifier.size(24.dp),
-            tint = if (granted) MaterialTheme.colorScheme.primary
-                  else MaterialTheme.colorScheme.error
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(name, fontWeight = FontWeight.Medium)
-            Text(
-                desc,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (granted) {
-            Icon(Icons.Outlined.CheckCircle, null,
-                tint = MaterialTheme.colorScheme.primary)
-        } else if (onAction != null) {
-            TextButton(onClick = onAction) { Text("设置") }
-        }
     }
 }

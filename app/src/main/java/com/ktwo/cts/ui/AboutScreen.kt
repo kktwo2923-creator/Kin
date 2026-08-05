@@ -26,9 +26,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -76,7 +79,9 @@ private val LINKS = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
-    onBack: () -> Unit,
+    onOpenSetting: () -> Unit = {},
+    onOpenPro: () -> Unit = {},
+    onOpenDocs: () -> Unit = {},
     onOpenUpdate: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
@@ -101,11 +106,6 @@ fun AboutScreen(
         topBar = {
             TopAppBar(
                 title = { Text("关于") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
-                    }
-                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent,
@@ -144,7 +144,57 @@ fun AboutScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
 
-                Spacer(Modifier.height(64.dp))
+                Spacer(Modifier.height(28.dp))
+
+                // —— 检查更新按钮(OShin 风格渐变描边; 纳入正常流, 避免与头部文字重叠) ——
+                val borderColor = remember(dark) {
+                    if (dark) listOf(Color(0xFFE3BCB1), Color(0xFFA279ED))
+                    else listOf(Color(0xFFA56138), Color(0xFF3A18AD))
+                }
+                val bgBtn = if (dark) Color(0x1FFFFFFF) else Color(0x99FFFFFF)
+                val strokeWidthPx = with(LocalDensity.current) { 1.5.dp.toPx() }
+                val cornerPx = with(LocalDensity.current) { 16.dp.toPx() }
+                val insetPx = strokeWidthPx / 2f
+
+                Button(
+                    onClick = onOpenUpdate,
+                    modifier = Modifier
+                        .fillMaxWidth(0.72f)
+                        .drawBehind {
+                            drawRoundRect(
+                                brush = Brush.linearGradient(
+                                    colors = borderColor,
+                                    start = Offset(size.width / 2f, 0f),
+                                    end = Offset(size.width / 2f, size.height),
+                                ),
+                                topLeft = Offset(insetPx, insetPx),
+                                size = Size(size.width - strokeWidthPx, size.height - strokeWidthPx),
+                                cornerRadius = CornerRadius(cornerPx),
+                                style = Stroke(width = strokeWidthPx),
+                            )
+                        }
+                        .shadow(
+                            elevation = 2.dp,
+                            shape = RoundedCornerShape(16.dp),
+                            clip = true,
+                            ambientColor = Color.Black.copy(alpha = 0.15f),
+                            spotColor = Color.Black.copy(alpha = 0.2f),
+                        ),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = bgBtn,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 14.dp),
+                ) {
+                    Text(
+                        text = "检查更新",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+
+                Spacer(Modifier.height(28.dp))
 
                 // —— 版本详情卡 ——
                 TonalCard(modifier = Modifier.fillMaxWidth()) {
@@ -154,6 +204,19 @@ fun AboutScreen(
                         AboutDetailRow("版本号", BuildConfig.VERSION_CODE.toString())
                         HorizontalDivider(Modifier.padding(vertical = 10.dp))
                         AboutDetailRow("应用 ID", ctx.packageName)
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // —— 设置 / Pro 会员 / 使用文档 入口卡 ——
+                TonalCard(modifier = Modifier.fillMaxWidth()) {
+                    Column {
+                        LinkRow(icon = Icons.Outlined.Settings, title = "设置") { onOpenSetting() }
+                        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                        LinkRow(icon = Icons.Outlined.AutoAwesome, title = "解锁智能版 · Pro") { onOpenPro() }
+                        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                        LinkRow(icon = Icons.AutoMirrored.Outlined.MenuBook, title = "使用文档") { onOpenDocs() }
                     }
                 }
 
@@ -181,56 +244,6 @@ fun AboutScreen(
                 )
 
                 Spacer(Modifier.height(120.dp))
-            }
-
-            // —— 浮动检查更新按钮(渐变描边 + 阴影, 对齐 OShin) ——
-            val borderColor = remember(dark) {
-                if (dark) listOf(Color(0xFFE3BCB1), Color(0xFFA279ED))
-                else listOf(Color(0xFFA56138), Color(0xFF3A18AD))
-            }
-            val bgBtn = if (dark) Color(0x1FFFFFFF) else Color(0x99FFFFFF)
-            val strokeWidthPx = with(LocalDensity.current) { 1.5.dp.toPx() }
-            val cornerPx = with(LocalDensity.current) { 16.dp.toPx() }
-            val insetPx = strokeWidthPx / 2f
-
-            Button(
-                onClick = onOpenUpdate,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 168.dp)
-                    .fillMaxWidth(0.72f)
-                    .drawBehind {
-                        drawRoundRect(
-                            brush = Brush.linearGradient(
-                                colors = borderColor,
-                                start = Offset(size.width / 2f, 0f),
-                                end = Offset(size.width / 2f, size.height),
-                            ),
-                            topLeft = Offset(insetPx, insetPx),
-                            size = Size(size.width - strokeWidthPx, size.height - strokeWidthPx),
-                            cornerRadius = CornerRadius(cornerPx),
-                            style = Stroke(width = strokeWidthPx),
-                        )
-                    }
-                    .shadow(
-                        elevation = 2.dp,
-                        shape = RoundedCornerShape(16.dp),
-                        clip = true,
-                        ambientColor = Color.Black.copy(alpha = 0.15f),
-                        spotColor = Color.Black.copy(alpha = 0.2f),
-                    ),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = bgBtn,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 14.dp),
-            ) {
-                Text(
-                    text = "检查更新",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
             }
         }
     }
