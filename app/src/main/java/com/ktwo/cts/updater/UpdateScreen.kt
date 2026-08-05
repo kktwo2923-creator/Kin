@@ -140,7 +140,7 @@ fun UpdateScreen(onBack: () -> Unit) {
                 info = s.appInfo,
                 state = s.app,
                 localVersion = "v${BuildConfig.VERSION_NAME} (${local.appCode})",
-                hint = "下载 APK 后会自动调起系统安装器, 需开启"允许安装未知来源"。",
+                hint = "下载 APK 后会自动调起系统安装器, 需开启\"允许安装未知来源\"。",
                 downloadLabel = "下载并安装",
                 onDownload = { s.appInfo?.let { controller.downloadApp(ctx, it) } },
             )
