@@ -22,8 +22,6 @@ import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -49,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ktwo.cts.BuildConfig
+import com.ktwo.cts.ui.TonalCard
 import com.ktwo.cts.updater.UpdateChecker.LocalVersions
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -189,12 +188,9 @@ private fun HeroCard(
     lastCheckedTime: Long,
     hasUpdate: Boolean,
 ) {
-    Card(
+    TonalCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
+        color = MaterialTheme.colorScheme.primaryContainer,
     ) {
         Row(
             Modifier
@@ -252,12 +248,9 @@ private fun HeroCard(
 /** 错误卡: 红色容器 + 错误文案 + 重试按钮。 */
 @Composable
 private fun ErrorCard(error: String, onRetry: () -> Unit) {
-    Card(
+    TonalCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-        ),
+        color = MaterialTheme.colorScheme.errorContainer,
     ) {
         Row(
             Modifier
@@ -285,12 +278,9 @@ private fun ErrorCard(error: String, onRetry: () -> Unit) {
 /** 模块下载完成后的引导卡: 提示去 Magisk/KSU 刷入并重启。 */
 @Composable
 private fun WaitingRebootCard(path: String, onOpenMagisk: () -> Unit) {
-    Card(
+    TonalCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-        ),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

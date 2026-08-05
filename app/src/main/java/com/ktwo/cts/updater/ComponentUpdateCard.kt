@@ -17,8 +17,6 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -39,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ktwo.cts.ui.TonalCard
 import com.ktwo.cts.updater.UpdateChecker.VersionInfo
 
 /**
@@ -70,11 +69,7 @@ fun ComponentUpdateCard(
     onSecondary: (() -> Unit)? = null,
     secondaryLabel: String = "",
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
+    TonalCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // —— 顶部: 图标 + 标题 + 当前版本 + StatusBadge ——
             Row(verticalAlignment = Alignment.CenterVertically) {
