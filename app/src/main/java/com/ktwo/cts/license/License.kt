@@ -93,7 +93,8 @@ object License {
      * 伪造 license.json 拿不到私钥, 必无法通过; 字段缺失/签名不合法一律返回 false(按未激活处理)。
      * 若合法令牌意外校验失败(理论不发生), 联网 revalidate 会刷新一份新文件。
      * 实现用纯 Java 库 net.i2p.crypto:eddsa —— 平台自带 Ed25519(JCA)需 API 34+, 而 minSdk=33,
-     * 故不依赖系统加密实现, 全版本一致可用。显式指定本库 provider, 不受平台 provider 顺序影响。
+     * 故不依赖系统加密实现, 全版本一致可用。该库 provider 注册的算法名是 "NONEwithEdDSA"
+     * (NONE 前缀 = 无预哈希, 即纯 Ed25519, 与服务端 crypto.sign(null,...) 一致)。
      */
     private fun verifyTokenSignature(o: JSONObject): Boolean = runCatching {
         val lk = o.optString("license_key", "")
@@ -108,7 +109,7 @@ object License {
         val pubKey = EdDSAPublicKey(
             EdDSAPublicKeySpec(LICENSE_PUBLIC_KEY_BYTES, EdDSANamedCurveTable.ED_25519_CURVE_SPEC)
         )
-        val sgr = Signature.getInstance("EdDSA", EdDSASecurityProvider())
+        val sgr = Signature.getInstance("NONEwithEdDSA", EdDSASecurityProvider())
         sgr.initVerify(pubKey)
         sgr.update(msg)
         sgr.verify(sig)
