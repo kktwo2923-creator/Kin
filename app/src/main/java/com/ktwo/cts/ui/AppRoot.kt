@@ -114,23 +114,6 @@ fun AppRoot() {
         }
     }
 
-    // 自动检查更新:启动 3 秒后静默查一次(非强制更新距上次检查 4 小时内不重复打扰)
-    var autoUpdateResult by remember { mutableStateOf<UpdateChecker.CheckResult?>(null) }
-    LaunchedEffect(setupDone) {
-        if (setupDone != true) return@LaunchedEffect
-        kotlinx.coroutines.delay(3000)
-        val sp = ctx.getSharedPreferences("kin_updater", android.content.Context.MODE_PRIVATE)
-        val now = System.currentTimeMillis()
-        val last = sp.getLong("last_check_ts", 0L)
-        val r = UpdateChecker.check()
-        sp.edit().putLong("last_check_ts", now).apply()
-        // 有强制更新:必弹;普通更新:4 小时内不重复弹
-        val hasForce = (r.appUpdate?.forceUpdate == true) || (r.daemonUpdate?.forceUpdate == true)
-        if (r.hasUpdate && (hasForce || now - last > 4L * 60 * 60 * 1000)) {
-            autoUpdateResult = r
-        }
-    }
-
     // 首启引导: docs_seen=false 时弹一次「先看文档」。initial=true 防止 DataStore 加载前误闪弹窗;
     // 无论选「查看文档」还是「稍后」都置 true, 只打扰这一次。
     val scope = rememberCoroutineScope()
@@ -147,6 +130,24 @@ fun AppRoot() {
             return
         }
         else -> {}
+    }
+
+    // 自动检查更新:启动 3 秒后静默查一次(非强制更新距上次检查 4 小时内不重复打扰)
+    // 放在 setupDone 声明之后: LaunchedEffect 依赖 setupDone 状态, 且 when 块在 null/false 时提前 return
+    var autoUpdateResult by remember { mutableStateOf<UpdateChecker.CheckResult?>(null) }
+    LaunchedEffect(setupDone) {
+        if (setupDone != true) return@LaunchedEffect
+        kotlinx.coroutines.delay(3000)
+        val sp = ctx.getSharedPreferences("kin_updater", android.content.Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val last = sp.getLong("last_check_ts", 0L)
+        val r = UpdateChecker.check()
+        sp.edit().putLong("last_check_ts", now).apply()
+        // 有强制更新:必弹;普通更新:4 小时内不重复弹
+        val hasForce = (r.appUpdate?.forceUpdate == true) || (r.daemonUpdate?.forceUpdate == true)
+        if (r.hasUpdate && (hasForce || now - last > 4L * 60 * 60 * 1000)) {
+            autoUpdateResult = r
+        }
     }
 
     // 智能策略问卷提示: 智能调度开着 + 从没答过问卷 + 「稍后再说」已到期 +
