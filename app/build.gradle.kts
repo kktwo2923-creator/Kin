@@ -33,8 +33,8 @@ android {
         // iOS26 液态玻璃依赖 AGSL RuntimeShader(Android 13+), 不再适配低版本
         minSdk = 33
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 20000
+        versionName = "2.0.0"
         vectorDrawables { useSupportLibrary = true }
 
         // P2-15: 只构建 arm64-v8a,收口 ABI 减小包体(目标设备均为 64 位 ARM)

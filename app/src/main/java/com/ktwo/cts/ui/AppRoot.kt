@@ -51,22 +51,25 @@ private data class TopDest(
     val icon: ImageVector,
 )
 
-// 固定四个底栏 tab: 首页 / 功能 / 日志 / 设置。
-// 「功能」是一个聚合入口(hub), 把 监控 / 记录 / 应用 / 配置 / 智能调度高级设置 收进去。
+// 固定四个底栏 tab: 首页 / 功能 / 日志 / 关于(对齐 OShin: 第4个 tab 是关于)。
+// 「功能」是一个聚合入口(hub), 把 监控 / 记录 / 应用 / 配置 / 智能调度高级设置 / 常规开关 收进去。
+// 「关于」承载版本信息/链接/检查更新/设置入口(App 级偏好在 about_setting 子页)。
 private val TABS = listOf(
     TopDest("home",     "首页", CtsIcons.Speed),
     TopDest("features", "功能", Icons.Outlined.GridView),
     TopDest("logs",     "日志", CtsIcons.Logs),
-    TopDest("settings", "设置", CtsIcons.Settings),
+    TopDest("about",    "关于", Icons.Outlined.Info),
 )
 
 // 「功能」hub 下属的子页面: 选中它们时底栏仍高亮「功能」tab。
 private val FEATURE_SUBROUTES = setOf("monitor", "records", "apps", "cpu", "automode", "perfmon")
 
 // 自带返回/沉浸的二级页, 隐藏底栏。
+// about 现在是底栏第4个 tab, 不再在此列表(始终显示底栏)。
+// about_setting 是关于 tab 下的设置子页, 隐藏底栏。
 private val FULLSCREEN_ROUTES =
     setOf(
-        "about", "automode", "pro", "perfmon", "fpsrecord",
+        "about_setting", "automode", "pro", "perfmon", "fpsrecord",
         "fpsrecord_detail/{id}", "fpsrecord_thread/{id}", "process", "threadalloc",
         "threadalloc_rules", "memory", "governor", "docs", "coloros", "update",
         "smartpolicy?survey={survey}",
@@ -271,18 +274,21 @@ fun AppRoot() {
                     composable("monitor")  { AutoMonitorScreen() }
                     composable("records")  { RecordsScreen() }
                     composable("logs")     { LogScreen() }
-                    composable("settings") {
-                        SettingsScreen(
-                            onOpenAbout = { nav.navigate("about") },
+                    // 关于 tab(底栏第4个): OShin 风格主页, 承载版本/链接/检查更新/设置入口
+                    composable("about") {
+                        AboutScreen(
+                            onOpenSetting = { nav.navigate("about_setting") },
                             onOpenPro = { nav.navigate("pro") },
                             onOpenDocs = { nav.navigate("docs") },
                             onOpenUpdate = { nav.navigate("update") },
                         )
                     }
-                    composable("about") {
-                        AboutScreen(
+                    // 关于 tab 下的设置子页: App 级偏好(外观/检测更新/文档等)
+                    composable("about_setting") {
+                        AboutSettingScreen(
                             onBack = { nav.popBackStack() },
                             onOpenUpdate = { nav.navigate("update") },
+                            onOpenDocs = { nav.navigate("docs") },
                         )
                     }
                     composable("docs") {
