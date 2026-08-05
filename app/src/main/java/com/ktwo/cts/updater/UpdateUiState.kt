@@ -44,8 +44,8 @@ data class UpdateUiState(
     val module: ComponentState = ComponentState(),
 ) {
     val appInfo: VersionInfo? get() = result.appUpdate
-    val binaryInfo: VersionInfo? get() = result.binaryUpdate
-    val moduleInfo: VersionInfo? get() = result.daemonUpdate
+    val kinInfo: VersionInfo? get() = result.kinUpdate
+    val moduleInfo: VersionInfo? get() = result.moduleUpdate
 
     /** 三通道任意一个有更新即为 true。 */
     val hasUpdate: Boolean get() = result.hasUpdate
@@ -53,6 +53,6 @@ data class UpdateUiState(
     /** 任意通道 forceUpdate=true 即为强制更新(启动提示 Dialog 只允许"去更新")。 */
     val hasForceUpdate: Boolean
         get() = (result.appUpdate?.forceUpdate == true) ||
-            (result.binaryUpdate?.forceUpdate == true) ||
-            (result.daemonUpdate?.forceUpdate == true)
+            (result.kinUpdate?.forceUpdate == true) ||
+            (result.moduleUpdate?.forceUpdate == true)
 }

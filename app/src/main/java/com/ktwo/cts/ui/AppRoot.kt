@@ -150,8 +150,8 @@ fun AppRoot() {
         sp.edit().putLong("last_check_ts", now).apply()
         // 有强制更新:必弹;普通更新:4 小时内不重复弹
         val hasForce = (r.appUpdate?.forceUpdate == true) ||
-            (r.binaryUpdate?.forceUpdate == true) ||
-            (r.daemonUpdate?.forceUpdate == true)
+            (r.kinUpdate?.forceUpdate == true) ||
+            (r.moduleUpdate?.forceUpdate == true)
         if (r.hasUpdate && (hasForce || now - last > 4L * 60 * 60 * 1000)) {
             autoUpdateResult = r
         }

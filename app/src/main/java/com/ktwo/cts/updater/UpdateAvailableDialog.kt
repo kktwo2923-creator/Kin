@@ -36,13 +36,13 @@ fun UpdateAvailableDialog(
     onDismiss: () -> Unit,
 ) {
     val force = (result.appUpdate?.forceUpdate == true) ||
-        (result.binaryUpdate?.forceUpdate == true) ||
-        (result.daemonUpdate?.forceUpdate == true)
+        (result.kinUpdate?.forceUpdate == true) ||
+        (result.moduleUpdate?.forceUpdate == true)
 
     val channels = buildList {
         result.appUpdate?.let { add("App v${it.versionName}") }
-        result.binaryUpdate?.let { add("Kinetic v${it.versionName}") }
-        result.daemonUpdate?.let { add("模块 v${it.versionName}") }
+        result.kinUpdate?.let { add("Kinetic v${it.versionName}") }
+        result.moduleUpdate?.let { add("模块 v${it.versionName}") }
     }
 
     AlertDialog(

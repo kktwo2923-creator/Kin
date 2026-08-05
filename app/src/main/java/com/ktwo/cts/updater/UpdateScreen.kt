@@ -147,12 +147,12 @@ fun UpdateScreen(onBack: () -> Unit) {
             ComponentUpdateCard(
                 title = "Kinetic",
                 icon = Icons.Outlined.Memory,
-                info = s.binaryInfo,
+                info = s.kinInfo,
                 state = s.binary,
                 localVersion = "v${local.binaryCode}",
                 hint = "热更新无需重启手机: 下载后用 root 覆盖到模块目录, 自动重启守护进程。",
                 downloadLabel = "热更新二进制",
-                onDownload = { s.binaryInfo?.let { controller.downloadBinary(ctx, it) } },
+                onDownload = { s.kinInfo?.let { controller.downloadBinary(ctx, it) } },
             )
 
             ComponentUpdateCard(

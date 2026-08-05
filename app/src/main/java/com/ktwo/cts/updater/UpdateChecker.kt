@@ -13,7 +13,6 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.ktwo.cts.BuildConfig
-import com.ktwo.cts.license.License
 import com.ktwo.cts.root.RootShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,25 +22,30 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * App / binary(Kinetic) / daemon(模块) 三组件版本检查 + 下载 + 安装。
+ * App / Kin(Kinetic 二进制) / 模块(Magisk zip) 三通道版本检查 + 下载 + 安装。
  *
  * 服务端 /api/version 返回结构:
  * ```
  * { code, success, data: {
- *     app:    {version_code, version_name, changelog, download_url, size, force_update},
- *     binary: {...同结构...},   // 二进制 Kinetic 热更新, 不需重启手机
- *     module: {...同结构...}    // 模块 zip, 需 Magisk/KernelSU 刷入并重启
+ *     app:    {version_code, version_name, changelog, download_url, size, force_update},  // APK
+ *     daemon: {...同结构...},   // Kinetic 二进制, 热更新免重启
+ *     module: {...同结构...}    // Magisk/KernelSU 模块 zip, 需刷入并重启
  * } }
  * ```
- * - App 更新: 下载 APK 到外部下载目录,通过 FileProvider 调系统安装器安装
- * - Binary 更新: 下载 Kinetic 到 cache, root cp 覆盖到模块目录, 杀旧守护让 keeper 拉起新版(免重启)
- * - Daemon(模块) 更新: 下载模块 zip 到 /sdcard/Android/Kin/,提示用户在 Magisk/KernelSU 里刷入并重启
+ * - App 更新:  下载 APK 到外部下载目录,通过 FileProvider 调系统安装器安装
+ * - Kin 更新:  下载 Kinetic 到 cache, root cp 覆盖到模块目录, 杀旧守护让 keeper 拉起新版(免重启)
+ * - 模块 更新: 下载模块 zip 到 /sdcard/Android/Kin/,提示用户在 Magisk/KernelSU 里刷入并重启
  *
  * 版本比较: 服务器 version_code > 本地 version_code 即有更新。
  */
 object UpdateChecker {
     private const val TAG = "UpdateChecker"
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // APP 更新服务器(独立于守护授权服务器 License.BASE_URL)。
+    // /api/version 返回 app/daemon/module 三通道版本信息,
+    // 下载地址(download_url)为绝对路径(https://update.example.com/...), fullUrl() 会原样透传。
+    private const val UPDATE_BASE_URL = "https://update.example.com"
 
     data class VersionInfo(
         val versionCode: Int,
@@ -53,19 +57,19 @@ object UpdateChecker {
     )
 
     data class CheckResult(
-        val appUpdate: VersionInfo?,
-        val daemonUpdate: VersionInfo?,
-        val binaryUpdate: VersionInfo? = null,
+        val appUpdate: VersionInfo?,            // data.app    → APK 安装
+        val kinUpdate: VersionInfo? = null,     // data.daemon → Kinetic 二进制热更新(cp 覆盖 + 重启守护)
+        val moduleUpdate: VersionInfo? = null,  // data.module → Magisk/KernelSU 模块 zip(用户刷入)
     ) {
         val hasUpdate: Boolean
-            get() = appUpdate != null || daemonUpdate != null || binaryUpdate != null
+            get() = appUpdate != null || kinUpdate != null || moduleUpdate != null
     }
 
-    /** 取完整下载 URL(相对路径拼 BASE_URL)。 */
+    /** 取完整下载 URL(相对路径拼 UPDATE_BASE_URL;绝对路径原样返回)。 */
     private fun fullUrl(u: String): String = when {
         u.startsWith("http://") || u.startsWith("https://") -> u
-        u.startsWith("/") -> License.BASE_URL + u
-        else -> License.BASE_URL + "/" + u
+        u.startsWith("/") -> UPDATE_BASE_URL + u
+        else -> UPDATE_BASE_URL + "/" + u
     }
 
     /** 查询服务器版本信息,返回有更新的组件(没有更新的返回 null)。 */
@@ -83,12 +87,14 @@ object UpdateChecker {
             if (!j.optBoolean("success", false)) return@runCatching CheckResult(null, null, null)
             val data = j.optJSONObject("data") ?: return@runCatching CheckResult(null, null, null)
 
-            val appVer = parsePart(data.optJSONObject("app"), BuildConfig.VERSION_CODE)
-            val daemonVer = parsePart(data.optJSONObject("daemon"), localDaemonVersion())
-            // 仅当服务端显式返回 binary 字段时才走二进制热更新通道, 避免与 daemon(模块)重复提示。
-            // 旧服务端没有 binary 字段 → binaryUpdate=null, 行为与升级前一致。
-            val binVer = parsePart(data.optJSONObject("binary"), localBinaryVersion())
-            CheckResult(appVer, daemonVer, binVer)
+            // 三通道对应(服务端已如此配置):
+            //   App    → data.app    → APK 安装
+            //   Kin    → data.daemon → Kinetic 二进制热更新(本地版本读 binary.version)
+            //   模块   → data.module → Magisk/KernelSU 模块 zip(本地版本读 module.prop)
+            val appVer    = parsePart(data.optJSONObject("app"),    BuildConfig.VERSION_CODE)
+            val kinVer    = parsePart(data.optJSONObject("daemon"), localBinaryVersion())
+            val moduleVer = parsePart(data.optJSONObject("module"), localDaemonVersion())
+            CheckResult(appVer, kinVer, moduleVer)
         }.getOrElse {
             Log.w(TAG, "check failed", it)
             CheckResult(null, null, null)

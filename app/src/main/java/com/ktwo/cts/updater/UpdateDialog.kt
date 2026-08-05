@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 检查更新对话框:显示 App + daemon 的更新信息,支持下载进度和一键安装。
+ * 检查更新对话框:显示 App + Kin + 模块 的更新信息,支持下载进度和一键安装。
  *
  * @param result 版本检查结果(来自 UpdateChecker.check())
  * @param onDismiss 关闭对话框(force_update=true 时禁用)
@@ -35,16 +35,26 @@ fun UpdateDialog(
     var appDone by remember { mutableStateOf(false) }
     var appError by remember { mutableStateOf("") }
 
-    // Daemon 下载状态
-    var daemonDownloading by remember { mutableStateOf(false) }
-    var daemonProgress by remember { mutableIntStateOf(0) }
-    var daemonDone by remember { mutableStateOf(false) }
-    var daemonError by remember { mutableStateOf("") }
-    var daemonPath by remember { mutableStateOf("") }
+    // Kin(Kinetic 二进制) 热更新状态
+    var kinDownloading by remember { mutableStateOf(false) }
+    var kinProgress by remember { mutableIntStateOf(0) }
+    var kinDone by remember { mutableStateOf(false) }
+    var kinError by remember { mutableStateOf("") }
+    var kinMsg by remember { mutableStateOf("") }
+
+    // 模块下载状态
+    var moduleDownloading by remember { mutableStateOf(false) }
+    var moduleProgress by remember { mutableIntStateOf(0) }
+    var moduleDone by remember { mutableStateOf(false) }
+    var moduleError by remember { mutableStateOf("") }
+    var modulePath by remember { mutableStateOf("") }
 
     val appUpdate = result.appUpdate
-    val daemonUpdate = result.daemonUpdate
-    val force = (appUpdate?.forceUpdate == true) || (daemonUpdate?.forceUpdate == true)
+    val kinUpdate = result.kinUpdate
+    val moduleUpdate = result.moduleUpdate
+    val force = (appUpdate?.forceUpdate == true) ||
+        (kinUpdate?.forceUpdate == true) ||
+        (moduleUpdate?.forceUpdate == true)
 
     AlertDialog(
         onDismissRequest = { if (!force) onDismiss() },
@@ -122,20 +132,92 @@ fun UpdateDialog(
                     }
                 }
 
-                // Daemon 更新信息
-                if (daemonUpdate != null) {
+                // Kin(Kinetic 二进制) 热更新信息 —— 免重启, 直接 cp 覆盖 + 重启守护
+                if (kinUpdate != null) {
+                    HorizontalDivider()
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Kin 调度二进制热更新", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(
+                            "v${kinUpdate.versionName}" +
+                                (if (kinUpdate.size > 0) " · ${UpdateChecker.formatSize(kinUpdate.size)}" else ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        if (kinUpdate.changelog.isNotBlank()) {
+                            Text(
+                                kinUpdate.changelog,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(
+                            "热更新无需重启手机: 下载后用 root 覆盖到模块目录, 自动重启守护进程。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (kinDownloading) {
+                            LinearProgressIndicator(
+                                progress = { kinProgress / 100f },
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            )
+                            Text(
+                                "下载中 $kinProgress%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (kinError.isNotBlank()) {
+                            Text(kinError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
+                        if (kinDone) {
+                            Text(
+                                "✅ $kinMsg",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        if (!kinDownloading) {
+                            Button(
+                                onClick = {
+                                    kinDownloading = true
+                                    kinError = ""
+                                    kinDone = false
+                                    kinMsg = ""
+                                    scope.launch {
+                                        val (ok, msg) = withContext(Dispatchers.IO) {
+                                            UpdateChecker.downloadAndInstallBinary(ctx, kinUpdate) {
+                                                kinProgress = it
+                                            }
+                                        }
+                                        kinDownloading = false
+                                        if (ok) {
+                                            kinDone = true
+                                            kinMsg = msg
+                                        } else {
+                                            kinError = msg
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(if (kinDone) "重新热更新" else "热更新二进制") }
+                        }
+                    }
+                }
+
+                // 模块更新信息
+                if (moduleUpdate != null) {
                     HorizontalDivider()
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("调度模块更新", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         Text(
-                            "v${daemonUpdate.versionName}" +
-                                (if (daemonUpdate.size > 0) " · ${UpdateChecker.formatSize(daemonUpdate.size)}" else ""),
+                            "v${moduleUpdate.versionName}" +
+                                (if (moduleUpdate.size > 0) " · ${UpdateChecker.formatSize(moduleUpdate.size)}" else ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        if (daemonUpdate.changelog.isNotBlank()) {
+                        if (moduleUpdate.changelog.isNotBlank()) {
                             Text(
-                                daemonUpdate.changelog,
+                                moduleUpdate.changelog,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -145,51 +227,51 @@ fun UpdateDialog(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (daemonDownloading) {
+                        if (moduleDownloading) {
                             LinearProgressIndicator(
-                                progress = { daemonProgress / 100f },
+                                progress = { moduleProgress / 100f },
                                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                             )
                             Text(
-                                "下载中 $daemonProgress%",
+                                "下载中 $moduleProgress%",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        if (daemonError.isNotBlank()) {
-                            Text(daemonError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        if (moduleError.isNotBlank()) {
+                            Text(moduleError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                         }
-                        if (daemonDone) {
+                        if (moduleDone) {
                             Text(
-                                "✅ 已下载到: $daemonPath",
+                                "✅ 已下载到: $modulePath",
                                 color = MaterialTheme.colorScheme.primary,
                                 fontSize = 12.sp,
                             )
                         }
-                        if (!daemonDownloading) {
+                        if (!moduleDownloading) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     onClick = {
-                                        daemonDownloading = true
-                                        daemonError = ""
+                                        moduleDownloading = true
+                                        moduleError = ""
                                         scope.launch {
                                             val path = withContext(Dispatchers.IO) {
-                                                UpdateChecker.downloadDaemonZip(ctx, daemonUpdate) {
-                                                    daemonProgress = it
+                                                UpdateChecker.downloadDaemonZip(ctx, moduleUpdate) {
+                                                    moduleProgress = it
                                                 }
                                             }
-                                            daemonDownloading = false
+                                            moduleDownloading = false
                                             if (path != null) {
-                                                daemonDone = true
-                                                daemonPath = path
+                                                moduleDone = true
+                                                modulePath = path
                                             } else {
-                                                daemonError = "下载失败,请检查网络"
+                                                moduleError = "下载失败,请检查网络"
                                             }
                                         }
                                     },
                                     modifier = Modifier.weight(1f),
-                                ) { Text(if (daemonDone) "重新下载" else "下载模块") }
-                                if (daemonDone) {
+                                ) { Text(if (moduleDone) "重新下载" else "下载模块") }
+                                if (moduleDone) {
                                     OutlinedButton(
                                         onClick = {
                                             UpdateChecker.openModuleManager(ctx)
@@ -202,8 +284,8 @@ fun UpdateDialog(
                     }
                 }
 
-                // 两个都没有更新(理论上不会触发这个对话框)
-                if (appUpdate == null && daemonUpdate == null) {
+                // 三个都没有更新(理论上不会触发这个对话框)
+                if (appUpdate == null && kinUpdate == null && moduleUpdate == null) {
                     Text("当前已是最新版本", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -222,7 +304,7 @@ fun NoUpdateDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("已是最新", fontWeight = FontWeight.Bold) },
-        text = { Text("App 和调度模块均已是最新版本。") },
+        text = { Text("App、Kin 与模块均已是最新版本。") },
         confirmButton = { TextButton(onClick = onDismiss) { Text("确定") } },
     )
 }
