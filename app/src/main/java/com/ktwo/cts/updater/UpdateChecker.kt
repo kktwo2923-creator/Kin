@@ -45,6 +45,7 @@ object UpdateChecker {
     // APP 更新服务器(独立于守护授权服务器 License.BASE_URL)。
     // /api/version 返回 app/daemon/module 三通道版本信息,
     // 下载地址(download_url)为绝对路径(https://update.example.com/...), fullUrl() 会原样透传。
+    // 注意: 必须带 8443 端口 —— update.example.com 未备案, 443 端口在中国大陆被墙, 走 8443 才通。
     private const val UPDATE_BASE_URL = "https://update.example.com"
 
     data class VersionInfo(
