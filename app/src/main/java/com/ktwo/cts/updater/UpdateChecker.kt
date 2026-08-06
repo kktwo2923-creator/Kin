@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.content.FileProvider
 import com.ktwo.cts.BuildConfig
 import com.ktwo.cts.root.RootShell
+import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -438,28 +439,66 @@ object UpdateChecker {
         )
     }
 
-    /** 打开 Magisk/KernelSU 管理器(若能找到包名),否则打开下载目录。 */
+    /**
+     * 打开设备上的 Root 管理器, 供用户手动刷入模块 zip。
+     *
+     * root 生态已不止 Magisk: KernelSU / KSU-Next / SukiSU-Ultra / APatch 都是常见方案,
+     * 只穷举 Magisk 系包名会在这些机型上直接落空。查找顺序:
+     *   ① 已知包名穷举(同步, 命中即走)
+     *   ② root 下按关键字扫已装包名兜底(异步, 覆盖列表外的新管理器)
+     *   ③ 都找不到则打开模块 zip 所在目录, 让用户自己拖进管理器
+     */
     fun openModuleManager(context: Context) {
-        val managers = listOf(
-            "io.github.huskydg.magisk",
-            "me.weishu.kernelsu",
-            "io.github.a13e300.ksu",
-            "com.topjohnwu.magisk",
-            "io.github.vvb2060.magisk",
+        // ① 主流管理器已知包名(官方在前, 变体在后)
+        val known = listOf(
+            "com.topjohnwu.magisk",      // Magisk 官方
+            "io.github.huskydg.magisk",  // Magisk Alpha
+            "io.github.vvb2060.magisk",  // Magisk Delta
+            "me.weishu.kernelsu",        // KernelSU(含 MKSU 等同包名分支)
+            "com.rifsxd.ksunext",        // KernelSU Next
+            "io.github.a13e300.ksu",     // KernelSU 变体
+            "com.sukisu.ultra",          // SukiSU-Ultra
+            "me.bmax.apatch",            // APatch
+            "me.bmax.apatch.debug",      // APatch 调试版
         )
-        for (pkg in managers) {
+        for (pkg in known) {
             val intent = context.packageManager.getLaunchIntentForPackage(pkg)
             if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
+                startRootManager(context, intent)
                 return
             }
         }
+        // ② 列表外的管理器: root 下扫包名, 取第一个能启动的。
+        //    走异步 submit, 避免在 UI 线程上等 root shell。
+        val scanCmd =
+            "pm list packages -e | cut -d: -f2 | grep -Ei 'magisk|kernelsu|ksunext|sukisu|apatch|ksu'"
         runCatching {
-            val intent = Intent(Intent.ACTION_VIEW)
-                .setDataAndType(Uri.fromFile(File(RootShell.CTS_DIR)), "resource/folder")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            Shell.cmd(scanCmd).submit { r ->
+                val hit = r.out.asSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() && it != context.packageName }
+                    .mapNotNull { pkg -> context.packageManager.getLaunchIntentForPackage(pkg) }
+                    .firstOrNull()
+                Handler(Looper.getMainLooper()).post {
+                    if (hit != null) startRootManager(context, hit) else openDownloadsDir(context)
+                }
+            }
+        }.onFailure { openDownloadsDir(context) }
+    }
+
+    private fun startRootManager(context: Context, intent: Intent) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }.onFailure { openDownloadsDir(context) }
+    }
+
+    /** 兜底: 打开模块 zip 所在目录(没有任何管理器可拉起时)。 */
+    private fun openDownloadsDir(context: Context) {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(Uri.fromFile(File(RootShell.CTS_DIR)), "resource/folder")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
         }
     }
 
