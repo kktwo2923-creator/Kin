@@ -31,11 +31,7 @@ class MainActivity : ComponentActivity() {
             runCatching {
                 if (Prefs.notifyEnabled(this@MainActivity)) NotifyService.start(this@MainActivity)
             }
-            // 已配置线程规则 → 拉起规则守护(重启/重进恢复)
-            runCatching {
-                if (com.ktwo.cts.data.ThreadAllocRuleStore.all(this@MainActivity).isNotEmpty())
-                    com.ktwo.cts.service.ThreadRuleService.start(this@MainActivity)
-            }
+            // Thread-rule service is no longer started by the app.
         }
         // 生成 pkg→App名字 映射给守护(让日志把包名显示成 App 名字); 枚举应用较重放 IO, 无 root 静默失败
         lifecycleScope.launch(Dispatchers.IO) {
@@ -61,7 +57,8 @@ class MainActivity : ComponentActivity() {
                 .collectAsState(initial = true)
             val enableFloatingBarBlur by Prefs.enableFloatingBottomBarBlurFlow(ctx)
                 .collectAsState(initial = true)
-            AppTheme(mode = ThemeMode.fromKey(themeKey), uiStyle = UiStyle.fromKey(styleKey)) {
+            val visualTheme by Prefs.visualThemeFlow(ctx).collectAsState(initial = "snow")
+            AppTheme(mode = ThemeMode.fromKey(themeKey), uiStyle = UiStyle.fromKey(styleKey), snowTheme = visualTheme == "snow") {
                 CompositionLocalProvider(
                     LocalEnableFloatingBottomBar provides enableFloatingBar,
                     LocalEnableFloatingBottomBarBlur provides enableFloatingBarBlur,

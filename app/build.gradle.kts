@@ -46,8 +46,9 @@ android {
         // iOS26 液态玻璃依赖 AGSL RuntimeShader(Android 13+), 不再适配低版本
         minSdk = 33
         targetSdk = 35
-        versionCode = 20000
-        versionName = "2.0.0"
+        versionCode = 20016
+        // Keep the public version fixed until the user requests a version change.
+        versionName = "2.1.0"
         vectorDrawables { useSupportLibrary = true }
 
         // P2-15: 只构建 arm64-v8a,收口 ABI 减小包体(目标设备均为 64 位 ARM)
@@ -105,6 +106,10 @@ android {
             cmake { path = file("src/main/cpp/CMakeLists.txt") }
         }
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -126,6 +131,9 @@ kotlin {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+
     val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
     implementation(composeBom)
 

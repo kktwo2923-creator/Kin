@@ -88,19 +88,22 @@ fun AutoMonitorScreen() {
     var st by remember { mutableStateOf(AutoStatus()) }
     var alive by remember { mutableStateOf<Boolean?>(null) }   // null = 本轮未取到(shell 整体失败), 保留上次判定
     var readFail by remember { mutableStateOf(0) }             // 连续读取失败次数(用于退避 + 提示)
+    var fail by remember { mutableStateOf<RootShell.AutoStatusRead.Fail?>(null) }   // 失败原因
     var nowS by remember { mutableStateOf(0L) }                // 当前时刻(秒), 驱动数据年龄刷新
     LaunchedEffect(Unit) {
         while (true) {
             // 一次 root 往返取「状态 + 存活」, 失败时保留上一份数据, 绝不清空面板。
-            val (raw, pidAlive) = withContext(Dispatchers.IO) { RootShell.readAutoStatusSnapshot() }
-            val parsed = AutoStatus.parse(raw)
+            val read = withContext(Dispatchers.IO) { RootShell.readAutoStatusSnapshot() }
+            val parsed = AutoStatus.parse(read.raw)
             if (parsed.valid) {
                 st = parsed
                 readFail = 0
+                fail = null
             } else {
                 readFail++
+                fail = read.fail
             }
-            pidAlive?.let { alive = it }
+            read.alive?.let { alive = it }
             nowS = System.currentTimeMillis() / 1000
             // 读失败时退避: 不再继续每分钟 40 次去挤那个正被长命令占用的 su 会话。
             delay(if (readFail == 0) 1500 else 3000)
@@ -121,10 +124,15 @@ fun AutoMonitorScreen() {
         val isFsm = st.fsm.isNotBlank()
         // 数据年龄按 daemon 写入时刻算: 读失败时它自然变大, 守护息屏慢 tick 时也能正确体现。
         val ageS = if (st.ts > 0 && nowS >= st.ts) (nowS - st.ts).toInt() else -1
+        val noRoot = fail == RootShell.AutoStatusRead.Fail.NO_ROOT
+        val noFile = fail == RootShell.AutoStatusRead.Fail.NO_FILE
         val stateLabel = when {
             alive == false -> "守护未运行"
             isFsm -> FSM_STATES.firstOrNull { it.first == st.fsm }?.second ?: st.fsm
             st.resolved.isNotBlank() -> "整档 · " + Mode.fromKey(st.resolved).label
+            noRoot -> "读取失败 · 未获得 ROOT"
+            // 刚开启/刚开机时文件还没生成, 前两轮先当"读取中", 避免一闪而过的误报
+            noFile -> if (readFail >= 2) "无实时数据 · 智能调度未开启" else "正在读取…"
             readFail > 0 -> "读取失败 · 重试中"
             else -> "正在读取…"
         }
@@ -150,14 +158,21 @@ fun AutoMonitorScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                // 数据新鲜度: 读失败/卡顿时明确告知「显示的是旧数据」, 而不是把整页清空。
-                if (st.valid && (readFail > 0 || ageS >= 5)) {
+                // 数据新鲜度 / 失败原因: 直接告诉用户是 ROOT、还是智能调度没开, 不笼统说"读取失败"。
+                val hint = when {
+                    !st.valid && noRoot -> "面板需要 ROOT 才能读守护的状态文件, 请到 Root 管理器授权"
+                    !st.valid && noFile && readFail >= 2 -> "守护只在「智能调度」模式写状态文件, 开启后约 2 秒出数据"
+                    !st.valid && readFail > 0 -> "读不到守护状态文件, 正在重试…"
+                    st.valid && readFail > 0 -> "读取中断, 正在重试 · 数据${if (ageS >= 0) " $ageS 秒前" else "为上次读数"}"
+                    st.valid && ageS >= 5 -> "上次更新 $ageS 秒前"
+                    else -> null
+                }
+                if (hint != null) {
                     Text(
-                        if (readFail > 0) "读取中断, 正在重试 · 数据${if (ageS >= 0) " $ageS 秒前" else "为上次读数"}"
-                        else "上次更新 $ageS 秒前",
+                        hint,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (readFail > 0) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (st.valid && readFail == 0) MaterialTheme.colorScheme.onSurfaceVariant
+                                else MaterialTheme.colorScheme.error,
                     )
                 }
             }

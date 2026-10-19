@@ -52,6 +52,7 @@ This repo is the client only: server addresses are injected at build time (see [
 - 🖥️ **Overlays** — load / process / thread / mini / temperature floating monitors; the mini bar matches Metric's look
 - 🔋 **Battery log** — charge/discharge curves, power statistics, runtime estimation (sampled by the daemon, works without the app in foreground)
 - 🚀 **Setup wizard** — first-launch guidance for ROOT, module detection & download, accessibility permission, takeover mode (this app / third-party such as Scene)
+- 🔍 **Self-check** — one-tap check of root, module, daemon and live status; can also produce a redacted device report for feedback
 - 🎨 **Material You** — Jetpack Compose + Material 3 dynamic color, two-column feature hub
 
 > **Stack**: Kotlin + Jetpack Compose · minSdk 33

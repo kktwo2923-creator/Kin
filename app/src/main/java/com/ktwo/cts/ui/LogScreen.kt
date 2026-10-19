@@ -3,7 +3,6 @@ package com.ktwo.cts.ui
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -172,7 +171,9 @@ fun LogScreen() {
                                 .fillMaxSize()
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
-                            items(lines, key = { it.hashCode() }) { line ->
+                            // Log lines may repeat; content hashes are not unique keys.
+                            items(count = lines.size) { index ->
+                                val line = lines[index]
                                 Text(
                                     text = line.ifEmpty { " " },
                                     fontFamily = FontFamily.Monospace,

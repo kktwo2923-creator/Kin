@@ -585,6 +585,19 @@ object RootShell {
         }
     }
 
+    /** 请求守护生成并读取脱敏真机验证报告。 */
+    fun runDeviceValidation(): String {
+        val request = "$AI_DIR/device_validation.request"
+        val report = "$AI_DIR/device_validation.txt"
+        execSilent("mkdir -p '$AI_DIR'; touch '$request'")
+        repeat(20) {
+            val text = exec("cat '$report' 2>/dev/null").trim()
+            if (text.contains("kind=beta_device_validation")) return text
+            Thread.sleep(250)
+        }
+        return exec("cat '$report' 2>/dev/null").trim().ifBlank { "validation=unavailable" }
+    }
+
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
     fun readAutoStatus(): String {
         runCatching {
@@ -595,15 +608,26 @@ object RootShell {
         return execTimed(3, "cat $AI_DIR/auto_status.txt 2>/dev/null")
     }
 
+    /** 监控面板状态读取结果。fail=null 表示读到了数据。 */
+    data class AutoStatusRead(
+        val raw: String = "",
+        val alive: Boolean? = null,   // null = 本轮未取到, 调用方保留上次判定
+        val fail: Fail? = null,
+    ) {
+        enum class Fail {
+            NO_ROOT,      // su 未授权 / 会话失效 —— cat 根本跑不起来
+            NO_FILE,      // shell 正常但文件不存在: 守护没在 auto 模式, 或版本太老不写该文件
+            SHELL_ERROR,  // 其他 shell 异常
+        }
+    }
+
     /**
      * 监控面板专用: 一次 root 往返同时取「状态文件内容 + 守护是否存活」。
-     * 面板 1.5s 轮询, 原先每轮发 2 条 root 命令(readAutoStatus + daemonAlive)。libsu 全局只有
-     * 一个 su 会话且命令串行, 与 FPS 录制(dumpsys SurfaceFlinger, 单条可占 3~4s)、写入类命令
-     * 共用时会排队 → 面板偶发读空、且两条命令可能一条成功一条失败, 出现「有数据却显示守护未运行」。
-     * 合并成 1 条命令 + toybox timeout 兜底(卡死时自杀释放会话, 下一轮即可恢复)。
-     * @return first=状态文件内容(空串=没读到), second=守护是否在跑; null 表示整条 shell 失败, 存活未知。
+     * libsu 全局只有一个 su 会话且命令串行, 分两次取会出现「有数据却显示守护未运行」;
+     * 合并成 1 条命令 + toybox timeout 兜底(卡死时自杀释放会话)。
+     * 失败时给出具体原因, 面板据此显示"未授权 ROOT"/"智能调度未开启"而不是笼统的"读取失败"。
      */
-    fun readAutoStatusSnapshot(): Pair<String, Boolean?> {
+    fun readAutoStatusSnapshot(): AutoStatusRead {
         val sep = "@@KIN_ALIVE@@"
         val out = execTimed(
             3,
@@ -613,16 +637,17 @@ object RootShell {
         if (i >= 0) {
             val raw = out.substring(0, i).trim()
             val pid = out.substring(i + sep.length).trim()
-            if (raw.isNotEmpty()) return raw to pid.isNotEmpty()
-            // 文件还没生成(守护刚启动/智能调度刚开): 存活判定仍有效, 数据交由调用方保留旧值。
-            return "" to pid.isNotEmpty()
+            // 有分隔符 = shell 确实跑起来了, 存活判定可信。
+            return if (raw.isNotEmpty()) AutoStatusRead(raw, pid.isNotEmpty())
+            else AutoStatusRead("", pid.isNotEmpty(), AutoStatusRead.Fail.NO_FILE)
         }
-        // 整条 shell 失败(无 root / 会话死): 退回直读, 有存储权限的机型仍能显示数据。
-        val direct = runCatching {
-            val f = java.io.File("$AI_DIR/auto_status.txt")
-            if (f.canRead()) f.readText().trim() else ""
-        }.getOrDefault("")
-        return direct to null
+        // 没有分隔符: 这条复合命令没跑起来(个别 ROM 的 sh -c 嵌套/超时包装会失败) —— 退回旧式分开读,
+        // 保证不比旧版本差; 仍失败才判定 root 不可用。
+        val raw = readAutoStatus().trim()
+        val alive = daemonAlive()
+        if (raw.isNotEmpty()) return AutoStatusRead(raw, alive)
+        val fail = if (!isRooted()) AutoStatusRead.Fail.NO_ROOT else AutoStatusRead.Fail.SHELL_ERROR
+        return AutoStatusRead("", alive, fail)
     }
 
     // 组件名 = 实际安装包名(applicationId)/ 服务类全名。包名随版本可变(如 com.ktwo.kin),

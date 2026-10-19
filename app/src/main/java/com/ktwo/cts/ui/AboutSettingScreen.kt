@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Security
@@ -46,11 +47,13 @@ fun AboutSettingScreen(
     onBack: () -> Unit,
     onOpenUpdate: () -> Unit = {},
     onOpenDocs: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
     val themeKey by Prefs.themeModeFlow(ctx).collectAsState(initial = "system")
+    val visualTheme by Prefs.visualThemeFlow(ctx).collectAsState(initial = "snow")
     val uiStyleKey by Prefs.uiStyleFlow(ctx).collectAsState(initial = "glass")
     var showStyleDialog by remember { mutableStateOf(false) }
     val wallpaperUri by Prefs.wallpaperUriFlow(ctx).collectAsState(initial = "")
@@ -177,6 +180,16 @@ fun AboutSettingScreen(
         ) {
             // —— 外观(对齐 OShin about_setting 的 App 级偏好) ——
             PrefGroup("外观") {
+                PrefChipsRow(title = "视觉主题", desc = null) {
+                    listOf("default" to "默认", "snow" to "K2娘").forEach { (key, label) ->
+                        FilterChip(
+                            selected = visualTheme == key,
+                            onClick = { scope.launch { Prefs.setVisualTheme(ctx, key) } },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+                PrefDivider()
                 PrefChipsRow(title = "主题", desc = null) {
                     val cur = ThemeMode.fromKey(themeKey)
                     ThemeMode.entries.forEach { tm ->
@@ -392,6 +405,13 @@ fun AboutSettingScreen(
                     title = "使用文档",
                     desc = "功能说明 · 常见问题",
                     onClick = onOpenDocs,
+                )
+                PrefDivider()
+                PrefNavRow(
+                    icon = Icons.Outlined.Info,
+                    title = "真机采样",
+                    desc = "生成并上传脱敏设备能力报告",
+                    onClick = onOpenDiagnostics,
                 )
             }
 

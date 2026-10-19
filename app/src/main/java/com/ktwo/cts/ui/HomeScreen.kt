@@ -79,6 +79,7 @@ fun HomeScreen() {
             // 读不到当前模式时回退显示全局模式
             val shownMode = Mode.fromKey(currentMode.ifEmpty { globalMode })
             StatusHeroCard(
+                showMascot = com.ktwo.cts.ui.theme.LocalSnowTheme.current,
                 working = working,
                 icon = if (working) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
                 title = if (working) "接管中" else "未接管",

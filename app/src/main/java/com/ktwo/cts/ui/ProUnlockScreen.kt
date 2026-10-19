@@ -1,4 +1,4 @@
-// 付费解锁页(仿 MetricPro):介绍解锁的额外功能 + 在线支付 + 卡密/订单号输入 + 激活。
+// 智能版解锁页:领取卡密入口 + 卡密/历史订单号激活。
 // 解锁范围:智能模式 + 智能设置里的「系统优化」。真值来源 License.state()==VALID。
 package com.ktwo.cts.ui
 
@@ -51,33 +51,6 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
     var msg by remember { mutableStateOf("") }
     var msgOk by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
-    // 在线支付待轮询的订单号: 非空时启动轮询, 订单号变化时重启轮询
-    var pendingOrderNo by rememberSaveable { mutableStateOf("") }
-
-    // 轮询订单支付状态: 仅当 pendingOrderNo 非空时启动, 订单号变化时自动重启轮询
-    LaunchedEffect(pendingOrderNo) {
-        val no = pendingOrderNo
-        if (no.isBlank()) return@LaunchedEffect
-        val r = withContext(Dispatchers.IO) {
-            var res = License.Result(false, "PENDING")
-            repeat(100) {
-                res = License.queryPayAndActivate(no)
-                if (res.ok || res.message != "PENDING") return@withContext res
-                kotlinx.coroutines.delay(3000)
-            }
-            res
-        }
-        if (r.ok) Pro.markUnlocked(ctx)
-        busy = false
-        msgOk = r.ok
-        msg = when {
-            r.ok -> "解锁成功, 感谢支持!"
-            r.message == "PENDING" -> "还没查到付款。付了但没到账? 用账单里的订单号在下方'订单号'激活。"
-            else -> r.message
-        }
-        if (r.ok) onUnlocked()
-        pendingOrderNo = ""   // 轮询结束清空, 避免重复触发
-    }
 
     // 「曾购买过会员」——诚信自助:点激活直接本地解锁, 不联网/不验证(同 Metric)。
     fun doHonorUnlock() {
@@ -88,28 +61,19 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
         }
     }
 
-    // 在线支付(对齐 Metric 0.4.3): 下单 → 打开支付宝/微信收银台 → 轮询查询到账 → 自动激活。
-    fun doOnlinePay(payType: String) {
+    fun openCardClaim() {
         if (busy) return
-        msg = ""; busy = true
-        scope.launch {
-            val order = withContext(Dispatchers.IO) { License.createPayOrder(payType) }
-            if (order == null) {
-                busy = false; msgOk = false
-                msg = "下单失败, 请检查网络(需加速器/梯子)或稍后重试"
-                return@launch
-            }
-            // 打开收银台(外部浏览器/支付宝)
-            runCatching {
-                ctx.startActivity(
-                    android.content.Intent(android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse(order.payUrl))
-                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            }
-            msgOk = true; msg = "已打开收银台, 付款后自动到账(约 5 分钟内轮询)…"
-            // 触发 LaunchedEffect(pendingOrderNo) 启动轮询: 订单号变化时自动重启
-            pendingOrderNo = order.outTradeNo
+        msg = ""
+        // 购卡页跟随注入的授权服务器(见 app/build.gradle.kts 的 ctsLicenseBase), 不写死域名。
+        val buyUrl = License.BASE_URL.trimEnd('/') + "/buy.html"
+        runCatching {
+            ctx.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse(buyUrl))
+            )
+        }.onFailure {
+            msgOk = false
+            msg = "无法打开浏览器，请访问 $buyUrl"
         }
     }
 
@@ -206,27 +170,12 @@ fun ProUnlockScreen(onBack: () -> Unit, onUnlocked: () -> Unit = {}) {
                 }
             }
 
-            // ── 在线支付(支付宝/微信, 下单跳收银台, 付款后自动到账激活) ──
-            SectionTitle("在线支付")
-            TonalCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("直接付款, 到账后自动解锁, 无需手填订单号。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = { doOnlinePay("alipay") },
-                            enabled = !busy,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("支付宝支付") }
-                        OutlinedButton(
-                            onClick = { doOnlinePay("wxpay") },
-                            enabled = !busy,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("微信支付") }
-                    }
-                }
-            }
+            SectionTitle("领取卡密")
+            Button(
+                onClick = { openCardClaim() },
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("领取卡密") }
 
             // ── 卡密 / 订单号 ──
             SectionTitle("激活")

@@ -42,6 +42,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -103,7 +105,9 @@ fun WallpaperBackground(
     }
 
     Box(modifier.fillMaxSize().hazeSource(hazeState)) {
-        if (bitmap != null) {
+        if (com.ktwo.cts.ui.theme.LocalSnowTheme.current) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        } else if (bitmap != null) {
             Image(
                 bitmap = bitmap!!,
                 contentDescription = null,
@@ -297,12 +301,15 @@ fun TonalCard(
 @OptIn(ExperimentalLayoutApi::class)
 fun StatusHeroCard(
     working: Boolean,
+    showMascot: Boolean = false,
     icon: ImageVector,
     title: String,
     subtitle: String,
     badges: List<Pair<String, Boolean>> = emptyList(), // text to isPrimary
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    var cardLeft by remember { mutableStateOf(0f) }
+    var badgeCenter by remember { mutableStateOf<Float?>(null) }
     val container = if (working)
         MaterialTheme.colorScheme.secondaryContainer
     else
@@ -317,10 +324,16 @@ fun StatusHeroCard(
         color = container,
         contentColor = onContainer,
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .onGloballyPositioned { cardLeft = it.positionInRoot().x }) {
+            if (showMascot) SnowMascot(
+                Modifier.matchParentSize(),
+                targetCenterX = badgeCenter?.minus(cardLeft),
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             Icon(icon, null, modifier = Modifier.size(40.dp))
             Spacer(Modifier.width(18.dp))
             Column(Modifier.weight(1f)) {
@@ -334,8 +347,12 @@ fun StatusHeroCard(
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
-                    badges.forEach { (text, primary) ->
-                        Badge(text, primary)
+                    badges.forEachIndexed { index, (text, primary) ->
+                        Box(Modifier.onGloballyPositioned {
+                            if (index == 0) badgeCenter = it.positionInRoot().x + it.size.width / 2f
+                        }) {
+                            Badge(text, primary)
+                        }
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -348,6 +365,7 @@ fun StatusHeroCard(
             if (trailing != null) {
                 Spacer(Modifier.width(12.dp))
                 trailing()
+            }
             }
         }
     }

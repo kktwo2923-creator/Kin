@@ -236,7 +236,7 @@ fun AboutScreen(
 
                 // —— 底部署名 ——
                 Text(
-                    "Powered By KTWO · 参考 OShin / SukiSU-Ultra",
+                    "Powered By Ktwo · 参考 OShin / SukiSU-Ultra",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,

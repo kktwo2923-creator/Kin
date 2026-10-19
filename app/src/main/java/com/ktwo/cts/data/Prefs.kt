@@ -79,6 +79,13 @@ object Prefs {
         ctx.dataStore.edit { it[UI_STYLE_KEY] = k }
     }
 
+    private val VISUAL_THEME_KEY = stringPreferencesKey("visual_theme")
+    fun visualThemeFlow(ctx: Context): Flow<String> =
+        ctx.dataStore.data.map { it[VISUAL_THEME_KEY] ?: "snow" }
+    suspend fun setVisualTheme(ctx: Context, key: String) {
+        ctx.dataStore.edit { it[VISUAL_THEME_KEY] = if (key == "snow") "snow" else "default" }
+    }
+
     fun themeModeFlow(ctx: Context): Flow<String> =
         ctx.dataStore.data.map { it[THEME_KEY] ?: "system" }
     suspend fun setThemeMode(ctx: Context, mode: String) {

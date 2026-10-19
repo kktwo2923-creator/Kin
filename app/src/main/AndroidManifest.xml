@@ -48,15 +48,6 @@
                 android:value="System scheduler companion: monitors foreground app and switches power profile via root" />
         </service>
 
-        <!-- 线程规则守护(AppOpt 式): 前台应用命中规则时周期绑核 -->
-        <service
-            android:name=".service.ThreadRuleService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Per-app thread affinity rules daemon: pins matching threads of the foreground app to configured cores via root" />
-        </service>
 
         <!-- 状态栏常驻通知服务(显示模式+电量,点击弹悬浮窗快切) -->
         <service

@@ -214,18 +214,21 @@ object UpdateChecker {
                         mainHandler.post { onProgress(100) }
                         // 优先用 DownloadManager 提供的 content:// URI(兼容分区存储),
                         // 否则用 file:// 路径的 FileProvider
-                        val apkUri = when {
-                            !localUri.isNullOrBlank() -> Uri.parse(localUri)
-                            else -> {
-                                val f = File(
-                                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                                    apkFileName
-                                )
-                                FileProvider.getUriForFile(appCtx, "${appCtx.packageName}.fileprovider", f)
-                            }
+                        val uriResult = runCatching {
+                            dm.getUriForDownloadedFile(id)
+                                ?: localUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+                                ?: error("Downloaded APK URI is unavailable")
                         }
-                        mainHandler.post { installApkFromUri(appCtx, apkUri) }
-                        mainHandler.post { onDone(true, "") }
+                        mainHandler.post {
+                            val result = uriResult.mapCatching { installApkFromUri(appCtx, it) }
+                            result.fold(
+                                onSuccess = { onDone(true, "") },
+                                onFailure = {
+                                    Log.w(TAG, "APK installer launch failed", it)
+                                    onDone(false, "安装器无法打开，请从下载目录手动安装 APK")
+                                },
+                            )
+                        }
                         return@Thread
                     }
                     DownloadManager.STATUS_FAILED -> {
@@ -253,6 +256,13 @@ object UpdateChecker {
 
     /** 用给定 URI(可为 content:// 或 file://)调起 APK 安装器(必须主线程)。 */
     private fun installApkFromUri(context: Context, apkUri: Uri) {
+        val installUri = when (apkUri.scheme) {
+            "content" -> apkUri
+            "file" -> FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", File(requireNotNull(apkUri.path))
+            )
+            else -> error("Unsupported APK URI scheme")
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val canInstall = context.packageManager.canRequestPackageInstalls()
             if (!canInstall) {
@@ -264,7 +274,7 @@ object UpdateChecker {
             }
         }
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            setDataAndType(installUri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }

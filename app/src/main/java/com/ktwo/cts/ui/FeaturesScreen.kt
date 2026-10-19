@@ -156,13 +156,7 @@ fun FeaturesScreen(
                         "OnePlus/OPPO 满血·游戏触控·温控",
                         onClick = onOpenColorOs,
                     ),
-                    FeatureItem(
-                        Icons.Outlined.AccountTree, "线程分配",
-                        if (proUnlocked) "渲染线程归拢到大核, 提升流畅度"
-                        else "智能版功能 · 渲染线程归拢到大核",
-                        locked = !proUnlocked,
-                        onClick = onOpenThreadAlloc,
-                    ),
+
                 ),
             )
 

@@ -16,6 +16,7 @@ val LocalEnableFloatingBottomBarBlur = staticCompositionLocalOf { false }
 
 /** 当前主题是否为暗色(考虑强制浅/深色模式, 而非只看系统)。 */
 val LocalDarkMode = staticCompositionLocalOf { false }
+val LocalSnowTheme = staticCompositionLocalOf { false }
 
 @Composable
 fun isInDarkTheme(): Boolean = LocalDarkMode.current
@@ -89,6 +90,7 @@ enum class ThemeMode(val key: String, val label: String) {
 fun AppTheme(
     mode: ThemeMode = ThemeMode.SYSTEM,
     uiStyle: UiStyle = UiStyle.GLASS,
+    snowTheme: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val sysDark = isSystemInDarkTheme()
@@ -98,9 +100,32 @@ fun AppTheme(
         ThemeMode.SYSTEM -> sysDark
     }
     // 全风格统一液态玻璃配色: uiStyle 只决定主页是否显示 Metric 仪表盘布局, 不再切换配色。
-    val scheme: ColorScheme = if (dark) DarkScheme else LightScheme
+    val base = if (dark) DarkScheme else LightScheme
+    val scheme: ColorScheme = if (!snowTheme) base else if (dark) base.copy(
+        primary = Color(0xFF38CFFF), onPrimary = Color(0xFF002F42),
+        primaryContainer = Color(0xFF004C70), onPrimaryContainer = Color(0xFFD8F5FF),
+        secondary = Color(0xFFFF80BD), onSecondary = Color(0xFF4E0028),
+        secondaryContainer = Color(0xFF661D43), onSecondaryContainer = Color(0xFFFFD9E9),
+        tertiary = Color(0xFF40E0C1), onTertiary = Color(0xFF00382D),
+        background = Color(0xFF171B20), onBackground = Color(0xFFE6EDF3),
+        surface = Color(0xFF21262D), onSurface = Color(0xFFE6EDF3),
+        surfaceVariant = Color(0xFF303B46), onSurfaceVariant = Color(0xFFBCCBD7),
+        surfaceContainer = Color(0xFF242B33), outlineVariant = Color(0xFF435260),
+    ) else base.copy(
+        primary = Color(0xFF006EBC), onPrimary = Color.White,
+        primaryContainer = Color(0xFFC1EAFF), onPrimaryContainer = Color(0xFF003C62),
+        secondary = Color(0xFFB92170), onSecondary = Color.White,
+        secondaryContainer = Color(0xFFFFD9EA), onSecondaryContainer = Color(0xFF660C3A),
+        tertiary = Color(0xFF007F6E), onTertiary = Color.White,
+        background = Color(0xFFF5F9FC), onBackground = Color(0xFF243548),
+        surface = Color.White, onSurface = Color(0xFF243548),
+        surfaceVariant = Color(0xFFE3F0F8), onSurfaceVariant = Color(0xFF526779),
+        surfaceContainer = Color(0xFFF8FBFE), surfaceContainerHigh = Color(0xFFECF4FA),
+        surfaceContainerHighest = Color(0xFFE3F0F8), outlineVariant = Color(0xFFCDDFEA),
+    )
     CompositionLocalProvider(
         LocalDarkMode provides dark,
+        LocalSnowTheme provides snowTheme,
         LocalUiStyle provides uiStyle,
     ) {
         MaterialTheme(colorScheme = scheme, content = content)

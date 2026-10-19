@@ -35,8 +35,6 @@ import com.ktwo.cts.ui.fpsrecord.ThreadLoadScreen
 import com.ktwo.cts.ui.governor.GovernorParamsScreen
 import com.ktwo.cts.ui.memory.MemoryDetailScreen
 import com.ktwo.cts.ui.process.ProcessScreen
-import com.ktwo.cts.ui.threadalloc.ThreadRulesScreen
-import com.ktwo.cts.ui.threadalloc.ThreadAllocScreen
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBar
 import com.ktwo.cts.ui.theme.LocalEnableFloatingBottomBarBlur
 import com.ktwo.cts.updater.UpdateAvailableDialog
@@ -265,7 +263,6 @@ fun AppRoot() {
                             onOpenAutoMode = { nav.navigate("automode") },
                             onOpenSmartPolicy = { nav.navigate("smartpolicy") },
                             onOpenFpsRecord = { nav.navigate("fpsrecord") },
-                            onOpenThreadAlloc = { nav.navigate("threadalloc") },
                             onOpenColorOs = { nav.navigate("coloros") },
                         )
                     }
@@ -288,9 +285,13 @@ fun AppRoot() {
                     composable("about_setting") {
                         AboutSettingScreen(
                             onBack = { nav.popBackStack() },
+                            onOpenDiagnostics = { nav.navigate("diagnostics") },
                             onOpenUpdate = { nav.navigate("update") },
                             onOpenDocs = { nav.navigate("docs") },
                         )
+                    }
+                    composable("diagnostics") {
+                        DiagnosticsScreen(onBack = { nav.popBackStack() })
                     }
                     composable("docs") {
                         DocsScreen(onBack = { nav.popBackStack() })
@@ -333,17 +334,6 @@ fun AppRoot() {
                     }
                     composable("coloros") {
                         ColorOsScreen(onBack = { nav.popBackStack() })
-                    }
-                    composable("threadalloc") {
-                        ThreadAllocScreen(
-                            onBack = { nav.popBackStack() },
-                            proUnlocked = proUnlocked,
-                            onNeedPro = { nav.navigate("pro") },
-                            onOpenRules = { nav.navigate("threadalloc_rules") },
-                        )
-                    }
-                    composable("threadalloc_rules") {
-                        ThreadRulesScreen(onBack = { nav.popBackStack() })
                     }
                     composable("pro") {
                         ProUnlockScreen(onBack = { nav.popBackStack() })
