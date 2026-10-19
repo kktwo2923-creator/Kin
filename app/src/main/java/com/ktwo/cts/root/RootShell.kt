@@ -540,6 +540,25 @@ object RootShell {
         return shOkTimed(8, cmds.joinToString("; "))
     }
 
+    /**
+     * 读 AI/ 下的运行数据文件。**必须兼容老模块**: 守护在 2026-08-05(b75d0b6) 才把运行数据
+     * 从 /sdcard/Android/Kin/ 根目录搬进 AI/ 子目录, 之前刷的模块仍在写旧路径 —— 只认新路径会
+     * 让这些用户(实测是大多数)永远读不到数据。这里新路径有内容就用新的, 否则回退旧路径。
+     * 注意: 不用一次性 cp 迁移, 否则老守护继续写旧路径时 App 会显示一份"冻结"的旧数据。
+     */
+    private fun readAiFile(name: String): String {
+        // 有存储权限的机型可直读, 免一次 root 往返
+        for (d in listOf(AI_DIR, CTS_DIR)) {
+            runCatching {
+                val f = java.io.File("$d/$name")
+                if (f.canRead()) { val s = f.readText(); if (s.isNotBlank()) return s }
+            }
+        }
+        val newF = "$AI_DIR/$name"
+        val oldF = "$CTS_DIR/$name"
+        return execTimed(3, "sh -c 'if [ -s $newF ]; then cat $newF 2>/dev/null; else cat $oldF 2>/dev/null; fi'")
+    }
+
     /** 读功耗记录(daemon 每 30s 追加的 power_log.txt: ts,level,curMa,voltMv,tempDc,chg)。 */
     fun readPowerLog(): String {
         runCatching {
@@ -599,14 +618,7 @@ object RootShell {
     }
 
     /** 读智能调度实时状态文件(daemon 写的 auto_status.txt,key=value 行)。供监控面板用。 */
-    fun readAutoStatus(): String {
-        runCatching {
-            val f = java.io.File("$AI_DIR/auto_status.txt")
-            if (f.canRead()) return f.readText()
-        }
-        // 带超时: 存储 FUSE 卡住时自杀释放共享 su 会话, 不让调用方(启动检测/策略页)一起卡死。
-        return execTimed(3, "cat $AI_DIR/auto_status.txt 2>/dev/null")
-    }
+    fun readAutoStatus(): String = readAiFile("auto_status.txt")
 
     /** 监控面板状态读取结果。fail=null 表示读到了数据。 */
     data class AutoStatusRead(
@@ -631,7 +643,9 @@ object RootShell {
         val sep = "@@KIN_ALIVE@@"
         val out = execTimed(
             3,
-            "sh -c 'cat $AI_DIR/auto_status.txt 2>/dev/null; echo $sep; pidof Kinetic 2>/dev/null'"
+            // 新路径(AI/)优先, 老模块写在根目录 → 回退旧路径; 再取守护存活
+            "sh -c 'if [ -s $AI_DIR/auto_status.txt ]; then cat $AI_DIR/auto_status.txt 2>/dev/null; " +
+                "else cat $CTS_DIR/auto_status.txt 2>/dev/null; fi; echo $sep; pidof Kinetic 2>/dev/null'"
         )
         val i = out.indexOf(sep)
         if (i >= 0) {

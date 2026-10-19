@@ -63,8 +63,8 @@ data class SmartLiveStatus(
                 nightWake = gi("night_wake", -1),
                 cpuMaxLittle = gi("cpu_max_little", 0),
                 cpuMaxBig = gi("cpu_max_big", 0),
-                // 只有真含 FSM 状态才算有效: 空文件/截断内容不能当成"未学到"去覆盖已有状态。
-                valid = (m["fsm"] ?: "").isNotBlank(),
+                // 只要能解析出任意 key=value 就算有效: 老模块字段集不同, 不能用 fsm 卡死。
+                valid = m.isNotEmpty(),
             )
         }
     }

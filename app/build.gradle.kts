@@ -46,7 +46,7 @@ android {
         // iOS26 液态玻璃依赖 AGSL RuntimeShader(Android 13+), 不再适配低版本
         minSdk = 33
         targetSdk = 35
-        versionCode = 20016
+        versionCode = 20017
         // Keep the public version fixed until the user requests a version change.
         versionName = "2.1.0"
         vectorDrawables { useSupportLibrary = true }

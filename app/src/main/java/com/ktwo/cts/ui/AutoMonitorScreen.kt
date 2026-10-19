@@ -66,9 +66,10 @@ private data class AutoStatus(
                 charging = gi("charging", 0) == 1, screen = gi("screen", 1),
                 lowbat = gi("lowbat", 0) == 1,
                 ts = m["timestamp"]?.toLongOrNull() ?: 0L,
-                // 必须真的含调度状态才算有效: 空文件/截断的半份内容不能覆盖掉上一次的好数据
-                // (否则一次 root 读取失败就会把整页清成「等待数据…」)。
-                valid = resolved.isNotBlank() || fsm.isNotBlank(),
+                // 只要能解析出任意 key=value 就算有数据: 老模块(2026-08 之前)的状态文件字段集
+                // 与新版不同, 卡死要求 fsm/resolved 会让这些用户永远显示"读取失败"。
+                // 空内容/读失败时 m 为空 → valid=false, 调用方保留上一份数据。
+                valid = m.isNotEmpty(),
             )
         }
     }
