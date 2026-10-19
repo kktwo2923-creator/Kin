@@ -21,6 +21,19 @@ fun secret(name: String): String? =
 val releaseKeystore: String? = secret("CTS_KEYSTORE")
 val hasReleaseKeystore: Boolean = !releaseKeystore.isNullOrBlank() && file(releaseKeystore).exists()
 
+// ---- 私有部署地址/密钥(公开仓库不硬编码) ----
+// 通过 -P 参数或 ~/.gradle/gradle.properties 注入, 源码里只有占位符:
+//   ctsLicenseBase  授权/支付服务器      (默认 https://license.example.com)
+//   ctsApiKey       客户端 API 密钥      (默认 APPVERIFY_REPLACE_ME)
+//   ctsUpdateBase   更新服务器           (默认 https://update.example.com)
+//   ctsModuleUrl    内核模块下载地址     (默认指向 GitHub Releases)
+fun cfg(name: String, default: String): String =
+    (project.findProperty(name) as String?)?.takeIf { it.isNotBlank() } ?: default
+val ctsLicenseBase: String = cfg("ctsLicenseBase", "https://license.example.com")
+val ctsApiKey: String = cfg("ctsApiKey", "APPVERIFY_REPLACE_ME")
+val ctsUpdateBase: String = cfg("ctsUpdateBase", "https://update.example.com")
+val ctsModuleUrl: String = cfg("ctsModuleUrl", "https://github.com/kktwo2923-creator/Kin/releases")
+
 android {
     namespace = "com.ktwo.cts"
     // miuix-blur 0.9.2 要求 compileSdk 37 (同 SukiSU-Ultra)
@@ -49,6 +62,15 @@ android {
         // 付费点仅为【功能级】的「智能版 Pro」解锁,走在线支付。EDITION 留空 = 不显示版本后缀。
         buildConfigField("boolean", "NO_LICENSE", "true")
         buildConfigField("String", "EDITION", "\"\"")
+
+        // 私有部署地址/密钥: 由构建参数注入, 源码中只有占位符。
+        buildConfigField("String", "LICENSE_BASE_URL", "\"$ctsLicenseBase\"")
+        buildConfigField("String", "LICENSE_API_KEY", "\"$ctsApiKey\"")
+        buildConfigField("String", "UPDATE_BASE_URL", "\"$ctsUpdateBase\"")
+        buildConfigField("String", "MODULE_DOWNLOAD_URL", "\"$ctsModuleUrl\"")
+        // 授权服务器是 HTTP 明文时才放行 cleartext; HTTPS/占位符时为 false(Android 默认安全姿态)。
+        manifestPlaceholders["cleartextTraffic"] =
+            if (ctsLicenseBase.startsWith("http://")) "true" else "false"
     }
 
     signingConfigs {

@@ -43,11 +43,10 @@ object UpdateChecker {
     private const val TAG = "UpdateChecker"
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    // APP 更新服务器(独立于守护授权服务器 License.BASE_URL)。
+    // APP 更新服务器(独立于守护授权服务器 License.BASE_URL), 由构建参数 ctsUpdateBase 注入。
     // /api/version 返回 app/daemon/module 三通道版本信息,
-    // 下载地址(download_url)为绝对路径(https://update.example.com/...), fullUrl() 会原样透传。
-    // 注意: 必须带 8443 端口 —— update.example.com 未备案, 443 端口在中国大陆被墙, 走 8443 才通。
-    private const val UPDATE_BASE_URL = "https://update.example.com"
+    // 下载地址(download_url)为绝对路径时, fullUrl() 会原样透传。
+    private val UPDATE_BASE_URL: String = com.ktwo.cts.BuildConfig.UPDATE_BASE_URL
 
     data class VersionInfo(
         val versionCode: Int,

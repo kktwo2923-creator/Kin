@@ -35,9 +35,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 内核模块(Magisk/KernelSU)下载地址: 未检测到模块时引导用户去下载刷入。 */
-private const val MODULE_DOWNLOAD_URL =
-    "https://example.com/123pan/QGwjVv-ixUHh?"
+/** 内核模块(Magisk/KernelSU)下载地址: 未检测到模块时引导用户去下载刷入。由构建参数 ctsModuleUrl 注入。 */
+private val MODULE_DOWNLOAD_URL: String = com.ktwo.cts.BuildConfig.MODULE_DOWNLOAD_URL
 
 @Composable
 fun SetupScreen(onDone: () -> Unit) {

@@ -30,16 +30,15 @@ import kotlinx.coroutines.sync.Mutex
  * 用于设备管理场景(如清理临时数据目录)。
  */
 object License {
-    // 国内自建服务器(纯 IP, HTTP 明文): 安全靠服务端限流 + 守护端 Ed25519 验签兜底。
-    // 部署后把下面的 IP:端口 改成你的服务器地址。HTTP 明文已放行(见 network_security_config.xml)。
-    // 购买页: $BASE_URL/buy.html
-    const val BASE_URL = "http://license.example.com"
+    // 部署后无需改源码: 服务器地址/密钥由构建参数注入(见 app/build.gradle.kts 的 ctsLicenseBase/ctsApiKey),
+    // 公开仓库里只有占位符。购买页: $BASE_URL/buy.html
+    val BASE_URL: String = com.ktwo.cts.BuildConfig.LICENSE_BASE_URL
     // ⚠️ 安全风险(P2-16): API_KEY 硬编码在客户端, 反编译即可获取。当前仅 verify 权限且服务端可按 device_id
     // 限流兜底, 风险可控。后续若引入更高权限操作(如退款/封禁)必须迁移到服务端代理转发, 客户端
     // 只持短期令牌。所有 verify/report 请求已携带 device_id(=ro.serialno), 服务端可据此实施:
     //   - 单设备 QPS 限流(防爆破/防雪崩)
     //   - 异常 device_id 黑名单(发现伪造 serialno 批量激活时封禁)
-    private const val API_KEY = "APPVERIFY_REPLACE_ME" // 仅 verify 权限
+    private val API_KEY: String = com.ktwo.cts.BuildConfig.LICENSE_API_KEY // 仅 verify 权限
     private const val LICENSE_FILE = "${RootShell.CTS_DIR}/license.json"
     private const val TAG = "License"
 

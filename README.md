@@ -11,7 +11,7 @@ Kin 调度守护的图形控制端 —— 智能调度 · 应用画像 · 线程
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](#协议)
 [![Platform](https://img.shields.io/badge/Platform-Android%2013%2B-3DDC84?logo=android&logoColor=white)](#)
 [![Language](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white)](#)
-[![Daemon](https://img.shields.io/badge/Daemon-Kin-orange)](https://github.com/kktwo2923-creator/CTS-Daemon)
+[![Daemon](https://img.shields.io/badge/Daemon-Kin-orange)](https://github.com/kktwo2923-creator/Kin-Daemon)
 
 </div>
 
@@ -19,7 +19,7 @@ Kin 调度守护的图形控制端 —— 智能调度 · 应用画像 · 线程
 
 ## 这是什么
 
-**Kin 接管助手** 是 [Kin 调度守护](https://github.com/kktwo2923-creator/CTS-Daemon) 的图形控制端,二者分工明确:
+**Kin 接管助手** 是 [Kin 调度守护](https://github.com/kktwo2923-creator/Kin-Daemon) 的图形控制端,二者分工明确:
 
 - **Kin 守护**(Magisk/KernelSU 模块)负责真正的 CPU/GPU 调频、governor 参数、线程绑核与实时调度;
 - **本 App** 负责配置与感知 —— 应用画像、智能策略、线程规则的编辑下发,以及无障碍前台推送(精准识别前台应用,含小窗/分屏)。
@@ -56,6 +56,28 @@ App 配置页 ──读改写──▶ config.json / applist.prop / perapp_power
 
 本地 Android Studio 打开工程即可(JDK 17);或推送到 GitHub 用 Actions 自动构建。
 Release 签名与防重打包配置见 [HARDENING.md](HARDENING.md)。
+
+### 私有部署参数
+
+授权服务器、更新服务器、模块下载地址等**不硬编码在源码里**,默认是占位符。自建部署时通过
+构建参数注入(也可写进 `~/.gradle/gradle.properties`,不随仓库分发):
+
+```bash
+./gradlew :app:assembleRelease \
+  -PctsLicenseBase=https://your-license-server \
+  -PctsApiKey=APPVERIFY_你的密钥 \
+  -PctsUpdateBase=https://your-update-server \
+  -PctsModuleUrl=https://你的下载地址
+```
+
+| 参数 | 用途 | 默认值 |
+|---|---|---|
+| `ctsLicenseBase` | 授权/支付服务器 | `https://license.example.com` |
+| `ctsApiKey` | 客户端 API 密钥 | `APPVERIFY_REPLACE_ME` |
+| `ctsUpdateBase` | 更新服务器 | `https://update.example.com` |
+| `ctsModuleUrl` | 内核模块下载地址 | 本仓库 Releases |
+
+授权服务器若为 HTTP 明文,构建会自动放行 cleartext(HTTPS 则不放行)。
 
 ## 协议
 
