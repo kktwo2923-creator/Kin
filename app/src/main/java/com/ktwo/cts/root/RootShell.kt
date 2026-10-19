@@ -591,7 +591,38 @@ object RootShell {
             val f = java.io.File("$AI_DIR/auto_status.txt")
             if (f.canRead()) return f.readText()
         }
-        return shOut("cat $AI_DIR/auto_status.txt 2>/dev/null").joinToString("\n")
+        // 带超时: 存储 FUSE 卡住时自杀释放共享 su 会话, 不让调用方(启动检测/策略页)一起卡死。
+        return execTimed(3, "cat $AI_DIR/auto_status.txt 2>/dev/null")
+    }
+
+    /**
+     * 监控面板专用: 一次 root 往返同时取「状态文件内容 + 守护是否存活」。
+     * 面板 1.5s 轮询, 原先每轮发 2 条 root 命令(readAutoStatus + daemonAlive)。libsu 全局只有
+     * 一个 su 会话且命令串行, 与 FPS 录制(dumpsys SurfaceFlinger, 单条可占 3~4s)、写入类命令
+     * 共用时会排队 → 面板偶发读空、且两条命令可能一条成功一条失败, 出现「有数据却显示守护未运行」。
+     * 合并成 1 条命令 + toybox timeout 兜底(卡死时自杀释放会话, 下一轮即可恢复)。
+     * @return first=状态文件内容(空串=没读到), second=守护是否在跑; null 表示整条 shell 失败, 存活未知。
+     */
+    fun readAutoStatusSnapshot(): Pair<String, Boolean?> {
+        val sep = "@@KIN_ALIVE@@"
+        val out = execTimed(
+            3,
+            "sh -c 'cat $AI_DIR/auto_status.txt 2>/dev/null; echo $sep; pidof Kinetic 2>/dev/null'"
+        )
+        val i = out.indexOf(sep)
+        if (i >= 0) {
+            val raw = out.substring(0, i).trim()
+            val pid = out.substring(i + sep.length).trim()
+            if (raw.isNotEmpty()) return raw to pid.isNotEmpty()
+            // 文件还没生成(守护刚启动/智能调度刚开): 存活判定仍有效, 数据交由调用方保留旧值。
+            return "" to pid.isNotEmpty()
+        }
+        // 整条 shell 失败(无 root / 会话死): 退回直读, 有存储权限的机型仍能显示数据。
+        val direct = runCatching {
+            val f = java.io.File("$AI_DIR/auto_status.txt")
+            if (f.canRead()) f.readText().trim() else ""
+        }.getOrDefault("")
+        return direct to null
     }
 
     // 组件名 = 实际安装包名(applicationId)/ 服务类全名。包名随版本可变(如 com.ktwo.kin),

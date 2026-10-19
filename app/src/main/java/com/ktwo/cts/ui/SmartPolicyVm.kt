@@ -63,7 +63,8 @@ data class SmartLiveStatus(
                 nightWake = gi("night_wake", -1),
                 cpuMaxLittle = gi("cpu_max_little", 0),
                 cpuMaxBig = gi("cpu_max_big", 0),
-                valid = true,
+                // 只有真含 FSM 状态才算有效: 空文件/截断内容不能当成"未学到"去覆盖已有状态。
+                valid = (m["fsm"] ?: "").isNotBlank(),
             )
         }
     }
@@ -115,9 +116,16 @@ class SmartPolicyVm(app: Application) : AndroidViewModel(app) {
 
     // 1.5s 轮询 auto_status(当前状态高亮 + alpha); WhileSubscribed: 页面不在前台收集时
     // 自动停止, 不让 root cat 在后台一直空转。
+    // 读失败(root 会话被 FPS 录制等长命令占用/会话死)时保留上一份有效状态: 否则一次读空就会
+    // 把「当前状态高亮」和「学到的 alpha」清掉, 页面忽闪成未学到。
     val live: StateFlow<SmartLiveStatus> = flow {
+        var last = SmartLiveStatus()
         while (true) {
-            emit(SmartLiveStatus.parse(runCatching { RootShell.readAutoStatus() }.getOrDefault("")))
+            val parsed = SmartLiveStatus.parse(
+                runCatching { RootShell.readAutoStatus() }.getOrDefault("")
+            )
+            if (parsed.valid) last = parsed
+            emit(last)
             delay(1500)
         }
     }.flowOn(Dispatchers.IO)
