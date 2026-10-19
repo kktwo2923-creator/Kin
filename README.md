@@ -76,6 +76,18 @@ App 配置页 ──读改写──▶ config.json / applist.prop / perapp_power
 本地 Android Studio 打开工程即可(JDK 17);或推送到 GitHub 用 Actions 自动构建。
 Release 签名与防重打包配置见 [HARDENING.md](HARDENING.md)。
 
+### 可选:Rust 原生采样库
+
+`libctssampler.so` 不入库(见 `.gitignore`);缺失时 `NativeSampler` 自动退回 Kotlin 实现,不影响出包。
+要启用 Rust 采样(CPU/内存占用更低),本地编一次放进 `jniLibs` 即可:
+
+```bash
+export ANDROID_NDK=/path/to/ndk
+( cd rust/ctssampler && cargo ndk -t arm64-v8a -o ../../app/src/main/jniLibs build --release )
+```
+
+> 工程路径含中文时 AGP 会拒绝构建,在 `~/.gradle/gradle.properties` 加 `android.overridePathCheck=true` 即可。
+
 ### 私有部署参数
 
 授权服务器、更新服务器、模块下载地址等**不硬编码在源码里**,默认是占位符。自建部署时通过

@@ -75,6 +75,19 @@ Daemon ──status feedback──▶ AI/auto_status.txt ──▶ live display 
 Open the project in Android Studio (JDK 17), or push to GitHub and let Actions build it.
 Release signing / anti-repackage hardening: see [HARDENING.md](HARDENING.md).
 
+### Optional: Rust native sampler
+
+`libctssampler.so` is not committed (see `.gitignore`); when absent, `NativeSampler` falls back to the Kotlin
+implementation and nothing breaks. To enable the Rust sampler, build it once into `jniLibs`:
+
+```bash
+export ANDROID_NDK=/path/to/ndk
+( cd rust/ctssampler && cargo ndk -t arm64-v8a -o ../../app/src/main/jniLibs build --release )
+```
+
+> If the project path contains non-ASCII characters AGP refuses to build; add
+> `android.overridePathCheck=true` to `~/.gradle/gradle.properties`.
+
 ### Private deployment parameters
 
 Endpoints and keys are **not hardcoded** — they default to placeholders and are injected at build time
