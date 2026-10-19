@@ -54,6 +54,16 @@ gradle :app:assembleRelease \
   -PCTS_KEY_ALIAS=cts -PCTS_KEY_PASSWORD=***
 ```
 
+## 授权后端地址与密钥(不硬编码)
+授权服务器地址与客户端 API 密钥不再写在源码里,默认是占位符,通过构建参数注入:
+
+```bash
+-PctsLicenseBase=https://your-license-server -PctsApiKey=APPVERIFY_你的密钥
+```
+
+未注入时(公开源码直接构建)授权相关请求会指向 `license.example.com` 而失败 —— **防重签名/授权链路
+本身仍完整编译**,只是没有可用的后端。完整参数表见 [README 编译章节](README.md#编译)。
+
 ## 做不到的事
 - 阻止有 root + 逆向能力的人为自己改出能跑的版本(可让其降级/被识别,无法根除)。
 - 单靠 App 层保证授权 —— 真正的闸门在守护端 Ed25519 校验。
