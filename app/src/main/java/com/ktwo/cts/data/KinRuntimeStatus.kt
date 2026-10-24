@@ -179,3 +179,13 @@ data class Capabilities(
         private fun longValue(values: Map<String, String>, key: String) = values[key]?.toLongOrNull() ?: -1L
     }
 }
+
+/**
+ * AutoMonitorScreen 用的轻量快照: 把 AutoStatus + daemon 存活状态捆成一对,
+ * 让 Compose 一条 collectAsStateWithLifecycle 就拿到全部。
+ * daemonAlive = null 表示本周期没读到 (RootShell 失败), UI 应保留上次判定。
+ */
+data class RuntimeSnapshot(
+    val auto: AutoStatus = AutoStatus.EMPTY,
+    val daemonAlive: Boolean? = null,
+)
