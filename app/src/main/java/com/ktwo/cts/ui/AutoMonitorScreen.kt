@@ -1,6 +1,5 @@
 // 智能调度监控面板:仅在开启智能调度(auto)时作为一个 tab 出现,读 daemon 的 auto_status.txt
 // 实时展示 FSM 六状态、AI 学习状态(省电倾向/置信度)与温度/电量/GPU/负载/频率上限。
-// 健壮性约定: root 读取失败时保留上一份数据并标注"Ns 前", 不清空面板; 状态与存活判定一次往返取回。
 package com.ktwo.cts.ui
 
 import androidx.compose.foundation.layout.*
@@ -13,67 +12,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ktwo.cts.data.KinRuntimeRepository
 import com.ktwo.cts.data.Mode
-import com.ktwo.cts.root.RootShell
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
+import com.ktwo.cts.data.RuntimeSnapshot
 
-private data class AutoStatus(
-    val resolved: String = "",
-    val fsm: String = "",
-    val bucket: Int = -1,
-    val daypart: Int = -1,
-    val alpha: Int = -1,
-    val conf: Int = -1,
-    val temp: Int = -1,
-    val batt: Int = -1,
-    val gpu: Int = -1,
-    val load1: Float = -1f,
-    val cpuBusy: Int = -1,
-    val curMa: Int = -1,
-    val nightSleep: Int = -1,
-    val nightWake: Int = -1,
-    val nightSamples: Int = 0,
-    val cpuMaxLittle: Int = 0,
-    val cpuMaxBig: Int = 0,
-    val charging: Boolean = false,
-    val screen: Int = 1,
-    val lowbat: Boolean = false,
-    val ts: Long = 0,          // daemon 写入时刻(epoch 秒), 用于算数据年龄
-    val valid: Boolean = false,
-) {
-    companion object {
-        fun parse(raw: String): AutoStatus {
-            if (raw.isBlank()) return AutoStatus()
-            val m = HashMap<String, String>()
-            raw.lineSequence().forEach {
-                val i = it.indexOf('=')
-                if (i > 0) m[it.substring(0, i).trim()] = it.substring(i + 1).trim()
-            }
-            fun gi(k: String, d: Int = -1) = m[k]?.toIntOrNull() ?: d
-            fun gf(k: String, d: Float = -1f) = m[k]?.toFloatOrNull() ?: d
-            val resolved = m["resolved"] ?: ""
-            val fsm = m["fsm"] ?: ""
-            return AutoStatus(
-                resolved = resolved,
-                fsm = fsm,
-                bucket = gi("bucket"), daypart = gi("daypart"),
-                alpha = gi("alpha"), conf = gi("conf"), temp = gi("temp"), batt = gi("batt"),
-                gpu = gi("gpu"), load1 = gf("load1"), cpuBusy = gi("cpu_busy"), curMa = gi("cur_ma"),
-                nightSleep = gi("night_sleep"), nightWake = gi("night_wake"), nightSamples = gi("night_samples", 0),
-                cpuMaxLittle = gi("cpu_max_little", 0), cpuMaxBig = gi("cpu_max_big", 0),
-                charging = gi("charging", 0) == 1, screen = gi("screen", 1),
-                lowbat = gi("lowbat", 0) == 1,
-                ts = m["timestamp"]?.toLongOrNull() ?: 0L,
-                // 只要能解析出任意 key=value 就算有数据: 老模块(2026-08 之前)的状态文件字段集
-                // 与新版不同, 卡死要求 fsm/resolved 会让这些用户永远显示"读取失败"。
-                // 空内容/读失败时 m 为空 → valid=false, 调用方保留上一份数据。
-                valid = m.isNotEmpty(),
-            )
-        }
-    }
-}
 
 private val FSM_STATES = listOf(
     "DEEP_IDLE" to "空闲",
@@ -86,30 +29,12 @@ private val FSM_STATES = listOf(
 
 @Composable
 fun AutoMonitorScreen() {
-    var st by remember { mutableStateOf(AutoStatus()) }
-    var alive by remember { mutableStateOf<Boolean?>(null) }   // null = 本轮未取到(shell 整体失败), 保留上次判定
-    var readFail by remember { mutableStateOf(0) }             // 连续读取失败次数(用于退避 + 提示)
-    var fail by remember { mutableStateOf<RootShell.AutoStatusRead.Fail?>(null) }   // 失败原因
-    var nowS by remember { mutableStateOf(0L) }                // 当前时刻(秒), 驱动数据年龄刷新
-    LaunchedEffect(Unit) {
-        while (true) {
-            // 一次 root 往返取「状态 + 存活」, 失败时保留上一份数据, 绝不清空面板。
-            val read = withContext(Dispatchers.IO) { RootShell.readAutoStatusSnapshot() }
-            val parsed = AutoStatus.parse(read.raw)
-            if (parsed.valid) {
-                st = parsed
-                readFail = 0
-                fail = null
-            } else {
-                readFail++
-                fail = read.fail
-            }
-            read.alive?.let { alive = it }
-            nowS = System.currentTimeMillis() / 1000
-            // 读失败时退避: 不再继续每分钟 40 次去挤那个正被长命令占用的 su 会话。
-            delay(if (readFail == 0) 1500 else 3000)
-        }
-    }
+    // 与首页/自动模式/诊断页共用同一份运行时快照: 不再自己每 1.5s 发两条 root 命令(共享 su 会话
+    // 被 FPS 录制等长命令占住时会排队读空), 且读失败时由仓库保留上一份数据(stale 随时间变 true),
+    // 不会把整页清成「等待数据…」。
+    val runtime by KinRuntimeRepository.snapshots.collectAsStateWithLifecycle(RuntimeSnapshot())
+    val st = runtime.auto
+    val daemonAlive = runtime.daemonAlive   // null = 未取到, 保留上次判定
 
     Column(
         Modifier
@@ -123,19 +48,13 @@ fun AutoMonitorScreen() {
         SectionTitle("智能调度监控")
 
         val isFsm = st.fsm.isNotBlank()
-        // 数据年龄按 daemon 写入时刻算: 读失败时它自然变大, 守护息屏慢 tick 时也能正确体现。
-        val ageS = if (st.ts > 0 && nowS >= st.ts) (nowS - st.ts).toInt() else -1
-        val noRoot = fail == RootShell.AutoStatusRead.Fail.NO_ROOT
-        val noFile = fail == RootShell.AutoStatusRead.Fail.NO_FILE
         val stateLabel = when {
-            alive == false -> "守护未运行"
-            isFsm -> FSM_STATES.firstOrNull { it.first == st.fsm }?.second ?: st.fsm
+            daemonAlive == false -> "守护未运行"
+            !st.valid -> "等待数据…"
+            st.stale -> "状态已过期"
+            isFsm -> FSM_STATES.firstOrNull { it.first.equals(st.fsm, ignoreCase = true) }?.second ?: st.fsm
             st.resolved.isNotBlank() -> "整档 · " + Mode.fromKey(st.resolved).label
-            noRoot -> "读取失败 · 未获得 ROOT"
-            // 刚开启/刚开机时文件还没生成, 前两轮先当"读取中", 避免一闪而过的误报
-            noFile -> if (readFail >= 2) "无实时数据 · 智能调度未开启" else "正在读取…"
-            readFail > 0 -> "读取失败 · 重试中"
-            else -> "正在读取…"
+            else -> "等待数据…"
         }
         // 顶部状态主卡
         TonalCard(modifier = Modifier.fillMaxWidth()) {
@@ -149,31 +68,14 @@ fun AutoMonitorScreen() {
                     stateLabel,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (alive != false) MaterialTheme.colorScheme.primary
+                    color = if (daemonAlive != false && st.valid && !st.stale) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.error,
                 )
-                if (alive != false && (st.cpuMaxBig > 0 || st.cpuMaxLittle > 0)) {
+                if (daemonAlive != false && (st.cpuMaxBig > 0 || st.cpuMaxLittle > 0)) {
                     Text(
                         "频率上限 小核 ${st.cpuMaxLittle / 1000}MHz · 大核 ${st.cpuMaxBig / 1000}MHz",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                // 数据新鲜度 / 失败原因: 直接告诉用户是 ROOT、还是智能调度没开, 不笼统说"读取失败"。
-                val hint = when {
-                    !st.valid && noRoot -> "面板需要 ROOT 才能读守护的状态文件, 请到 Root 管理器授权"
-                    !st.valid && noFile && readFail >= 2 -> "守护只在「智能调度」模式写状态文件, 开启后约 2 秒出数据"
-                    !st.valid && readFail > 0 -> "读不到守护状态文件, 正在重试…"
-                    st.valid && readFail > 0 -> "读取中断, 正在重试 · 数据${if (ageS >= 0) " $ageS 秒前" else "为上次读数"}"
-                    st.valid && ageS >= 5 -> "上次更新 $ageS 秒前"
-                    else -> null
-                }
-                if (hint != null) {
-                    Text(
-                        hint,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (st.valid && readFail == 0) MaterialTheme.colorScheme.onSurfaceVariant
-                                else MaterialTheme.colorScheme.error,
                     )
                 }
             }
@@ -221,13 +123,61 @@ fun AutoMonitorScreen() {
                 }
                 // alpha 不设界(可负/可超 1000): 有状态就显示原值, 条按 0..1000 区间截取展示。
                 MonBar("省电倾向", st.alpha, 1000, "越高越省电", hasValue = st.valid)
-                MonBar("学习程度", st.conf, 1000, "学得越久越准 · 当前时段")
+                MonBar("学习程度", st.conf, 1000, "学得越久越准 · 当前时段", hasValue = st.valid && !st.stale)
                 MonRow("睡眠时段", when {
                     st.nightSleep >= 0 && st.nightWake >= 0 && st.nightSamples >= 3 ->
                         "${hhmm(st.nightSleep)}–${hhmm(st.nightWake)} · 已自学"
                     st.nightSamples in 1..2 -> "学习中 (${st.nightSamples}/3 晚)"
                     else -> "学习中 · 暂用固定时段"
                 })
+            }
+        }
+
+        // 负载闭环调频（P0-2/P0-3）
+        // 判读要点：perf 是闭环自己算出的上限，cpu_max_* 是最终落盘值。
+        // 两者不等 = 闭环意图被 FAS/类别/热/PolicyResolver 又收紧了，这是正常且应该能看到的。
+        if (st.loadGovEnable) {
+            SectionTitle("闭环调频")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MonRow("小核占用", if (st.loadGovBusyLittle >= 0) "${st.loadGovBusyLittle}%" else "—")
+                    MonBar("小核上限", st.loadGovPerfLittle, 1000, "闭环算出的性能比 · 落盘 ${st.cpuMaxLittle / 1000}MHz",
+                           hasValue = st.loadGovPerfLittle in 0..1000)
+                    MonRow("大核占用", if (st.loadGovBusyBig >= 0) "${st.loadGovBusyBig}%" else "—")
+                    MonBar("大核上限", st.loadGovPerfBig, 1000, "闭环算出的性能比 · 落盘 ${st.cpuMaxBig / 1000}MHz",
+                           hasValue = st.loadGovPerfBig in 0..1000)
+                    val perfL = st.loadGovPerfLittle
+                    val perfB = st.loadGovPerfBig
+                    if (perfL in 1..999 || perfB in 1..999) {
+                        MonRow("状态", "闭环收紧中（未到硬件最高频）")
+                    } else if (perfL >= 1000 || perfB >= 1000) {
+                        MonRow("状态", "已放开至硬件上限")
+                    }
+                }
+            }
+        }
+
+        // FAS 帧级分析（P1-1）
+        if (st.fasFrameAnalysis) {
+            SectionTitle("帧级分析")
+            TonalCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MonRow("帧源", when (st.fasFrameSource) {
+                        "per_frame" -> "逐帧（SurfaceFlinger）"
+                        "window"    -> "窗口均值（measured_fps）"
+                        else        -> "—"
+                    })
+                    MonRow("场景", when {
+                        st.fasLoading   -> "读条 / 过图（已限频）"
+                        st.fasPostGuard > 0 -> "加载后保护（剩余 ${st.fasPostGuard} 帧）"
+                        st.fasState == "engaged" -> "游戏中"
+                        st.fasState == "blocked" -> "风驰接管中"
+                        else -> "未接管"
+                    })
+                    if (st.fasGearDwell > 0) {
+                        MonRow("升档驻留", "${st.fasGearDwell} 帧")
+                    }
+                }
             }
         }
 
@@ -246,7 +196,12 @@ fun AutoMonitorScreen() {
                     else         -> "放电 ${st.curMa} mA"
                 })
                 MonRow("屏幕", if (st.screen == 0) "息屏" else "亮屏")
+                MonRow("功耗", if (st.powerW >= 0) "${st.powerW} W" else "—")
                 if (st.lowbat) MonRow("低电省电", "已触发")
+                if (st.thermalState.isNotBlank()) MonRow("热状态", thermalLabel(st.thermalState))
+                if (st.batteryState.isNotBlank()) MonRow("电池策略", batteryLabel(st.batteryState))
+                if (st.hardClamp) MonRow("厂商压频", "硬钳${if (st.headroomValid) " · 余量 ${st.headroom}%" else ""}")
+                else if (st.softClamp) MonRow("厂商压频", "软钳")
             }
         }
         Spacer(Modifier.height(96.dp))
@@ -283,6 +238,30 @@ private fun MonBar(
 }
 
 // 学习时段(原 bucket 的 daypart):一天分 6 段,配合工作日/周末构成学习分组。
+// thermal_state 的 token 必须与 Kin-Daemon 的 ThermalStatus.hpp 逐字对应
+// （hard_clamp / critical / hot / warm_skin / vendor_limited / unknown / normal）——
+// 写错只会默默落到 else 分支显示原始 token，不会报错，所以这里列全。
+private fun thermalLabel(token: String): String = when (token) {
+    "normal"         -> "正常"
+    "warm_skin"      -> "外壳偏热"
+    "vendor_limited" -> "厂商限频"
+    "hot"            -> "偏热"
+    "critical"       -> "过热降频"
+    "hard_clamp"     -> "硬钳频"
+    "unknown"        -> "—"
+    else             -> token
+}
+
+private fun batteryLabel(token: String): String = when (token) {
+    "disabled"         -> "未启用"
+    "charging"         -> "充电中"
+    "normal"           -> "正常"
+    "low"              -> "低电"
+    "critical"         -> "极低电"
+    "low_held_unknown" -> "低电（保持）"
+    "unknown"          -> "—"
+    else               -> token
+}
 private fun hhmm(min: Int): String =
     if (min in 0..1439) "%02d:%02d".format(min / 60, min % 60) else "—"
 
